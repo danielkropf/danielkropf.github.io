@@ -1,9 +1,18 @@
 <html>
-<head>
-<link rel="apple-touch-icon" href="icon.png" />
-<title>Marker App</title>
-</head>
-<body>
-<center><h1>Hello World!</h1></center>
-</body>
+    <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="apple-touch-icon" href="icon.png" />
+        <title>Marker App</title>
+    </head>
+    <body>
+        <center>
+            <h1 id="title">Hello World!</h1>
+            <button onclick="Pressed();">CLICK</button>
+        </center>
+    </body>
+    <script>
+        function Pressed(){
+            document.getElementById("title").innerText += "\nWOW!"
+        }
+    </script>
 </html>
