@@ -4,21 +4,32 @@
         <link rel="apple-touch-icon" href="icon.png" />
         <title>Marker App</title>
         <style>
+            @import 'https://fonts.googleapis.com/css?family=Roboto';
+            h1,h2,h3,h4,p,a{
+                font-family: 'Roboto', sans-serif;
+            }
             h1{
                 font-size: 40px;
+                font-weight: 600;
             }
             h2{
                 font-size: 30px;
+                font-weight: 100;
             }
             button{
-                width: 200px;
-                height: 60px;
+                width: 120px;
+                height: 40px;
+                font-size: 20px;
+                background-color:#2196F3;
+                border-style: none;
+                color:#FFF;
+                border-radius: 20px;
             }
         </style>
     </head>
     <body>
         <center>
-            <h1 id="title">Hello World!</h1>
+            <h1 id="title">Marker</h1>
             <h2 id="list"></h2>
             <button onclick="Pressed();">CLICK</button>
         </center>
