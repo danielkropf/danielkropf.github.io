@@ -1,64 +1,52 @@
 <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1.0, maximum-scale=1.0, minimal-ui" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="none" />
-        <link rel="apple-touch-icon" href="icon.png" />
-        <link rel="apple-touch-startup-image" href="startup.png" />
-        <title>Marker App</title>
-        <style>
-            @import 'https://fonts.googleapis.com/css?family=Roboto';
-            h1,h2,h3,h4,p,a{
-                font-family: 'Roboto', sans-serif;
-            }
-            h1{
-                font-size: 40px;
-                font-weight: 600;
-            }
-            h2{
-                font-size: 30px;
-                font-weight: 100;
-            }
-            button{
-                width: 120px;
-                height: 40px;
-                font-size: 20px;
-                background-color:#2196F3;
-                border-style: none;
-                color:#FFF;
-                border-radius: 20px;
-            }
-        </style>
-    </head>
-    <body>
-        <center>
-            <h1 id="title">Marker App</h1>
-            <textarea id="newSerieName" rows="1" placeholder="Nome da série/anime."></textarea>
-            <textarea id="newSerieTemp" rows="1" placeholder="Prox temporada."></textarea>
-            <textarea id="newSerieEp" rows="1" placeholder="Prox episodio."></textarea>
-            <button onclick="Pressed();">CLICK</button>
-            <h2 id="list"></h2>
-        </center>
-    </body>
-    <script>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1.0, maximum-scale=1.0, minimal-ui" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="none" />
+		<link rel="apple-touch-icon" href="icon.png" />
+		<link rel="apple-touch-startup-image" href="startup.png" />
+		<title>Africa</title>
+		<style>
+			@import 'https://fonts.googleapis.com/css?family=Roboto';
+			h1,h2,h3,h4,p,a{
+				font-family: 'Roboto', sans-serif;
+			}
+			h1{
+				font-size: 40px;
+				font-weight: 600;
+			}
+			h2{
+				font-size: 30px;
+				font-weight: 100;
+			}
+			button{
+				width: 120px;
+				height: 40px;
+				font-size: 20px;
+				background-color:#2196F3;
+				border-style: none;
+				color:#FFF;
+				border-radius: 20px;
+			}
+			textarea {
+				resize: none;
+			}
+		</style>
+	</head>
+	<body>
+		<center>
+			<h1 id="title"><b>AFRICA</b></h1>
+			<textarea id="teste" lang="pt-Br" spellcheck="true" rows="3" placeholder="teste"></textarea>
+			<button onclick="Pressed();">CLICK</button>
+			<h2 id="list"></h2>
+		</center>
+	</body>
+	<script>
+		var serie;
 
-        var serie;
-
-        function SerieF() {
-            var nome = "";
-            var temporada = 1;
-            var episodio = 1;
-        }
-
-        function Pressed(){
-            //document.getElementById("list").innerText += document.getElementById("newSerieName").value + "\n";
-            if (typeof(Storage) !== "undefined") {
-                localStorage.setItem("serie", new SerieF(newSerieName.value, newSerieTemp, value, newSerieEp.value));
-                document.getElementById("list").innerHTML += localStorage.getItem("lastname");
-            } else {
-                document.getElementById("list").innerHTML = "BATATÃO";
-            }
-        }
-    </script>
+		function Pressed(){
+			console.log("debug");
+		}
+	</script>
 </html>
