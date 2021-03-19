@@ -1,0 +1,7 @@
+{
+  "name": "Test",
+  "short_name": "Test",
+  "lang": "en-US",
+  "start_url": "/",
+  "scope": "/"
+}
