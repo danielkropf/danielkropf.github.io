@@ -1,0 +1,33 @@
+body {
+    margin: 0;
+    padding: 10px;
+    height: 100%;
+}
+
+#header {
+    width: 20%;
+    height: 40px;
+    padding: 5px;
+    box-sizing: border-box;
+    text-align: left;
+    border-radius: 5px;
+
+    border: 2px solid #54A3C6;
+    background-color: #091832;
+    color: #54A3C6;
+    
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#fileSelected {
+    padding: 5px;
+}
+
+#selectFile {
+    width: 30%;
+    height: 100%;
+    text-align: center;
+    font-size: 11px;
+}
