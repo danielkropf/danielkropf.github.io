@@ -11,3 +11,12 @@ export function positionRank(positions: string[]) {
   if (/^ST(?:\s|\(|\/|$)/.test(primary)) return 6
   return POSITION_ORDER.length
 }
+
+export function positionSideRank(positions: string[]) {
+  const specification = (positions[0] ?? '').match(/\(([^)]+)\)/)?.[1]?.toUpperCase() ?? ''
+  for (const side of specification) {
+    const rank = ['R', 'C', 'L'].indexOf(side)
+    if (rank !== -1) return rank
+  }
+  return 3
+}
