@@ -1,3 +1,5 @@
-export type Save = { id: string; name: string; club_name: string; country: string | null; game_version: string | null; current_season: string | null; created_at: string }
-export type ImportType = 'squad' | 'stats' | 'intake' | 'unknown'
-export type ImportPreview = { filename: string; fileType: ImportType; snapshotDate: string | null; rowCount: number; delimiter: string; headers: string[]; ignoredColumns: string[]; warnings: string[]; rows: Record<string, string>[] }
+export type Save = { id:string; owner_id?:string; name:string; club_name:string; country:string|null; game_version:string|null; save_type?:string; current_season:string|null; notes?:string|null; created_at:string }
+export type ImportType = 'squad'|'stats'|'intake'|'unknown'
+export type ImportPreview = { filename:string; fileType:ImportType; rowCount:number; delimiter:string; headers:string[]; ignoredColumns:string[]; warnings:string[]; rows:Record<string,string>[] }
+export type PlayerRow = { id:string; current_name:string; nationality:string|null; last_seen_date:string; is_active:boolean; player_snapshots:Array<{id:string;snapshot_date:string;age:number|null;club:string|null;squad:string|null;positions:string[];contract_expiry:string|null;player_attributes:Array<{attribute_key:string;attribute_label:string;value:number;category:string}>}> }
+export type ImportRecord = { id:string; original_filename:string; file_type:ImportType; snapshot_date:string; row_count:number; status:string; warnings:string[]; created_at:string }
