@@ -1,0 +1,3 @@
+import { describe, expect, it } from 'vitest'
+import { attributeScore, currentScore, normalizeAttribute, performanceConfidence } from './scoring'
+describe('scoring explicável',()=>{it('mapeia 1–20 para 0–100',()=>{expect(normalizeAttribute(1)).toBe(0);expect(normalizeAttribute(20)).toBe(100)});it('renormaliza quando dado está ausente',()=>expect(attributeScore([{key:'passing',value:20,weight:2},{key:'vision',value:null,weight:8}])).toBe(100));it('reduz influência com poucos minutos',()=>expect(performanceConfidence(90)).toBeLessThan(performanceConfidence(900)));it('usa apenas atributos sem stats',()=>expect(currentScore(75,null,1800).score).toBe(75))})
