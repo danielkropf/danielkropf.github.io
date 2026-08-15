@@ -37,4 +37,4 @@ Não configure o Pages para publicar a pasta fonte `fm-datatracker`: seu `index.
 
 ## Estado desta fundação
 
-Inclui login magic-link, contexto de saves, dashboard navegável, preview de CSV, detecção Squad/Stats/Intake, datas do profile Numancia, preservação de CA/PA apenas em raw data, fórmulas explicáveis e schema com RLS. A confirmação/persistência do import e as telas completas de elenco são a próxima etapa.
+Inclui login por e-mail e senha, contexto de saves, dashboard navegável, preview de CSV, detecção Squad/Stats/Intake, datas do profile Numancia, preservação de CA/PA apenas em raw data, fórmulas explicáveis e schema com RLS. A confirmação/persistência do import e as telas completas de elenco são a próxima etapa.
