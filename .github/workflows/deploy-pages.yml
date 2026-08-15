@@ -41,10 +41,19 @@ jobs:
       - name: Build FM DataTracker
         working-directory: fm-datatracker
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
           VITE_BUILD_ID: ${{ github.sha }}
-        run: npm run build
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "::error::VITE_SUPABASE_URL não foi configurada em Repository secrets ou Repository variables."
+            exit 1
+          fi
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::VITE_SUPABASE_ANON_KEY não foi configurada em Repository secrets ou Repository variables."
+            exit 1
+          fi
+          npm run build
 
       - name: Assemble site without changing existing pages
         run: |
