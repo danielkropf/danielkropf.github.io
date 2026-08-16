@@ -1,6 +1,77 @@
-import{useEffect,useMemo,useState}from'react';import{supabase}from'../lib/supabase';import{attributeScore}from'../lib/scoring';import{positionRank,positionSideRank}from'../lib/positions';import{DEFAULT_ATTRIBUTE_WEIGHTS}from'../lib/attributes';import{useSaves}from'../features/saves/SaveContext';import type{PlayerRow}from'../types/domain';
-type SortKey='name'|'team'|'position'|'snapshot'|'score';type Row={player:PlayerRow;latest:PlayerRow['player_snapshots'][number]|undefined;score:number|null};
-export function SquadPage(){const{selected}=useSaves();const[players,setPlayers]=useState<PlayerRow[]>([]),[weights,setWeights]=useState<Record<string,number>>({...DEFAULT_ATTRIBUTE_WEIGHTS}),[chosen,setChosen]=useState<PlayerRow|null>(null),[search,setSearch]=useState(''),[sort,setSort]=useState<{key:SortKey;direction:1|-1}>({key:'position',direction:1});useEffect(()=>{if(!supabase||!selected)return;void Promise.all([supabase.from('players').select('id,current_name,nationality,last_seen_date,is_active,player_snapshots(id,snapshot_date,age,club,squad,positions,contract_expiry,player_attributes(attribute_key,attribute_label,value,category))').eq('save_id',selected.id).order('current_name'),supabase.from('scoring_models').select('config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle()]).then(([p,m])=>{setPlayers((p.data??[])as unknown as PlayerRow[]);const config=m.data?.config as {general_weights?:Record<string,number>}|undefined;setWeights({...DEFAULT_ATTRIBUTE_WEIGHTS,...(config?.general_weights??{})})})},[selected?.id]);const rows=useMemo(()=>players.filter(p=>p.current_name.toLowerCase().includes(search.toLowerCase())).map(player=>{const latest=[...player.player_snapshots].sort((a,b)=>b.snapshot_date.localeCompare(a.snapshot_date))[0],score=latest?attributeScore(latest.player_attributes.map(a=>({key:a.attribute_key,value:a.value,weight:weights[a.attribute_key]??1}))):null;return{player,latest,score}}).sort((a,b)=>compareRows(a,b,sort.key)*sort.direction||a.player.current_name.localeCompare(b.player.current_name,'pt-BR')),[players,weights,search,sort]);function changeSort(key:SortKey){setSort(c=>({key,direction:c.key===key?c.direction===1?-1:1:1}))}return <><div className="title-row"><div><span className="eyebrow">ELENCO</span><h1>{selected?.club_name}</h1><p>{players.length} jogadores históricos</p></div><input className="search" placeholder="Buscar jogador" value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="table-wrap"><table><thead><tr><SortHeader label="Jogador" column="name" sort={sort} change={changeSort}/><SortHeader label="Equipe" column="team" sort={sort} change={changeSort}/><SortHeader label="Posições" column="position" sort={sort} change={changeSort}/><SortHeader label="Último snapshot" column="snapshot" sort={sort} change={changeSort}/><SortHeader label="Nota geral" column="score" sort={sort} change={changeSort}/></tr></thead><tbody>{rows.map(({player:p,latest:s,score})=><tr key={p.id} onClick={()=>setChosen(p)} className="clickable"><td><strong>{p.current_name}</strong><small>{p.nationality}</small></td><td>{s?.club||s?.squad||'—'}</td><td>{s?.positions?.join(', ')||'—'}</td><td>{s?.snapshot_date||'—'}</td><td><b>{score===null?'—':score.toFixed(1)}</b></td></tr>)}</tbody></table></div>{chosen&&<PlayerDrawer player={chosen} close={()=>setChosen(null)}/>}</>}
-function compareRows(a:Row,b:Row,key:SortKey){if(key==='position'){const ap=a.latest?.positions??[],bp=b.latest?.positions??[];return positionRank(ap)-positionRank(bp)||positionSideRank(ap)-positionSideRank(bp)}if(key==='score')return(a.score??-1)-(b.score??-1);const av=key==='name'?a.player.current_name:key==='team'?(a.latest?.club||a.latest?.squad||''):a.latest?.snapshot_date||'',bv=key==='name'?b.player.current_name:key==='team'?(b.latest?.club||b.latest?.squad||''):b.latest?.snapshot_date||'';return av.localeCompare(bv,'pt-BR')}
+import{useEffect,useMemo,useState}from'react'
+import{supabase}from'../lib/supabase'
+import{attributeScore}from'../lib/scoring'
+import{positionRank,positionSideRank}from'../lib/positions'
+import{DEFAULT_ATTRIBUTE_WEIGHTS}from'../lib/attributes'
+import{useSaves}from'../features/saves/SaveContext'
+import type{PlayerRow}from'../types/domain'
+
+type SortKey='status'|'name'|'age'|'nationality'|'value'|'team'|'position'|'score'
+type Snapshot=PlayerRow['player_snapshots'][number]
+type Row={player:PlayerRow;latest:Snapshot|undefined;score:number|null;status:string;marketValue:string|null}
+
+export function SquadPage(){
+  const{selected}=useSaves()
+  const[players,setPlayers]=useState<PlayerRow[]>([])
+  const[weights,setWeights]=useState<Record<string,number>>({...DEFAULT_ATTRIBUTE_WEIGHTS})
+  const[chosen,setChosen]=useState<PlayerRow|null>(null)
+  const[search,setSearch]=useState('')
+  const[sort,setSort]=useState<{key:SortKey;direction:1|-1}>({key:'position',direction:1})
+
+  useEffect(()=>{
+    if(!supabase||!selected)return
+    void Promise.all([
+      supabase.from('players').select('id,current_name,nationality,last_seen_date,is_active,player_snapshots(id,snapshot_date,age,club,squad,positions,contract_expiry,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))').eq('save_id',selected.id).order('current_name'),
+      supabase.from('scoring_models').select('config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle()
+    ]).then(([p,m])=>{
+      setPlayers((p.data??[])as unknown as PlayerRow[])
+      const config=m.data?.config as {general_weights?:Record<string,number>}|undefined
+      setWeights({...DEFAULT_ATTRIBUTE_WEIGHTS,...(config?.general_weights??{})})
+    })
+  },[selected?.id])
+
+  const rows=useMemo(()=>players.filter(p=>p.current_name.toLowerCase().includes(search.toLowerCase())).map(player=>{
+    const latest=[...player.player_snapshots].sort((a,b)=>b.snapshot_date.localeCompare(a.snapshot_date))[0]
+    const score=latest?attributeScore(latest.player_attributes.map(a=>({key:a.attribute_key,value:a.value,weight:weights[a.attribute_key]??1}))):null
+    return{player,latest,score,status:'Não selecionado',marketValue:latest?extractMarketValue(latest):null}
+  }).sort((a,b)=>compareRows(a,b,sort.key)*sort.direction||a.player.current_name.localeCompare(b.player.current_name,'pt-BR')),[players,weights,search,sort])
+
+  function changeSort(key:SortKey){setSort(c=>({key,direction:c.key===key?c.direction===1?-1:1:key==='score'||key==='value'?-1:1}))}
+
+  return <>
+    <div className="title-row"><div><span className="eyebrow">ELENCO</span><h1>{selected?.club_name}</h1><p>{players.length} jogadores históricos</p></div><input className="search" placeholder="Buscar jogador" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+    <div className="table-wrap squad-table"><table><thead><tr><SortHeader label="Status" column="status" sort={sort} change={changeSort}/><SortHeader label="Nome" column="name" sort={sort} change={changeSort}/><SortHeader label="Idade" column="age" sort={sort} change={changeSort}/><SortHeader label="Nacionalidade" column="nationality" sort={sort} change={changeSort}/><SortHeader label="Valor" column="value" sort={sort} change={changeSort}/><SortHeader label="Equipe" column="team" sort={sort} change={changeSort}/><SortHeader label="Posições" column="position" sort={sort} change={changeSort}/><SortHeader label="Nota geral" column="score" sort={sort} change={changeSort}/></tr></thead><tbody>{rows.map(({player:p,latest:s,score,status,marketValue})=><tr key={p.id} onClick={()=>setChosen(p)} className="clickable"><td><span className="planning-status empty">{status}</span></td><td><strong>{p.current_name}</strong></td><td>{s?.age??'—'}</td><td>{p.nationality||'—'}</td><td>{marketValue||'—'}</td><td>{s?.club||s?.squad||'—'}</td><td>{s?.positions?.join(', ')||'—'}</td><td><b>{score===null?'—':score.toFixed(1)}</b></td></tr>)}</tbody></table></div>
+    {chosen&&<PlayerDrawer player={chosen} close={()=>setChosen(null)}/>}</>
+}
+
+function extractMarketValue(snapshot:Snapshot){
+  const normalized=snapshot.normalized_data??{}
+  for(const key of ['value','transfer_value','market_value','valor'])if(normalized[key]!=null&&String(normalized[key]).trim())return String(normalized[key])
+  for(const[key,value]of Object.entries(snapshot.raw_data??{})){const normalizedKey=key.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_');if(['value','transfer_value','market_value','valor'].includes(normalizedKey)&&String(value).trim())return String(value)}
+  return null
+}
+
+function numericMarketValue(raw:string|null){
+  if(!raw)return-1
+  const first=raw.split(/\s*[-–]\s*/)[0],match=first.replace(/\s/g,'').match(/([\d.,]+)\s*([KMB])?/i)
+  if(!match)return-1
+  const number=Number(match[1].replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.'))
+  return number*({K:1e3,M:1e6,B:1e9}[match[2]?.toUpperCase() as 'K'|'M'|'B']??1)
+}
+
+function compareRows(a:Row,b:Row,key:SortKey){
+  if(key==='position'){const ap=a.latest?.positions??[],bp=b.latest?.positions??[];return positionRank(ap)-positionRank(bp)||positionSideRank(ap)-positionSideRank(bp)}
+  if(key==='score')return(a.score??-1)-(b.score??-1)
+  if(key==='value')return numericMarketValue(a.marketValue)-numericMarketValue(b.marketValue)
+  if(key==='age')return(a.latest?.age??999)-(b.latest?.age??999)
+  const av=key==='status'?a.status:key==='name'?a.player.current_name:key==='nationality'?a.player.nationality??'':a.latest?.club||a.latest?.squad||''
+  const bv=key==='status'?b.status:key==='name'?b.player.current_name:key==='nationality'?b.player.nationality??'':b.latest?.club||b.latest?.squad||''
+  return av.localeCompare(bv,'pt-BR')
+}
+
 function SortHeader({label,column,sort,change}:{label:string;column:SortKey;sort:{key:SortKey;direction:1|-1};change:(key:SortKey)=>void}){return <th><button className="sort-button" onClick={()=>change(column)}>{label}<span>{sort.key===column?(sort.direction===1?'▲':'▼'):'↕'}</span></button></th>}
-function PlayerDrawer({player,close}:{player:PlayerRow;close:()=>void}){const snaps=[...player.player_snapshots].sort((a,b)=>b.snapshot_date.localeCompare(a.snapshot_date));return <div className="overlay" onClick={close}><article className="drawer" onClick={e=>e.stopPropagation()}><button className="close" onClick={close}>×</button><span className="eyebrow">FICHA HISTÓRICA</span><h1>{player.current_name}</h1>{snaps.map((s,index)=>{const prev=snaps[index+1];return <section className="snapshot" key={s.id}><h3>{s.snapshot_date} · {s.club||s.squad||'Sem equipe'}</h3><div className="attribute-grid">{s.player_attributes.sort((a,b)=>b.value-a.value).map(a=>{const old=prev?.player_attributes.find(x=>x.attribute_key===a.attribute_key)?.value,delta=old===undefined?null:a.value-old;return <div key={a.attribute_key}><span>{a.attribute_label}</span><b>{a.value}</b>{delta!==null&&<small className={delta>0?'up':delta<0?'down':''}>{delta>0?'+':''}{delta}</small>}</div>})}</div></section>})}{!snaps.length&&<p>Jogador sem snapshot de atributos.</p>}</article></div>}
+
+function PlayerDrawer({player,close}:{player:PlayerRow;close:()=>void}){
+  const snaps=[...player.player_snapshots].sort((a,b)=>b.snapshot_date.localeCompare(a.snapshot_date))
+  return <div className="overlay" onClick={close}><article className="drawer" onClick={e=>e.stopPropagation()}><button className="close" onClick={close}>×</button><span className="eyebrow">FICHA HISTÓRICA</span><h1>{player.current_name}</h1>{snaps.map((s,index)=>{const prev=snaps[index+1];return <section className="snapshot" key={s.id}><h3>{s.snapshot_date} · {s.club||s.squad||'Sem equipe'}</h3><div className="attribute-grid">{s.player_attributes.sort((a,b)=>b.value-a.value).map(a=>{const old=prev?.player_attributes.find(x=>x.attribute_key===a.attribute_key)?.value,delta=old===undefined?null:a.value-old;return <div key={a.attribute_key}><span>{a.attribute_label}</span><b>{a.value}</b>{delta!==null&&<small className={delta>0?'up':delta<0?'down':''}>{delta>0?'+':''}{delta}</small>}</div>})}</div></section>})}{!snaps.length&&<p>Jogador sem snapshot de atributos.</p>}</article></div>
+}
