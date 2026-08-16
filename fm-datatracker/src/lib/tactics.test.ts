@@ -1,0 +1,1 @@
+import{describe,expect,it}from'vitest';import{positionGroup,rolesFor}from'./tactics';describe('editor tático',()=>{it('oferece funções compatíveis com a posição',()=>{expect(positionGroup('D (C)')).toBe('D');expect(rolesFor('GK')[0][0]).toBe('GK');expect(rolesFor('AM (L)').some(r=>r[0]==='IF')).toBe(true)})})
