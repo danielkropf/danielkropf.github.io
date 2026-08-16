@@ -33,6 +33,16 @@ function laneLabel(nodeId:string){
   return x<40?'Esquerda':x>60?'Direita':'Centro'
 }
 
+function lineClass(position:string){
+  const group=positionGroup(position)
+  if(group==='GK')return'gk'
+  if(group==='FB'||group==='CB')return'd'
+  if(group==='WB'||group==='DM')return'dm'
+  if(group==='WM'||group==='CM')return'm'
+  if(group==='W'||group==='AM')return'am'
+  return'st'
+}
+
 function normalizeAssignments(raw:Assignment[]|undefined,phase:TacticPhase){
   const source=raw?.length?raw:assignmentsFor('4-3-3',phase)
   return source.map((a,index)=>{
@@ -155,11 +165,12 @@ export function TacticsPage(){
     setDragging(null)
   }
 
-  const orderedAssignments=[...assignments].sort((a,b)=>{
+  const naturalSort=(a:Assignment,b:Assignment)=>{
     const an=PITCH_NODES.find(n=>n.id===a.nodeId)!,bn=PITCH_NODES.find(n=>n.id===b.nodeId)!
     const rank:Record<string,number>={GK:0,FB:1,CB:1,WB:2,DM:2,WM:3,CM:3,W:4,AM:4,ST:5}
     return rank[positionGroup(a.position)]-rank[positionGroup(b.position)]||bn.x-an.x
-  })
+  }
+  const pairedRows=tactic?[...tactic.ipAssignments].sort(naturalSort).map(ip=>({ip,oop:tactic.oopAssignments.find(a=>a.playerId===ip.playerId)!})):[]
 
   return <div className="tactics-page">
     <div className="title-row"><div><span className="eyebrow">ESTRUTURA DO TIME · FM26</span><h1>Táticas</h1><p>Configure separadamente as posições e funções com e sem a bola.</p></div><span className="save-state">{status}</span></div>
@@ -168,14 +179,14 @@ export function TacticsPage(){
       <section className={`football-pitch ${!tactic?'pitch-empty':''}`} onDragOver={e=>e.preventDefault()} onDrop={drop}>
         <div className="phase-switch field-phase-switch" aria-label="Fase da tática"><button className={phase==='IP'?'active':''} onClick={()=>setPhase('IP')}>IP</button><button className={phase==='OOP'?'active':''} onClick={()=>setPhase('OOP')}>OOP</button></div>
         {PITCH_NODES.map(n=><i className="position-target" style={{left:`${n.x}%`,top:`${n.y}%`}} key={n.id}/>)}
-        {assignments.map((a,index)=>{const node=PITCH_NODES.find(n=>n.id===a.nodeId)!;return <div className={`pitch-player ${dragging===index?'dragging':''}`} style={{left:`${node.x}%`,top:`${node.y}%`}} key={a.playerId}><button className="role-ball" draggable={a.nodeId!=='gk'} onDragStart={()=>setDragging(index)} title={a.nodeId==='gk'?'Goleiro fixo':'Arraste para outra posição'}><span>{a.roleCode}</span></button><button className="player-edit" onClick={()=>setEditPlayerId(a.playerId)} aria-label={`Editar ${a.position}`} title="Editar função">✎</button><small>{a.position}</small></div>})}
+        {assignments.map((a,index)=>{const node=PITCH_NODES.find(n=>n.id===a.nodeId)!;return <div className={`pitch-player ${dragging===index?'dragging':''}`} style={{left:`${node.x}%`,top:`${node.y}%`}} key={a.playerId}><button className={`role-ball line-${lineClass(a.position)}`} draggable={a.nodeId!=='gk'} onDragStart={()=>setDragging(index)} title={a.nodeId==='gk'?'Goleiro fixo':'Arraste para outra posição'}><span>{a.roleCode}</span></button><button className="player-edit" onClick={()=>setEditPlayerId(a.playerId)} aria-label={`Editar ${a.position}`} title="Editar função">✎</button><small>{a.position}</small></div>})}
         {!tactic&&<div className="empty-pitch-action"><h2>Comece pela sua primeira tática</h2><button onClick={()=>setCreateOpen(true)}>Criar nova tática</button></div>}
       </section>
-      <aside className="card role-summary"><div><span className="eyebrow">{phase}</span><h2>Funções</h2></div>{orderedAssignments.map((a,index)=><button onClick={()=>setEditPlayerId(a.playerId)} key={a.playerId}><span className="role-order">{index+1}</span><span><b>{a.roleCode}</b><small>{a.roleName}</small></span><em>{a.position}</em></button>)}{!tactic&&<p>Crie uma tática para configurar as funções.</p>}</aside>
+      <aside className="card role-summary"><div className="role-table-title"><h2>Estrutura dos jogadores</h2><small>IP e OOP vinculados</small></div><div className="role-table-head"><span>Posição IP</span><span>Função IP</span><span>Posição OOP</span><span>Função OOP</span><span></span></div>{pairedRows.map(({ip,oop})=><div className="role-pair-row" key={ip.playerId}><span className={`position-chip line-${lineClass(ip.position)}`}>{ip.position}</span><span><b>{ip.roleCode}</b><small>{ip.roleName}</small></span><span className={`position-chip line-${lineClass(oop.position)}`}>{oop.position}</span><span><b>{oop.roleCode}</b><small>{oop.roleName}</small></span><button onClick={()=>setEditPlayerId(ip.playerId)} aria-label={`Editar ${ip.position} e ${oop.position}`} title="Editar vínculo e função">✎</button></div>)}{!tactic&&<p>Crie uma tática para configurar as funções.</p>}</aside>
     </div>
 
     {createOpen&&<div className="settings-overlay" onClick={()=>setCreateOpen(false)}><section className="tactic-modal" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOVA ESTRUTURA</span><h2>Criar tática</h2></div><button className="close" onClick={()=>setCreateOpen(false)}>×</button></header><label>Nome da tática<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: 4-3-3 Posicional"/></label><div className="formation-grid"><label>Formação In Possession<select value={ipFormation} onChange={e=>setIpFormation(e.target.value)}>{Object.keys(FORMATIONS).map(f=><option key={f}>{f}</option>)}</select></label><label>Formação Out of Possession<select value={oopFormation} onChange={e=>setOopFormation(e.target.value)}>{Object.keys(FORMATIONS).map(f=><option key={f}>{f}</option>)}</select></label></div><footer><button className="ghost" onClick={()=>setCreateOpen(false)}>Cancelar</button><button onClick={create} disabled={!name.trim()}>Criar tática</button></footer></section></div>}
 
-    {editing&&<div className="settings-overlay" onClick={()=>setEditPlayerId(null)}><section className="tactic-modal role-modal" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">{phase} · {editing.position}</span><h2>Editar jogador</h2></div><button className="close" onClick={()=>setEditPlayerId(null)}>×</button></header><div className="role-editor-layout"><div><h3>Função em {phase}</h3><div className="role-options">{rolesFor(editing.position,phase).map(([code,label])=><button className={editing.roleCode===code?'active':''} onClick={()=>changeRole(code)} key={code}><b>{code}</b><span>{label}</span></button>)}</div></div><div><h3>Posição vinculada em {phase==='IP'?'OOP':'IP'}</h3><div className="mini-link-pitch">{PITCH_NODES.map(n=><i className="position-target" style={{left:`${n.x}%`,top:`${n.y}%`}} key={n.id}/>)}{otherAssignments.map(a=>{const node=PITCH_NODES.find(n=>n.id===a.nodeId)!;return <button className={`mini-player ${linkedOther?.nodeId===a.nodeId?'linked':''}`} style={{left:`${node.x}%`,top:`${node.y}%`}} onClick={()=>relinkOther(a.nodeId)} title={`${a.position} · ${laneLabel(a.nodeId)}`} key={a.nodeId}>{a.roleCode}</button>})}</div><p className="modal-hint">A posição realçada representa este mesmo jogador na outra formação.</p></div></div><footer><button onClick={()=>setEditPlayerId(null)}>Concluir</button></footer></section></div>}
+    {editing&&<div className="settings-overlay" onClick={()=>setEditPlayerId(null)}><section className="tactic-modal role-modal" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">{phase} · {editing.position}</span><h2>Editar jogador</h2></div><button className="close" onClick={()=>setEditPlayerId(null)}>×</button></header><div className="role-editor-layout"><div><h3>Função em {phase}</h3><div className="role-options">{rolesFor(editing.position,phase).map(([code,label])=><button className={editing.roleCode===code?'active':''} onClick={()=>changeRole(code)} key={code}><b>{code}</b><span>{label}</span></button>)}</div></div><div><h3>Posição vinculada em {phase==='IP'?'OOP':'IP'}</h3><div className="mini-link-pitch">{PITCH_NODES.map(n=><i className="position-target" style={{left:`${n.x}%`,top:`${n.y}%`}} key={n.id}/>)}{otherAssignments.map(a=>{const node=PITCH_NODES.find(n=>n.id===a.nodeId)!;return <button className={`mini-player line-${lineClass(a.position)} ${linkedOther?.nodeId===a.nodeId?'linked':''}`} style={{left:`${node.x}%`,top:`${node.y}%`}} onClick={()=>relinkOther(a.nodeId)} title={`${a.position} · ${laneLabel(a.nodeId)}`} key={a.nodeId}>{a.roleCode}</button>})}</div><p className="modal-hint">A posição realçada representa este mesmo jogador na outra formação.</p></div></div><footer><button onClick={()=>setEditPlayerId(null)}>Concluir</button></footer></section></div>}
   </div>
 }
