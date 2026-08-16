@@ -143,13 +143,20 @@ export function TacticsPage(){
 
   function changeRole(roleCode:string){
     if(!tactic||!editing)return
-    const option=rolesFor(editing.position,phase).find(r=>r[0]===roleCode)!
-    const roleId=`${phase}-${positionGroup(editing.position)}-${option[0]}`
-    const key=phase==='IP'?'ipAssignments':'oopAssignments'
+    changeAssignmentRole(editing.playerId,phase,roleCode)
+  }
+
+  function changeAssignmentRole(slotId:string,targetPhase:TacticPhase,roleCode:string){
+    if(!tactic)return
+    const key=targetPhase==='IP'?'ipAssignments':'oopAssignments'
+    const assignment=tactic[key].find(a=>a.playerId===slotId)
+    if(!assignment)return
+    const option=rolesFor(assignment.position,targetPhase).find(r=>r[0]===roleCode)!
+    const roleId=`${targetPhase}-${positionGroup(assignment.position)}-${option[0]}`
     setConfig(c=>({...c,tactics:c.tactics.map(t=>{
       if(t.id!==tactic.id)return t
       const roles=t.roles.some(r=>r.id===roleId)?t.roles:[...t.roles,{id:roleId,name:option[1],weights:{...DEFAULT_ATTRIBUTE_WEIGHTS}}]
-      return{...t,roles,[key]:t[key].map(a=>a.playerId===editing.playerId?{...a,roleId,roleCode:option[0],roleName:option[1]}:a)}
+      return{...t,roles,[key]:t[key].map(a=>a.playerId===slotId?{...a,roleId,roleCode:option[0],roleName:option[1]}:a)}
     })}))
   }
 
@@ -213,7 +220,7 @@ export function TacticsPage(){
         {assignments.map((a,index)=>{const node=PITCH_NODES.find(n=>n.id===a.nodeId)!;return <div className={`pitch-player ${dragging===index?'dragging':''}`} style={{left:`${node.x}%`,top:`${node.y}%`}} key={a.playerId}><button className={`role-ball line-${lineClass(a.position)}`} draggable={a.nodeId!=='gk'} onDragStart={()=>setDragging(index)} title={a.nodeId==='gk'?'Goleiro fixo':'Arraste para outra posição'}><span>{a.roleCode}</span></button><button className="player-edit" onClick={()=>setEditPlayerId(a.playerId)} aria-label={`Editar ${a.position}`} title="Editar função">✎</button><small>{a.position}</small></div>})}
         {!tactic&&<div className="empty-pitch-action"><h2>Comece pela sua primeira tática</h2><button onClick={()=>setCreateOpen(true)}>Criar nova tática</button></div>}
       </section>
-      <aside className={`card role-summary ${tactic?'has-tactic':''}`}>{pairedRows.map(({ip,oop})=><div className="role-pair-row" key={ip.playerId}><div className={`role-box line-${lineClass(ip.position)}`}><b>{ip.position}</b><span>{ip.roleCode}</span><small>{ip.roleName}</small></div><div className={`role-box line-${lineClass(oop.position)}`}><b>{oop.position}</b><span>{oop.roleCode}</span><small>{oop.roleName}</small></div><select className="player-picker" value={tactic?.lineup[ip.playerId]??''} onChange={e=>selectPlayer(ip.playerId,e.target.value)}><option value="">Selecionar jogador · import mais recente</option>{rankedCandidates(ip,oop).map(({candidate,score})=><option value={candidate.id} disabled={Object.entries(tactic!.lineup).some(([slot,id])=>slot!==ip.playerId&&id===candidate.id)} key={candidate.id}>{candidate.name} · {score===null?'sem nota':score.toFixed(1)} · {candidate.positions.join(', ')||'sem posição'}</option>)}</select><button onClick={()=>setEditPlayerId(ip.playerId)} aria-label={`Editar ${ip.position} e ${oop.position}`} title="Editar vínculo e função">✎</button></div>)}{!tactic&&<p>Crie uma tática para configurar as funções.</p>}</aside>
+      <aside className={`card role-summary ${tactic?'has-tactic':''}`}>{tactic&&<div className="role-pair-head"><span>In Possession</span><span>Out of Possession</span><span>Jogador · ordenado pela nota das funções</span><span></span></div>}{pairedRows.map(({ip,oop})=><div className="role-pair-row" key={ip.playerId}><div className={`role-box line-${lineClass(ip.position)}`}><b>{ip.position}</b><label className="role-inline-picker"><span>{ip.roleCode}</span><small>{ip.roleName}</small><select aria-label={`Função IP de ${ip.position}`} value={ip.roleCode} onChange={e=>changeAssignmentRole(ip.playerId,'IP',e.target.value)}>{rolesFor(ip.position,'IP').map(([code,label])=><option value={code} key={code}>{code} · {label}</option>)}</select></label></div><div className={`role-box line-${lineClass(oop.position)}`}><b>{oop.position}</b><label className="role-inline-picker"><span>{oop.roleCode}</span><small>{oop.roleName}</small><select aria-label={`Função OOP de ${oop.position}`} value={oop.roleCode} onChange={e=>changeAssignmentRole(oop.playerId,'OOP',e.target.value)}>{rolesFor(oop.position,'OOP').map(([code,label])=><option value={code} key={code}>{code} · {label}</option>)}</select></label></div><select className="player-picker" value={tactic?.lineup[ip.playerId]??''} onChange={e=>selectPlayer(ip.playerId,e.target.value)}><option value="">Selecionar jogador · import mais recente</option>{rankedCandidates(ip,oop).map(({candidate,score})=><option value={candidate.id} disabled={Object.entries(tactic!.lineup).some(([slot,id])=>slot!==ip.playerId&&id===candidate.id)} key={candidate.id}>{candidate.name} · {score===null?'sem nota':score.toFixed(1)} · {candidate.positions.join(', ')||'sem posição'}</option>)}</select><button onClick={()=>setEditPlayerId(ip.playerId)} aria-label={`Editar ${ip.position} e ${oop.position}`} title="Editar vínculo e função">✎</button></div>)}{!tactic&&<p>Crie uma tática para configurar as funções.</p>}</aside>
     </div>
 
     {createOpen&&<div className="settings-overlay" onClick={()=>setCreateOpen(false)}><section className="tactic-modal" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOVA ESTRUTURA</span><h2>Criar tática</h2></div><button className="close" onClick={()=>setCreateOpen(false)}>×</button></header><label>Nome da tática<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: 4-3-3 Posicional"/></label><div className="formation-grid"><label>Formação In Possession<select value={ipFormation} onChange={e=>setIpFormation(e.target.value)}>{Object.keys(FORMATIONS).map(f=><option key={f}>{f}</option>)}</select></label><label>Formação Out of Possession<select value={oopFormation} onChange={e=>setOopFormation(e.target.value)}>{Object.keys(FORMATIONS).map(f=><option key={f}>{f}</option>)}</select></label></div><footer><button className="ghost" onClick={()=>setCreateOpen(false)}>Cancelar</button><button onClick={create} disabled={!name.trim()}>Criar tática</button></footer></section></div>}
