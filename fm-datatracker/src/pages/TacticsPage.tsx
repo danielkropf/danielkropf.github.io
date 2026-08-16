@@ -1,13 +1,15 @@
 import{useEffect,useRef,useState,type DragEvent}from'react'
 import{supabase}from'../lib/supabase'
 import{DEFAULT_ATTRIBUTE_WEIGHTS}from'../lib/attributes'
+import{attributeScore}from'../lib/scoring'
 import{PITCH_NODES,positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{useSaves}from'../features/saves/SaveContext'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Assignment={playerId:string;nodeId:string;position:string;roleId:string;roleCode:string;roleName:string}
-type Tactic={id:string;name:string;roles:Role[];assignments?:Assignment[];ipAssignments:Assignment[];oopAssignments:Assignment[]}
+type Tactic={id:string;name:string;roles:Role[];assignments?:Assignment[];ipAssignments:Assignment[];oopAssignments:Assignment[];lineup:Record<string,string|null>}
 type Config={general_weights:Record<string,number>;tactics:Tactic[];selected_tactic_id:string|null;selected_role_id:string|null}
+type Candidate={id:string;name:string;positions:string[];attributes:Array<{key:string;value:number}>}
 
 const FORMATIONS:Record<string,string[]>={
   '4-3-3':['gk','dl','dcl','dcr','dr','dmc','mcl','mcr','aml','amr','stc'],
@@ -61,7 +63,7 @@ function normalizeTactic(t:Partial<Tactic>&Pick<Tactic,'id'|'name'>):Tactic{
     if(existing)existing.name=a.roleName
     else roles.push({id:a.roleId,name:a.roleName,weights:{...DEFAULT_ATTRIBUTE_WEIGHTS}})
   }
-  return{id:t.id,name:t.name,roles,ipAssignments,oopAssignments}
+  return{id:t.id,name:t.name,roles,ipAssignments,oopAssignments,lineup:t.lineup??{}}
 }
 
 export function TacticsPage(){
@@ -76,6 +78,7 @@ export function TacticsPage(){
   const[name,setName]=useState('')
   const[ipFormation,setIpFormation]=useState('4-3-3')
   const[oopFormation,setOopFormation]=useState('4-3-3')
+  const[candidates,setCandidates]=useState<Candidate[]>([])
   const loaded=useRef(false)
 
   useEffect(()=>{
@@ -86,6 +89,16 @@ export function TacticsPage(){
       else{setModelId(null);setConfig(fresh())}
       loaded.current=true
       setStatus('Salvo automaticamente')
+    })
+  },[selected?.id])
+
+  useEffect(()=>{
+    if(!supabase||!selected){setCandidates([]);return}
+    void supabase.from('imports').select('id').eq('save_id',selected.id).eq('status','imported').in('file_type',['squad','intake']).order('created_at',{ascending:false}).limit(1).maybeSingle().then(async({data})=>{
+      if(!data){setCandidates([]);return}
+      const result=await supabase!.from('player_snapshots').select('player_id,positions,players!inner(id,current_name),player_attributes(attribute_key,value)').eq('save_id',selected.id).eq('import_id',data.id)
+      const rows=(result.data??[])as unknown as Array<{player_id:string;positions:string[];players:{id:string;current_name:string};player_attributes:Array<{attribute_key:string;value:number}>}>
+      setCandidates(rows.map(row=>({id:row.player_id,name:row.players.current_name,positions:row.positions??[],attributes:row.player_attributes.map(a=>({key:a.attribute_key,value:a.value}))})))
     })
   },[selected?.id])
 
@@ -150,6 +163,24 @@ export function TacticsPage(){
     })
   }
 
+  function selectPlayer(slotId:string,playerId:string){
+    if(!tactic)return
+    setConfig(c=>({...c,tactics:c.tactics.map(t=>t.id===tactic.id?{...t,lineup:{...t.lineup,[slotId]:playerId||null}}:t)}))
+  }
+
+  function scoreFor(candidate:Candidate,ip:Assignment,oop:Assignment){
+    if(!tactic)return null
+    const scores=[ip,oop].map(a=>{
+      const weights=tactic.roles.find(r=>r.id===a.roleId)?.weights??DEFAULT_ATTRIBUTE_WEIGHTS
+      return attributeScore(candidate.attributes.map(attribute=>({key:attribute.key,value:attribute.value,weight:weights[attribute.key]??3})))
+    }).filter((score):score is number=>score!==null)
+    return scores.length?scores.reduce((sum,score)=>sum+score,0)/scores.length:null
+  }
+
+  function rankedCandidates(ip:Assignment,oop:Assignment){
+    return candidates.map(candidate=>({candidate,score:scoreFor(candidate,ip,oop)})).sort((a,b)=>(b.score??-1)-(a.score??-1)||a.candidate.name.localeCompare(b.candidate.name,'pt-BR'))
+  }
+
   function drop(event:DragEvent<HTMLElement>){
     event.preventDefault()
     if(!tactic||dragging===null||assignments[dragging].nodeId==='gk')return
@@ -182,7 +213,7 @@ export function TacticsPage(){
         {assignments.map((a,index)=>{const node=PITCH_NODES.find(n=>n.id===a.nodeId)!;return <div className={`pitch-player ${dragging===index?'dragging':''}`} style={{left:`${node.x}%`,top:`${node.y}%`}} key={a.playerId}><button className={`role-ball line-${lineClass(a.position)}`} draggable={a.nodeId!=='gk'} onDragStart={()=>setDragging(index)} title={a.nodeId==='gk'?'Goleiro fixo':'Arraste para outra posição'}><span>{a.roleCode}</span></button><button className="player-edit" onClick={()=>setEditPlayerId(a.playerId)} aria-label={`Editar ${a.position}`} title="Editar função">✎</button><small>{a.position}</small></div>})}
         {!tactic&&<div className="empty-pitch-action"><h2>Comece pela sua primeira tática</h2><button onClick={()=>setCreateOpen(true)}>Criar nova tática</button></div>}
       </section>
-      <aside className="card role-summary"><div className="role-table-title"><h2>Estrutura dos jogadores</h2><small>IP e OOP vinculados</small></div><div className="role-table-head"><span>Posição IP</span><span>Função IP</span><span>Posição OOP</span><span>Função OOP</span><span></span></div>{pairedRows.map(({ip,oop})=><div className="role-pair-row" key={ip.playerId}><span className={`position-chip line-${lineClass(ip.position)}`}>{ip.position}</span><span><b>{ip.roleCode}</b><small>{ip.roleName}</small></span><span className={`position-chip line-${lineClass(oop.position)}`}>{oop.position}</span><span><b>{oop.roleCode}</b><small>{oop.roleName}</small></span><button onClick={()=>setEditPlayerId(ip.playerId)} aria-label={`Editar ${ip.position} e ${oop.position}`} title="Editar vínculo e função">✎</button></div>)}{!tactic&&<p>Crie uma tática para configurar as funções.</p>}</aside>
+      <aside className={`card role-summary ${tactic?'has-tactic':''}`}>{pairedRows.map(({ip,oop})=><div className="role-pair-row" key={ip.playerId}><div className={`role-box line-${lineClass(ip.position)}`}><b>{ip.position}</b><span>{ip.roleCode}</span><small>{ip.roleName}</small></div><div className={`role-box line-${lineClass(oop.position)}`}><b>{oop.position}</b><span>{oop.roleCode}</span><small>{oop.roleName}</small></div><select className="player-picker" value={tactic?.lineup[ip.playerId]??''} onChange={e=>selectPlayer(ip.playerId,e.target.value)}><option value="">Selecionar jogador · import mais recente</option>{rankedCandidates(ip,oop).map(({candidate,score})=><option value={candidate.id} disabled={Object.entries(tactic!.lineup).some(([slot,id])=>slot!==ip.playerId&&id===candidate.id)} key={candidate.id}>{candidate.name} · {score===null?'sem nota':score.toFixed(1)} · {candidate.positions.join(', ')||'sem posição'}</option>)}</select><button onClick={()=>setEditPlayerId(ip.playerId)} aria-label={`Editar ${ip.position} e ${oop.position}`} title="Editar vínculo e função">✎</button></div>)}{!tactic&&<p>Crie uma tática para configurar as funções.</p>}</aside>
     </div>
 
     {createOpen&&<div className="settings-overlay" onClick={()=>setCreateOpen(false)}><section className="tactic-modal" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOVA ESTRUTURA</span><h2>Criar tática</h2></div><button className="close" onClick={()=>setCreateOpen(false)}>×</button></header><label>Nome da tática<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: 4-3-3 Posicional"/></label><div className="formation-grid"><label>Formação In Possession<select value={ipFormation} onChange={e=>setIpFormation(e.target.value)}>{Object.keys(FORMATIONS).map(f=><option key={f}>{f}</option>)}</select></label><label>Formação Out of Possession<select value={oopFormation} onChange={e=>setOopFormation(e.target.value)}>{Object.keys(FORMATIONS).map(f=><option key={f}>{f}</option>)}</select></label></div><footer><button className="ghost" onClick={()=>setCreateOpen(false)}>Cancelar</button><button onClick={create} disabled={!name.trim()}>Criar tática</button></footer></section></div>}
