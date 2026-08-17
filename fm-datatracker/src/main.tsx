@@ -9,6 +9,7 @@ import './planning-interactions.css'
 import './planning-v2.css'
 import './planning-three-slots.css'
 import './planning-single-squad.css'
+import './planning-polish.css'
 import{applyAppearance,loadAppearance}from'./pages/AppearanceSettings'
 applyAppearance(loadAppearance())
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
