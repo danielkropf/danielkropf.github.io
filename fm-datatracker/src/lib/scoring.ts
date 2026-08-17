@@ -1,10 +1,11 @@
 export type WeightedAttribute = { key: string; value: number | null; weight: number }
 export const normalizeAttribute = (value: number) => ((value - 1) / 19) * 100
+export const effectiveWeight=(displayWeight:number)=>({1:0,2:1,3:2,4:4,5:6}[displayWeight]??0)
 export function attributeScore(attributes: WeightedAttribute[]): number | null {
-  const usable = attributes.filter((a): a is WeightedAttribute & { value: number } => a.value !== null && a.weight > 0)
-  const weights = usable.reduce((sum, a) => sum + a.weight, 0)
+  const usable = attributes.filter((a): a is WeightedAttribute & { value: number } => a.value !== null && effectiveWeight(a.weight) > 0)
+  const weights = usable.reduce((sum, a) => sum + effectiveWeight(a.weight), 0)
   if (!weights) return null
-  return usable.reduce((sum, a) => sum + normalizeAttribute(a.value) * a.weight, 0) / weights
+  return usable.reduce((sum, a) => sum + normalizeAttribute(a.value) * effectiveWeight(a.weight), 0) / weights
 }
 export const performanceConfidence = (minutes: number, targetMinutes = 1800) => Math.min(1, Math.sqrt(Math.max(0, minutes) / targetMinutes))
 export function currentScore(attribute: number, performance: number | null, minutes: number, maxPerformanceWeight = 0.35) {

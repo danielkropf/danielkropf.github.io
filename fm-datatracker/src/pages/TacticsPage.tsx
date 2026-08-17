@@ -2,6 +2,7 @@ import{useEffect,useRef,useState,type DragEvent}from'react'
 import{supabase}from'../lib/supabase'
 import{DEFAULT_ATTRIBUTE_WEIGHTS}from'../lib/attributes'
 import{attributeScore}from'../lib/scoring'
+import{roleDefaultWeights,usesLegacyRoleDefaults}from'../lib/roleWeights'
 import{PITCH_NODES,positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{useSaves}from'../features/saves/SaveContext'
 
@@ -61,8 +62,8 @@ function normalizeTactic(t:Partial<Tactic>&Pick<Tactic,'id'|'name'>):Tactic{
   const roles=[...(t.roles??[])]
   for(const a of [...ipAssignments,...oopAssignments]){
     const existing=roles.find(r=>r.id===a.roleId)
-    if(existing)existing.name=a.roleName
-    else roles.push({id:a.roleId,name:a.roleName,weights:{...DEFAULT_ATTRIBUTE_WEIGHTS}})
+    if(existing){existing.name=a.roleName;if(usesLegacyRoleDefaults(existing.weights))existing.weights=roleDefaultWeights(a.roleId,a.roleName)}
+    else roles.push({id:a.roleId,name:a.roleName,weights:roleDefaultWeights(a.roleId,a.roleName)})
   }
   return{id:t.id,name:t.name,roles,ipAssignments,oopAssignments,lineup:t.lineup??{}}
 }
@@ -112,7 +113,7 @@ export function TacticsPage(){
     setStatus('Salvando…')
     const timer=setTimeout(async()=>{
       const{data:{user}}=await supabase!.auth.getUser()
-      const payload={owner_id:user!.id,save_id:selected.id,name:'Model Lab',version:'2.1.0',config,is_active:true}
+      const payload={owner_id:user!.id,save_id:selected.id,name:'Model Lab',version:'2.2.0',config,is_active:true}
       const result=modelId?await supabase!.from('scoring_models').update(payload).eq('id',modelId).select('id').single():await supabase!.from('scoring_models').insert(payload).select('id').single()
       if(result.data?.id)setModelId(result.data.id)
       setStatus(result.error?`Erro: ${result.error.message}`:'Salvo automaticamente')
@@ -160,7 +161,7 @@ export function TacticsPage(){
     const roleId=`${targetPhase}-${positionGroup(assignment.position)}-${option[0]}`
     setConfig(c=>({...c,tactics:c.tactics.map(t=>{
       if(t.id!==tactic.id)return t
-      const roles=t.roles.some(r=>r.id===roleId)?t.roles:[...t.roles,{id:roleId,name:option[1],weights:{...DEFAULT_ATTRIBUTE_WEIGHTS}}]
+      const roles=t.roles.some(r=>r.id===roleId)?t.roles:[...t.roles,{id:roleId,name:option[1],weights:roleDefaultWeights(roleId,option[1])}]
       return{...t,roles,[key]:t[key].map(a=>a.playerId===slotId?{...a,roleId,roleCode:option[0],roleName:option[1]}:a)}
     })}))
   }
@@ -238,4 +239,3 @@ export function TacticsPage(){
     {editing&&<div className="settings-overlay" onClick={()=>setEditPlayerId(null)}><section className="tactic-modal role-modal" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">{phase} · {editing.position}</span><h2>Editar jogador</h2></div><button className="close" onClick={()=>setEditPlayerId(null)}>×</button></header><div className="role-editor-layout"><div><h3>Função em {phase}</h3><div className="role-options">{rolesFor(editing.position,phase).map(([code,label])=><button className={editing.roleCode===code?'active':''} onClick={()=>changeRole(code)} key={code}><b>{code}</b><span>{label}</span></button>)}</div></div><div><h3>Posição vinculada em {phase==='IP'?'OOP':'IP'}</h3><div className="mini-link-pitch">{PITCH_NODES.map(n=><i className="position-target" style={{left:`${n.x}%`,top:`${n.y}%`}} key={n.id}/>)}{otherAssignments.map(a=>{const node=PITCH_NODES.find(n=>n.id===a.nodeId)!;return <button className={`mini-player line-${lineClass(a.position)} ${linkedOther?.nodeId===a.nodeId?'linked':''}`} style={{left:`${node.x}%`,top:`${node.y}%`}} onClick={()=>relinkOther(a.nodeId)} title={`${a.position} · ${laneLabel(a.nodeId)}`} key={a.nodeId}>{a.roleCode}</button>})}</div><p className="modal-hint">A posição realçada representa este mesmo jogador na outra formação.</p></div></div><footer><button onClick={()=>setEditPlayerId(null)}>Concluir</button></footer></section></div>}
   </div>
 }
-
