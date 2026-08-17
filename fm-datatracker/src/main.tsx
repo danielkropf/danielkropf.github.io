@@ -7,6 +7,7 @@ import './planning.css'
 import './tactics-fixes.css'
 import './planning-interactions.css'
 import './planning-v2.css'
+import './planning-three-slots.css'
 import{applyAppearance,loadAppearance}from'./pages/AppearanceSettings'
 applyAppearance(loadAppearance())
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
