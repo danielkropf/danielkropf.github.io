@@ -1,4 +1,85 @@
-import{useEffect,useRef,useState}from'react';import{supabase}from'../lib/supabase';import{ATTRIBUTE_CATALOG,DEFAULT_ATTRIBUTE_WEIGHTS,type AttributeCategory}from'../lib/attributes';import{useSaves}from'../features/saves/SaveContext';import{roleDefaultWeights,usesLegacyRoleDefaults}from'../lib/roleWeights';
-type Role={id:string;name:string;weights:Record<string,number>};type Tactic={id:string;name:string;roles:Role[];positions?:string[]};type Config={general_weights:Record<string,number>;tactics:Tactic[];selected_tactic_id:string|null;selected_role_id:string|null};const tabs:Array<{key:AttributeCategory;label:string}>=[{key:'technical',label:'Técnico'},{key:'mental',label:'Mental'},{key:'physical',label:'Físico'},{key:'goalkeeping',label:'Goleiro'}];const defaults=()=>({...DEFAULT_ATTRIBUTE_WEIGHTS});const fresh=():Config=>({general_weights:defaults(),tactics:[],selected_tactic_id:null,selected_role_id:null});
-export function ModelLabPage(){const{selected}=useSaves();const[modelId,setModelId]=useState<string|null>(null),[config,setConfig]=useState<Config>(fresh),[tab,setTab]=useState<AttributeCategory>('technical'),[mode,setMode]=useState<'general'|'tactics'>('general'),[status,setStatus]=useState('Carregando…'),loaded=useRef(false);useEffect(()=>{loaded.current=false;if(!supabase||!selected)return;void supabase.from('scoring_models').select('id,config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data})=>{if(data){const c=data.config as Partial<Config>;setModelId(data.id);setConfig({...fresh(),...c,general_weights:{...defaults(),...(c.general_weights??{})},tactics:(c.tactics??[]).map(t=>({...t,roles:t.roles.map(r=>({...r,weights:usesLegacyRoleDefaults(r.weights)?roleDefaultWeights(r.id,r.name):r.weights}))}))})}else{setModelId(null);setConfig(fresh())}loaded.current=true;setStatus('Salvo automaticamente')})},[selected?.id]);useEffect(()=>{if(!loaded.current||!selected||!supabase)return;setStatus('Salvando…');const timer=setTimeout(async()=>{const{data:{user}}=await supabase!.auth.getUser(),payload={owner_id:user!.id,save_id:selected.id,name:'Model Lab',version:'2.2.0',config,is_active:true};const result=modelId?await supabase!.from('scoring_models').update(payload).eq('id',modelId).select('id').single():await supabase!.from('scoring_models').insert(payload).select('id').single();if(result.data?.id)setModelId(result.data.id);setStatus(result.error?`Erro: ${result.error.message}`:'Salvo automaticamente')},450);return()=>clearTimeout(timer)},[config,modelId,selected?.id]);const tactic=config.tactics.find(t=>t.id===config.selected_tactic_id),role=tactic?.roles.find(r=>r.id===config.selected_role_id),weights=mode==='tactics'&&role?role.weights:config.general_weights;function weight(key:string,value:number){if(mode==='general')setConfig(c=>({...c,general_weights:{...c.general_weights,[key]:value}}));else if(tactic&&role)setConfig(c=>({...c,tactics:c.tactics.map(t=>t.id!==tactic.id?t:{...t,roles:t.roles.map(r=>r.id!==role.id?r:{...r,weights:{...r.weights,[key]:value}})})}))}function addRole(){if(!tactic)return;const name=prompt('Nome da função')?.trim();if(!name)return;const id=crypto.randomUUID();setConfig(c=>({...c,tactics:c.tactics.map(t=>t.id===tactic.id?{...t,roles:[...t.roles,{id,name,weights:defaults()}]}:t),selected_role_id:id}))}function reset(){if(!confirm(mode==='general'?'Restaurar os pesos gerais para 3?':`Restaurar a matriz padrão de ${role?.name}?`))return;if(mode==='general')setConfig(c=>({...c,general_weights:defaults()}));else if(tactic&&role)setConfig(c=>({...c,tactics:c.tactics.map(t=>t.id!==tactic.id?t:{...t,roles:t.roles.map(r=>r.id!==role.id?r:{...r,weights:roleDefaultWeights(role.id,role.name)})})}))}return <><div className="title-row"><div><span className="eyebrow">PESOS DO SAVE</span><h1>Pontuação & Funções</h1><p>Configure a nota geral ou os pesos de uma função criada dentro de uma tática.</p></div><span className="save-state">{status}</span></div><div className="model-layout"><section className="card sliders"><div className="title-row"><div><span className="eyebrow">{tabs.find(t=>t.key===tab)?.label}</span><h2>{mode==='general'?'Pontuação geral':role?`${tactic?.name} · ${role.name}`:'Selecione uma função'}</h2></div><button className="secondary" disabled={mode==='tactics'&&!role} onClick={reset}>{mode==='general'?'Restaurar padrão 3':'Restaurar padrão da função'}</button></div>{mode==='tactics'&&!role?<div className="empty"><p>Selecione uma tática e crie ou escolha uma função na lateral.</p></div>:ATTRIBUTE_CATALOG.filter(a=>a.category===tab).map(a=><label className="weight-row" key={a.key}><span>{a.label}</span><input type="range" min="1" max="5" value={weights[a.key]??3} onChange={e=>weight(a.key,Number(e.target.value))}/><output>{weights[a.key]??3}</output></label>)}</section><aside className="card model-sidebar"><h3>Modelo</h3><button className={mode==='general'?'active':''} onClick={()=>setMode('general')}>Geral</button><button className={mode==='tactics'?'active':''} onClick={()=>setMode('tactics')}>Por função tática</button>{mode==='tactics'&&<><hr/><h3>Tática</h3><select value={config.selected_tactic_id??''} onChange={e=>setConfig(c=>({...c,selected_tactic_id:e.target.value||null,selected_role_id:null}))}><option value="">Selecionar</option>{config.tactics.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select>{!config.tactics.length&&<p>Crie uma tática na aba Táticas.</p>}<h3>Função</h3><select disabled={!tactic} value={config.selected_role_id??''} onChange={e=>setConfig(c=>({...c,selected_role_id:e.target.value||null}))}><option value="">Selecionar</option>{tactic?.roles.map(r=><option value={r.id} key={r.id}>{r.name}</option>)}</select><button disabled={!tactic} onClick={addRole}>+ Criar função</button></>}<hr/><h3>Atributos</h3><div className="vertical-tabs">{tabs.map(t=><button className={tab===t.key?'active':''} onClick={()=>setTab(t.key)} key={t.key}>{t.label}</button>)}</div></aside></div></>}
+import{useEffect,useRef,useState}from'react'
+import{supabase}from'../lib/supabase'
+import{ATTRIBUTE_CATALOG,DEFAULT_ATTRIBUTE_WEIGHTS,type AttributeCategory}from'../lib/attributes'
+import{positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
+import{roleDefaultWeights}from'../lib/roleWeights'
+import{useSaves}from'../features/saves/SaveContext'
 
+type Role={id:string;name:string;weights:Record<string,number>}
+type Tactic={id:string;name:string;roles:Role[];[key:string]:unknown}
+type Config={general_weights:Record<string,number>;role_weight_overrides:Record<string,Record<string,number>>;tactics:Tactic[];selected_tactic_id:string|null;selected_role_id:string|null}
+
+const tabs:Array<{key:AttributeCategory;label:string}>=[{key:'technical',label:'Técnico'},{key:'mental',label:'Mental'},{key:'physical',label:'Físico'},{key:'goalkeeping',label:'Goleiro'}]
+const positions=[['GK','Goleiro'],['D (C)','Defesa central'],['D (R)','Lateral'],['WB (R)','Ala'],['DM (C)','Médio defensivo'],['M (C)','Médio central'],['M (R)','Médio lateral'],['AM (C)','Médio ofensivo'],['AM (R)','Extremo'],['ST (C)','Atacante']] as const
+const generalDefaults=()=>({...DEFAULT_ATTRIBUTE_WEIGHTS})
+const fresh=():Config=>({general_weights:generalDefaults(),role_weight_overrides:{},tactics:[],selected_tactic_id:null,selected_role_id:null})
+
+export function ModelLabPage(){
+  const{selected}=useSaves()
+  const[modelId,setModelId]=useState<string|null>(null)
+  const[config,setConfig]=useState<Config>(fresh)
+  const[tab,setTab]=useState<AttributeCategory>('technical')
+  const[mode,setMode]=useState<'general'|'role'>('general')
+  const[phase,setPhase]=useState<TacticPhase>('IP')
+  const[position,setPosition]=useState('GK')
+  const[roleCode,setRoleCode]=useState('GK')
+  const[status,setStatus]=useState('Carregando…')
+  const loaded=useRef(false)
+
+  const roleOptions=rolesFor(position,phase)
+  const selectedRole=roleOptions.find(([code])=>code===roleCode)??roleOptions[0]
+  const roleId=`${phase}-${positionGroup(position)}-${selectedRole[0]}`
+  const roleName=selectedRole[1]
+  const weights=mode==='general'?config.general_weights:config.role_weight_overrides[roleId]??roleDefaultWeights(roleId,roleName)
+
+  useEffect(()=>{
+    const first=rolesFor(position,phase)[0]
+    setRoleCode(first[0])
+  },[phase,position])
+
+  useEffect(()=>{
+    loaded.current=false
+    if(!supabase||!selected)return
+    void supabase.from('scoring_models').select('id,config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data})=>{
+      if(data){const c=data.config as Partial<Config>;setModelId(data.id);setConfig({...fresh(),...c,general_weights:{...generalDefaults(),...(c.general_weights??{})},role_weight_overrides:c.role_weight_overrides??{}})}
+      else{setModelId(null);setConfig(fresh())}
+      loaded.current=true;setStatus('Salvo automaticamente')
+    })
+  },[selected?.id])
+
+  useEffect(()=>{
+    if(!loaded.current||!selected||!supabase)return
+    setStatus('Salvando…')
+    const timer=setTimeout(async()=>{
+      const{data:{user}}=await supabase!.auth.getUser()
+      const payload={owner_id:user!.id,save_id:selected.id,name:'Model Lab',version:'2.3.0',config,is_active:true}
+      const result=modelId?await supabase!.from('scoring_models').update(payload).eq('id',modelId).select('id').single():await supabase!.from('scoring_models').insert(payload).select('id').single()
+      if(result.data?.id)setModelId(result.data.id)
+      setStatus(result.error?`Erro: ${result.error.message}`:'Salvo automaticamente')
+    },450)
+    return()=>clearTimeout(timer)
+  },[config,modelId,selected?.id])
+
+  function changeWeight(key:string,value:number){
+    if(mode==='general')setConfig(c=>({...c,general_weights:{...c.general_weights,[key]:value}}))
+    else setConfig(c=>({...c,role_weight_overrides:{...c.role_weight_overrides,[roleId]:{...(c.role_weight_overrides[roleId]??roleDefaultWeights(roleId,roleName)),[key]:value}}}))
+  }
+
+  function reset(){
+    const message=mode==='general'?'Restaurar todos os pesos gerais para 3?':`Restaurar a matriz padrão de ${roleName}?`
+    if(!confirm(message))return
+    if(mode==='general')setConfig(c=>({...c,general_weights:generalDefaults()}))
+    else setConfig(c=>({...c,role_weight_overrides:{...c.role_weight_overrides,[roleId]:roleDefaultWeights(roleId,roleName)}}))
+  }
+
+  return <div className="screen-page scoring-page">
+    <div className="title-row"><div><h1>Pontuação & Funções</h1></div><span className="save-state">{status}</span></div>
+    <section className="card scoring-toolbar">
+      <div className="scoring-mode"><button className={mode==='general'?'active':''} onClick={()=>setMode('general')}>Pontuação geral</button><button className={mode==='role'?'active':''} onClick={()=>setMode('role')}>Por função</button></div>
+      {mode==='role'&&<><div className="phase-compact"><button className={phase==='IP'?'active':''} onClick={()=>setPhase('IP')}>IP</button><button className={phase==='OOP'?'active':''} onClick={()=>setPhase('OOP')}>OOP</button></div><label>Posição<select value={position} onChange={e=>setPosition(e.target.value)}>{positions.map(([value,label])=><option value={value} key={value}>{label} · {value}</option>)}</select></label><label>Função<select value={selectedRole[0]} onChange={e=>setRoleCode(e.target.value)}>{roleOptions.map(([code,name])=><option value={code} key={code}>{code} · {name}</option>)}</select></label></>}
+      <button className="secondary reset-weights" onClick={reset}>{mode==='general'?'Restaurar padrão 3':'Restaurar padrão da função'}</button>
+    </section>
+    <div className="attribute-tabs">{tabs.map(item=><button className={tab===item.key?'active':''} onClick={()=>setTab(item.key)} key={item.key}>{item.label}</button>)}</div>
+    <section className="card scoring-workspace"><div className="scoring-workspace-title"><div><span className="eyebrow">{tabs.find(item=>item.key===tab)?.label}</span><h2>{mode==='general'?'Pontuação geral':`${phase} · ${position} · ${roleName}`}</h2></div><p>1 ignora · 2 secundário · 3 importante · 4 muito importante · 5 crítico</p></div><div className="weight-grid">{ATTRIBUTE_CATALOG.filter(attribute=>attribute.category===tab).map(attribute=><label className="weight-row" key={attribute.key}><span>{attribute.label}</span><input type="range" min="1" max="5" value={weights[attribute.key]??3} onChange={e=>changeWeight(attribute.key,Number(e.target.value))}/><output>{weights[attribute.key]??3}</output></label>)}</div></section>
+  </div>
+}

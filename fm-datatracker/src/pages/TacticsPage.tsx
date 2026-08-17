@@ -9,7 +9,7 @@ import{useSaves}from'../features/saves/SaveContext'
 type Role={id:string;name:string;weights:Record<string,number>}
 type Assignment={playerId:string;nodeId:string;position:string;roleId:string;roleCode:string;roleName:string}
 type Tactic={id:string;name:string;roles:Role[];assignments?:Assignment[];ipAssignments:Assignment[];oopAssignments:Assignment[];lineup:Record<string,string|null>}
-type Config={general_weights:Record<string,number>;tactics:Tactic[];selected_tactic_id:string|null;selected_role_id:string|null}
+type Config={general_weights:Record<string,number>;role_weight_overrides:Record<string,Record<string,number>>;tactics:Tactic[];selected_tactic_id:string|null;selected_role_id:string|null}
 type Candidate={id:string;name:string;positions:string[];age:number|null;attributes:Array<{key:string;value:number}>}
 type PlayerSortKey='name'|'positions'|'age'|'positionScore'|'generalScore'
 
@@ -21,7 +21,7 @@ const FORMATIONS:Record<string,string[]>={
   '3-5-2':['gk','dcl','dc','dcr','wbl','mcl','mc','mcr','wbr','stl','str']
 }
 const DEFAULT_NODE_IDS=FORMATIONS['4-3-3']
-const fresh=():Config=>({general_weights:{...DEFAULT_ATTRIBUTE_WEIGHTS},tactics:[],selected_tactic_id:null,selected_role_id:null})
+const fresh=():Config=>({general_weights:{...DEFAULT_ATTRIBUTE_WEIGHTS},role_weight_overrides:{},tactics:[],selected_tactic_id:null,selected_role_id:null})
 
 function makeAssignment(nodeId:string,phase:TacticPhase,playerId:string):Assignment{
   const node=PITCH_NODES.find(n=>n.id===nodeId)!,role=rolesFor(node.position,phase)[0]
@@ -184,7 +184,7 @@ export function TacticsPage(){
   function scoreFor(candidate:Candidate,ip:Assignment,oop:Assignment){
     if(!tactic)return null
     const scores=[ip,oop].map(a=>{
-      const weights=tactic.roles.find(r=>r.id===a.roleId)?.weights??DEFAULT_ATTRIBUTE_WEIGHTS
+      const weights=config.role_weight_overrides[a.roleId]??tactic.roles.find(r=>r.id===a.roleId)?.weights??roleDefaultWeights(a.roleId,a.roleName)
       return attributeScore(candidate.attributes.map(attribute=>({key:attribute.key,value:attribute.value,weight:weights[attribute.key]??3})))
     }).filter((score):score is number=>score!==null)
     return scores.length?scores.reduce((sum,score)=>sum+score,0)/scores.length:null
