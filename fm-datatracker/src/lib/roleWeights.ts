@@ -1,4 +1,4 @@
-import{DEFAULT_ATTRIBUTE_WEIGHTS}from'./attributes'
+import{ATTRIBUTE_CATALOG,DEFAULT_ATTRIBUTE_WEIGHTS}from'./attributes'
 
 export const ROLE_WEIGHT_MATRIX:Record<string,Record<string,number>>={
   "IP_GK_GOALKEEPER": {
@@ -3384,6 +3384,23 @@ export const ROLE_WEIGHT_MATRIX:Record<string,Record<string,number>>={
   }
 }
 
+const SHARED_OOP_ROWS:Record<string,number[]>={
+  OOP_GK_GOALKEEPER:[1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,5,2,3,4,5,1,1,1,1,5,1,1,1,3,4,1,1,1,3,1,2,3,3,4,1,4,3,5,1,5,4,2],
+  OOP_DC_CENTRE_BACK:[1,1,1,1,1,1,4,1,1,5,1,1,5,1,4,5,4,2,4,4,1,1,1,1,5,3,1,1,3,1,1,3,1,4,1,4,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_FB_FULL_BACK:[1,1,1,1,1,1,2,1,1,4,1,1,5,1,4,5,3,1,4,4,1,1,1,1,4,4,1,4,4,1,1,2,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_WB_WING_BACK:[1,1,1,1,1,1,1,1,1,4,1,1,5,1,4,5,2,1,4,4,1,1,1,1,4,4,1,5,3,1,1,1,1,4,4,3,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_DM_DEFENSIVE_MIDFIELDER:[1,1,1,1,1,1,2,1,1,4,1,1,4,1,3,5,3,2,4,4,1,1,1,1,4,4,1,3,2,1,1,2,1,3,3,4,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_CM_CENTRAL_MIDFIELDER:[1,1,1,1,1,1,1,1,1,4,1,1,4,1,4,5,1,2,4,4,1,1,1,1,4,4,1,5,3,1,1,1,1,4,4,3,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_MRL_WIDE_MIDFIELDER:[1,2,2,1,2,1,1,1,1,4,2,1,3,2,2,5,1,2,2,3,1,1,1,3,4,4,1,5,4,2,1,1,1,4,5,2,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_W_WINGER:[1,2,3,1,3,1,1,1,1,4,2,1,3,3,2,4,1,3,2,3,1,1,1,3,4,3,1,4,4,2,1,1,1,4,4,2,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_AMC_ATTACKING_MIDFIELDER:[1,1,2,2,3,1,1,1,1,3,2,1,3,3,3,5,1,3,2,4,1,1,1,4,3,3,2,4,4,1,2,1,1,4,4,1,1,1,1,1,1,1,1,1,1,1,1],
+  OOP_ST_CENTRE_FORWARD:[1,1,2,3,3,1,1,1,1,2,2,1,2,3,4,5,2,3,2,4,1,1,1,4,2,3,1,4,4,2,3,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1]
+}
+
+Object.assign(ROLE_WEIGHT_MATRIX,Object.fromEntries(Object.entries(SHARED_OOP_ROWS).map(([roleId,values])=>[
+  roleId,Object.fromEntries(ATTRIBUTE_CATALOG.map((attribute,index)=>[attribute.key,values[index]]))
+])))
+
 const ROLE_WEIGHT_NAMES:Record<string,string>={
   "IP_GK_GOALKEEPER": "IP:Goalkeeper",
   "IP_GK_BALL_PLAYING_GOALKEEPER": "IP:Ball-Playing Goalkeeper",
@@ -3426,6 +3443,16 @@ const ROLE_WEIGHT_NAMES:Record<string,string>={
   "IP_ST_FALSE_NINE": "IP:False Nine",
   "IP_ST_POACHER": "IP:Poacher",
   "IP_ST_TARGET_FORWARD": "IP:Target Forward",
+  "OOP_GK_GOALKEEPER": "OOP:Goalkeeper",
+  "OOP_DC_CENTRE_BACK": "OOP:Centre-Back",
+  "OOP_FB_FULL_BACK": "OOP:Full Back",
+  "OOP_WB_WING_BACK": "OOP:Wing Back",
+  "OOP_DM_DEFENSIVE_MIDFIELDER": "OOP:Defensive Midfielder",
+  "OOP_CM_CENTRAL_MIDFIELDER": "OOP:Central Midfielder",
+  "OOP_MRL_WIDE_MIDFIELDER": "OOP:Wide Midfielder",
+  "OOP_W_WINGER": "OOP:Winger",
+  "OOP_AMC_ATTACKING_MIDFIELDER": "OOP:Attacking Midfielder",
+  "OOP_ST_CENTRE_FORWARD": "OOP:Centre Forward",
   "OOP_GK_LINE_HOLDING_KEEPER": "OOP:Line-Holding Keeper",
   "OOP_GK_SWEEPER_KEEPER": "OOP:Sweeper Keeper",
   "OOP_DC_COVERING_CENTRE_BACK": "OOP:Covering Centre-Back",
@@ -3459,7 +3486,9 @@ const ROLE_WEIGHT_NAMES:Record<string,string>={
 export function roleDefaultWeights(roleId:string,roleName:string){
   const phase=roleId.startsWith('OOP-')?'OOP':'IP'
   const normalize=(value:string)=>value.toLowerCase().replace(/[^a-z0-9]+/g,'')
-  const match=Object.entries(ROLE_WEIGHT_NAMES).find(([,name])=>name.startsWith(`${phase}:`)&&normalize(name.slice(name.indexOf(':')+1))===normalize(roleName))?.[0]
+  const entries=Object.entries(ROLE_WEIGHT_NAMES)
+  const hasRoleName=(name:string)=>normalize(name.slice(name.indexOf(':')+1))===normalize(roleName)
+  const match=entries.find(([,name])=>name.startsWith(`${phase}:`)&&hasRoleName(name))?.[0]
   return{...DEFAULT_ATTRIBUTE_WEIGHTS,...(match?ROLE_WEIGHT_MATRIX[match]:{})}
 }
 
@@ -3467,4 +3496,3 @@ export function usesLegacyRoleDefaults(weights:Record<string,number>){
   const values=Object.values(weights)
   return values.length>0&&values.every(value=>value===3)
 }
-
