@@ -13,7 +13,7 @@ import type{PlayerRow}from'../types/domain'
 
 type SortKey='status'|'name'|'age'|'nationality'|'value'|'team'|'position'|'score'|'reference'
 type Snapshot=PlayerRow['player_snapshots'][number]
-type Planning={groups:Array<{id:string;name:string}>;assignments:Record<string,string>}
+type Planning={groups:Array<{id:string;name:string}>;assignments:Record<string,string>;slotAssignments?:Record<string,Record<string,string[]>>}
 type ModelConfig={general_weights?:Record<string,number>;role_weight_overrides?:Record<string,Record<string,number>>;planning?:Planning}
 type Row={player:PlayerRow;latest:Snapshot|undefined;score:number|null;status:string;marketValue:string|null;referencePercentile:number|null;referenceLevel:ReferenceLevel|null;referenceSample:number;referenceGroup:string;compatible:boolean}
 type Filter={id:string;column:SortKey;operator:'contains'|'equals'|'gte'|'lte';value:string}
@@ -66,7 +66,7 @@ export function SquadPage(){
       const groups=evaluation==='role'?[target]:eligible
       for(const group of groups){const population=referenceScores[group]??[],value=calculatePercentile(score,population);if(value!==null&&(referencePercentile===null||value>referencePercentile)){referencePercentile=value;referenceGroup=group;referenceSample=population.length}}
     }
-    const groupId=model.planning?.assignments[player.id],status=model.planning?.groups.find(group=>group.id===groupId)?.name??'Não selecionado'
+    const groupId=Object.entries(model.planning?.slotAssignments??{}).find(([,rows])=>Object.values(rows).some(ids=>ids.includes(player.id)))?.[0],status=model.planning?.groups.find(group=>group.id===groupId)?.name??'Não selecionado'
     return{player,latest,score,status,marketValue:latest?extractMarketValue(latest):null,referencePercentile,referenceLevel:referencePercentile===null?null:referenceLevel(referencePercentile),referenceSample,referenceGroup,compatible:evaluation==='general'||eligible.includes(target)}
   }).filter(row=>filters.every(filter=>matchesFilter(row,filter))).sort((a,b)=>compareRows(a,b,sort.key)*sort.direction||a.player.current_name.localeCompare(b.player.current_name,'pt-BR')),[players,search,sort,activeWeights,evaluation,position,referenceScores,model.planning,filters])
 
