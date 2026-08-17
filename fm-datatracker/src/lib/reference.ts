@@ -20,6 +20,12 @@ export function positionFamily(value:string|string[]){
   return'OUTRO'
 }
 
+export function positionFamilies(value:string|string[]){
+  const raw=(Array.isArray(value)?value.join(','):value).toUpperCase(),found:string[]=[]
+  for(const match of raw.matchAll(/(?:^|[,/]\s*)(GK|WB|DM|AM|ST|D|M)(?=\s|,|\/|\(|$)/g))if(!found.includes(match[1]))found.push(match[1])
+  return found.length?found:[positionFamily(value)]
+}
+
 export function referenceScore(player:ReferencePlayer,attributes:string[],weights:Record<string,number>){
   return attributeScore(attributes.map((key,index)=>({key,value:player.v[index]??null,weight:weights[key]??1})))
 }
