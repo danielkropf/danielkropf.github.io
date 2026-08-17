@@ -9,7 +9,7 @@ type Role={id:string;name:string;weights:Record<string,number>}
 type Tactic={id:string;name:string;roles:Role[];[key:string]:unknown}
 type Config={general_weights:Record<string,number>;role_weight_overrides:Record<string,Record<string,number>>;tactics:Tactic[];selected_tactic_id:string|null;selected_role_id:string|null}
 
-const tabs:Array<{key:AttributeCategory;label:string}>=[{key:'technical',label:'Técnico'},{key:'mental',label:'Mental'},{key:'physical',label:'Físico'},{key:'goalkeeping',label:'Goleiro'}]
+const groups:Array<{key:AttributeCategory;label:string}>=[{key:'technical',label:'Técnico'},{key:'mental',label:'Mental'},{key:'physical',label:'Físico'},{key:'goalkeeping',label:'Goleiro'}]
 const positions=[['GK','Goleiro'],['D (C)','Defesa central'],['D (R)','Lateral'],['WB (R)','Ala'],['DM (C)','Médio defensivo'],['M (C)','Médio central'],['M (R)','Médio lateral'],['AM (C)','Médio ofensivo'],['AM (R)','Extremo'],['ST (C)','Atacante']] as const
 const generalDefaults=()=>({...DEFAULT_ATTRIBUTE_WEIGHTS})
 const fresh=():Config=>({general_weights:generalDefaults(),role_weight_overrides:{},tactics:[],selected_tactic_id:null,selected_role_id:null})
@@ -18,7 +18,6 @@ export function ModelLabPage(){
   const{selected}=useSaves()
   const[modelId,setModelId]=useState<string|null>(null)
   const[config,setConfig]=useState<Config>(fresh)
-  const[tab,setTab]=useState<AttributeCategory>('technical')
   const[mode,setMode]=useState<'general'|'role'>('general')
   const[phase,setPhase]=useState<TacticPhase>('IP')
   const[position,setPosition]=useState('GK')
@@ -79,7 +78,6 @@ export function ModelLabPage(){
       {mode==='role'&&<><div className="phase-compact"><button className={phase==='IP'?'active':''} onClick={()=>setPhase('IP')}>IP</button><button className={phase==='OOP'?'active':''} onClick={()=>setPhase('OOP')}>OOP</button></div><label>Posição<select value={position} onChange={e=>setPosition(e.target.value)}>{positions.map(([value,label])=><option value={value} key={value}>{label} · {value}</option>)}</select></label><label>Função<select value={selectedRole[0]} onChange={e=>setRoleCode(e.target.value)}>{roleOptions.map(([code,name])=><option value={code} key={code}>{code} · {name}</option>)}</select></label></>}
       <button className="secondary reset-weights" onClick={reset}>{mode==='general'?'Restaurar padrão 3':'Restaurar padrão da função'}</button>
     </section>
-    <div className="attribute-tabs">{tabs.map(item=><button className={tab===item.key?'active':''} onClick={()=>setTab(item.key)} key={item.key}>{item.label}</button>)}</div>
-    <section className="card scoring-workspace"><div className="scoring-workspace-title"><div><span className="eyebrow">{tabs.find(item=>item.key===tab)?.label}</span><h2>{mode==='general'?'Pontuação geral':`${phase} · ${position} · ${roleName}`}</h2></div><p>1 ignora · 2 secundário · 3 importante · 4 muito importante · 5 crítico</p></div><div className="weight-grid">{ATTRIBUTE_CATALOG.filter(attribute=>attribute.category===tab).map(attribute=><label className="weight-row" key={attribute.key}><span>{attribute.label}</span><input type="range" min="1" max="5" value={weights[attribute.key]??3} onChange={e=>changeWeight(attribute.key,Number(e.target.value))}/><output>{weights[attribute.key]??3}</output></label>)}</div></section>
+    <section className="card scoring-workspace"><div className="scoring-workspace-title"><div><h2>{mode==='general'?'Pontuação geral':`${phase} · ${position} · ${roleName}`}</h2></div><p>1 ignora · 2 secundário · 3 importante · 4 muito importante · 5 crítico</p></div><div className="weight-groups">{groups.map(group=><section className={`weight-group weight-group-${group.key}`} key={group.key}><h3>{group.label}</h3><div>{ATTRIBUTE_CATALOG.filter(attribute=>attribute.category===group.key).sort((a,b)=>a.label.localeCompare(b.label,undefined,{sensitivity:'base'})).map(attribute=><label className="weight-row" key={attribute.key}><span>{attribute.label}</span><input type="range" min="1" max="5" value={weights[attribute.key]??3} onChange={e=>changeWeight(attribute.key,Number(e.target.value))}/><output>{weights[attribute.key]??3}</output></label>)}</div></section>)}</div></section>
   </div>
 }
