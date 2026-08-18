@@ -1,5 +1,26 @@
 export const POSITION_ORDER = ['GK', 'D', 'WB', 'DM', 'M', 'AM', 'ST'] as const
 
+export type PositionCapability = { family: string; sides: string }
+
+/** Expande a notação compacta do FM: em `D, WB (R)`, o `(R)` vale para D e WB. */
+export function positionCapabilities(positions: string[]): PositionCapability[] {
+  const capabilities: PositionCapability[] = []
+  for (const raw of positions) {
+    const pending: string[] = []
+    const tokens = raw.toUpperCase().split(',').map(token => token.trim()).filter(Boolean)
+    for (const token of tokens) {
+      const side = token.match(/\(([^)]+)\)/)?.[1]?.replace(/[^RCL]/g, '') ?? ''
+      const families = token.replace(/\([^)]*\)/g, '').split('/').map(value => value.trim()).filter(Boolean)
+      pending.push(...families)
+      if (side) {
+        capabilities.push(...pending.splice(0).map(family => ({ family, sides: side })))
+      }
+    }
+    capabilities.push(...pending.map(family => ({ family, sides: '' })))
+  }
+  return capabilities
+}
+
 export function positionRank(positions: string[]) {
   const primary = (positions[0] ?? '').toUpperCase().trim()
   if (/^GK(?:\s|\(|$)/.test(primary)) return 0

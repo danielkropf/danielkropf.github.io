@@ -31,4 +31,5 @@ select option { background: #101d16; color: #e8efe9; }
 }
 .matrix-player-info .player-name:hover { color: #b9f35b !important; text-decoration: underline; }
 .matrix-player-info small { font-size: .62rem !important; line-height: 1.15; }
+.depth-three-slots .overall-score { align-self: center !important; margin-block: auto !important; box-sizing: border-box; }
 .fm-player-tooltip-portal { transform: translate(-50%, -50%); }
