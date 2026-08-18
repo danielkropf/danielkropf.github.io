@@ -58,7 +58,7 @@ details>summary span:last-child{transition:transform var(--ux-normal) var(--ux-e
 /* Async save feedback and tooltips no longer appear abruptly. */
 .save-state{display:inline-flex;align-items:center;gap:.35rem;transition:color var(--ux-normal),opacity var(--ux-normal)}
 .save-state:before{content:'';width:6px;height:6px;border-radius:50%;background:#79c68a;box-shadow:0 0 0 3px #79c68a22}
-.fm-player-tooltip-portal{animation:ux-tooltip-in var(--ux-normal) var(--ux-ease)}
+.fm-player-tooltip-portal{animation:ux-centered-tooltip-in var(--ux-normal) var(--ux-ease)}
 .floating-tooltip{animation:ux-fade-in var(--ux-normal) var(--ux-ease)}
 
 /* Modal entrance preserves spatial context and close feedback. */
@@ -73,6 +73,7 @@ details>summary span:last-child{transition:transform var(--ux-normal) var(--ux-e
 
 @keyframes ux-menu-in{from{opacity:0;transform:translateY(-5px) scaleY(.96)}to{opacity:1;transform:none}}
 @keyframes ux-tooltip-in{from{opacity:0;transform:translateY(5px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes ux-centered-tooltip-in{from{opacity:0;transform:translate(-50%,calc(-50% + 5px)) scale(.985)}to{opacity:1;transform:translate(-50%,-50%)}}
 @keyframes ux-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes ux-overlay-in{from{background-color:#0000}to{background-color:#000a}}
 @keyframes ux-dialog-in{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
