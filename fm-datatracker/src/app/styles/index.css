@@ -1,0 +1,12 @@
+@import '../../styles.css';
+@import '../../version.css';
+@import '../../planning.css';
+@import '../../tactics-fixes.css';
+@import '../../planning-interactions.css';
+@import '../../planning-v2.css';
+@import '../../planning-three-slots.css';
+@import '../../planning-single-squad.css';
+@import '../../planning-polish.css';
+@import '../../planning-placement.css';
+@import '../../score-ux.css';
+@import '../../global-controls.css';

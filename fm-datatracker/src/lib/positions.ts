@@ -21,6 +21,13 @@ export function positionCapabilities(positions: string[]): PositionCapability[] 
   return capabilities
 }
 
+export function canPlayPosition(positions: string[], target: string) {
+  const normalized = target.toUpperCase().trim()
+  const family = POSITION_ORDER.find(item => new RegExp(`^${item}(?:\\s|\\(|/|$)`).test(normalized)) ?? normalized.replace(/\s*\(.*/, '')
+  const sides = normalized.match(/\(([^)]+)\)/)?.[1]?.replace(/[^RCL]/g, '') ?? ''
+  return positionCapabilities(positions).some(position => position.family === family && (!sides || !position.sides || [...sides].some(side => position.sides.includes(side))))
+}
+
 export function positionRank(positions: string[]) {
   const primary = (positions[0] ?? '').toUpperCase().trim()
   if (/^GK(?:\s|\(|$)/.test(primary)) return 0

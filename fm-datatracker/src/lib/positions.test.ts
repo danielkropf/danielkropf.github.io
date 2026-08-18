@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { positionCapabilities, positionRank, positionSideRank } from './positions'
+import { canPlayPosition, positionCapabilities, positionRank, positionSideRank } from './positions'
 
 describe('ordenação por posição', () => {
   it('segue GK, D, WB, DM, M, AM, ST', () => {
@@ -22,5 +22,11 @@ describe('ordenação por posição', () => {
       { family: 'DM', sides: 'C' },
       { family: 'M', sides: 'C' },
     ])
+  })
+
+  it('diferencia família e lado na compatibilidade', () => {
+    expect(canPlayPosition(['D, WB (R)'], 'D (R)')).toBe(true)
+    expect(canPlayPosition(['D, WB (R)'], 'D (L)')).toBe(false)
+    expect(canPlayPosition(['D (C)'], 'D (L)')).toBe(false)
   })
 })
