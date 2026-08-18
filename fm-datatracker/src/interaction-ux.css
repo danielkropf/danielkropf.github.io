@@ -1,0 +1,83 @@
+:root{--ux-fast:120ms;--ux-normal:190ms;--ux-slow:280ms;--ux-ease:cubic-bezier(.2,.8,.2,1);--ux-ring:0 0 0 3px color-mix(in srgb,#b9f35b,transparent 72%)}
+
+/* Keyboard focus is explicit without adding a permanent visual outline for mouse users. */
+:where(button,a,input,select,summary,[tabindex]):focus-visible{outline:2px solid #b9f35b!important;outline-offset:2px;box-shadow:var(--ux-ring)}
+
+/* Buttons communicate hover, press and release as three distinct states. */
+button,.button{position:relative;transition:transform var(--ux-fast) var(--ux-ease),background-color var(--ux-normal) var(--ux-ease),border-color var(--ux-normal) var(--ux-ease),color var(--ux-normal) var(--ux-ease),box-shadow var(--ux-normal) var(--ux-ease),filter var(--ux-normal) var(--ux-ease)}
+@media(hover:hover){button:not(:disabled):hover,.button:hover{transform:translateY(-1px);filter:brightness(1.08);box-shadow:0 5px 14px #0005}button:not(:disabled):active,.button:active{transform:translateY(1px) scale(.985);filter:brightness(.94);box-shadow:0 1px 4px #0005}}
+button:disabled{filter:saturate(.45)}
+.danger-button:not(:disabled):hover,.column-delete:hover{box-shadow:0 0 0 2px #ff766b38,0 5px 14px #0005!important}
+
+/* Inputs and custom controls react before submission, making editing state apparent. */
+input,select,textarea,summary{transition:border-color var(--ux-normal) var(--ux-ease),background-color var(--ux-normal) var(--ux-ease),box-shadow var(--ux-normal) var(--ux-ease)}
+@media(hover:hover){input:hover,select:hover,textarea:hover,summary:hover{border-color:#5d8068;background-color:#14251b}}
+input:focus,select:focus,textarea:focus{border-color:#b9f35b;box-shadow:var(--ux-ring)}
+
+/* Navigation gains a directional active marker instead of relying only on color. */
+.shell>aside nav a{position:relative;overflow:hidden;transition:color var(--ux-normal),background-color var(--ux-normal),transform var(--ux-fast)}
+.shell>aside nav a:before{content:'';position:absolute;left:0;top:18%;bottom:18%;width:3px;border-radius:4px;background:#b9f35b;transform:scaleY(0);transition:transform var(--ux-normal) var(--ux-ease)}
+.shell>aside nav a.active:before{transform:scaleY(1)}
+@media(hover:hover){.shell>aside nav a:hover{transform:translateX(3px)}}
+
+/* Tabs and phase controls visibly slide into the selected state. */
+.tactic-tabs button,.phase-switch button,.phase-compact button,.scoring-mode button,.attribute-tabs button{transition:background-color var(--ux-normal),color var(--ux-normal),border-color var(--ux-normal),transform var(--ux-fast),box-shadow var(--ux-normal)}
+.tactic-tabs button.active,.phase-switch button.active,.phase-compact button.active,.scoring-mode button.active,.attribute-tabs button.active{box-shadow:inset 0 -3px #10190f,0 0 0 1px #b9f35b55}
+
+/* Cards, rows and sortable headers reveal that they are interactive. */
+.card,.planning-player,.depth-player-chip,.role-box,.advanced-picker-row,.squad-table tbody tr{transition:transform var(--ux-normal) var(--ux-ease),border-color var(--ux-normal),background-color var(--ux-normal),box-shadow var(--ux-normal),opacity var(--ux-normal),filter var(--ux-normal)}
+@media(hover:hover){
+  .planning-player:not(.incompatible):hover,.depth-player-chip:hover{transform:translateX(2px);border-color:#6b9576;box-shadow:0 5px 14px #0005}
+  .role-box:hover{border-color:#ffffff99;box-shadow:inset 0 0 0 1px #ffffff45,0 4px 12px #0006}
+  .advanced-picker-row:not(:disabled):hover{transform:translateX(2px);background:#1c3023}
+  .squad-table tbody tr.clickable:hover{box-shadow:inset 4px 0 #b9f35b;background:#17291e}
+  .sort-button:hover{color:#fff!important;text-shadow:0 0 12px #b9f35b88}
+}
+.sort-button span:last-child{transition:transform var(--ux-normal);transform-origin:center}.sort-button:active span:last-child{transform:scale(.75)}
+
+/* Score cards stay readable while still acknowledging inspection. */
+.overall-score{transition:transform var(--ux-fast),filter var(--ux-normal),box-shadow var(--ux-normal)}
+@media(hover:hover){.overall-score:hover{transform:scale(1.035);filter:brightness(1.12);box-shadow:0 4px 12px #0007}}
+.score-meter{transition:width var(--ux-slow) var(--ux-ease),background-color var(--ux-normal)}
+
+/* Menus behave like extensions of their controls. */
+details[open]>summary{box-shadow:var(--ux-ring)}
+details>summary span:last-child{transition:transform var(--ux-normal) var(--ux-ease)}details[open]>summary span:last-child{transform:rotate(180deg)}
+.position-multi-menu,.role-card-dropdown{transform-origin:top center;animation:ux-menu-in var(--ux-normal) var(--ux-ease)}
+.position-multi-menu label{transition:background-color var(--ux-fast),border-color var(--ux-fast),transform var(--ux-fast)}
+@media(hover:hover){.position-multi-menu label:hover{transform:translateX(2px)}}
+
+/* Dragging uses a clear source → possible target → current target hierarchy. */
+[draggable="true"]{transition:opacity var(--ux-fast),transform var(--ux-fast),box-shadow var(--ux-fast)}
+[draggable="true"]:active{cursor:grabbing!important;opacity:.72;transform:scale(.985)}
+.depth-vacancy,.position-target{transition:background-color var(--ux-fast),border-color var(--ux-fast),box-shadow var(--ux-fast),opacity var(--ux-fast),transform var(--ux-fast)}
+.depth-three-slots.selected-natural .depth-vacancy{animation:ux-target-breathe 1.15s ease-in-out infinite alternate}
+.depth-vacancy.drop-hover{transform:scale(.985);animation:none!important}
+.pitch-player.dragging{transform:translate(-50%,-50%) scale(.92);filter:saturate(.5)}
+
+/* Async save feedback and tooltips no longer appear abruptly. */
+.save-state{display:inline-flex;align-items:center;gap:.35rem;transition:color var(--ux-normal),opacity var(--ux-normal)}
+.save-state:before{content:'';width:6px;height:6px;border-radius:50%;background:#79c68a;box-shadow:0 0 0 3px #79c68a22}
+.fm-player-tooltip-portal{animation:ux-tooltip-in var(--ux-normal) var(--ux-ease)}
+.floating-tooltip{animation:ux-fade-in var(--ux-normal) var(--ux-ease)}
+
+/* Modal entrance preserves spatial context and close feedback. */
+.settings-overlay,.overlay{animation:ux-overlay-in var(--ux-normal) ease-out}
+.settings-overlay>section,.overlay>.drawer,.filter-modal,.squad-manager,.advanced-picker-modal{transform-origin:center;animation:ux-dialog-in var(--ux-slow) var(--ux-ease)}
+.close{transition:transform var(--ux-normal),color var(--ux-normal),background-color var(--ux-normal)}
+@media(hover:hover){.close:hover{transform:rotate(90deg);color:#ff8c7b}}
+
+/* Empty actions and drop areas advertise their affordance. */
+.empty-pitch-action button,.drop{transition:border-color var(--ux-normal),background-color var(--ux-normal),box-shadow var(--ux-normal),transform var(--ux-normal)}
+@media(hover:hover){.drop:hover{border-color:#b9f35b;background:#12251a;box-shadow:inset 0 0 35px #b9f35b09}}
+
+@keyframes ux-menu-in{from{opacity:0;transform:translateY(-5px) scaleY(.96)}to{opacity:1;transform:none}}
+@keyframes ux-tooltip-in{from{opacity:0;transform:translateY(5px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes ux-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes ux-overlay-in{from{background-color:#0000}to{background-color:#000a}}
+@keyframes ux-dialog-in{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes ux-target-breathe{from{border-color:#4c6a54;box-shadow:none}to{border-color:#a3d75a;box-shadow:inset 0 0 0 1px #a3d75a55}}
+
+@media(max-width:900px){.shell>aside nav a:before{left:15%;right:15%;top:auto;bottom:0;width:auto;height:3px;transform:scaleX(0)}.shell>aside nav a.active:before{transform:scaleX(1)}.shell>aside nav a:hover{transform:none}}
+@media(hover:none){button:not(:disabled):active,.button:active{transform:scale(.96);filter:brightness(.9)}.planning-player:active,.depth-player-chip:active,.role-box:active{transform:scale(.985);filter:brightness(.92)}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
