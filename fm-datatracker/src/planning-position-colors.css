@@ -1,0 +1,10 @@
+.planning-page .depth-position.dual-role{padding:0;background:#0e1913;border-right:1px solid #263b2e}
+.planning-page .depth-position.dual-role>span{position:relative;isolation:isolate;min-height:50%;padding:.3rem .5rem;background:var(--line-color);color:#fff;border-radius:0}
+.planning-page .depth-position.dual-role>span+span{border-top:1px solid #ffffff42}
+.planning-page .depth-position.dual-role>span b,.planning-page .depth-position.dual-role>span em{position:relative;z-index:1;color:#fff}
+.planning-page .depth-position.dual-role>span em{padding:.08rem .28rem;border-radius:3px;background:#0003}
+.planning-page .depth-cell[class*="planning-line-"]{--row-color:var(--line-color);background:color-mix(in srgb,var(--row-color) 5%,#101c15);border-left:3px solid color-mix(in srgb,var(--row-color),transparent 28%)}
+.planning-page .depth-cell[class*="planning-line-"] .depth-player-chip{border-color:color-mix(in srgb,var(--row-color),white 24%);box-shadow:inset 3px 0 var(--row-color)}
+.planning-page .depth-cell[class*="planning-line-"] .depth-vacancy{border-color:color-mix(in srgb,var(--row-color),transparent 48%)}
+.planning-page .depth-cell[class*="planning-line-"] .depth-vacancy:hover,.planning-page .depth-cell[class*="planning-line-"] .depth-vacancy.drop-hover{background:color-mix(in srgb,var(--row-color) 20%,#101c15);border-color:var(--row-color)}
+.planning-line-gk{--line-color:#45455f}.planning-line-d{--line-color:#008e87}.planning-line-dm{--line-color:#07833f}.planning-line-m{--line-color:#14579d}.planning-line-am{--line-color:#781891}.planning-line-st{--line-color:#a20a65}
