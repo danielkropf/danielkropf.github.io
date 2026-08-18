@@ -3,6 +3,7 @@ import{createPortal}from'react-dom'
 import{useNavigate}from'react-router-dom'
 import{supabase}from'../lib/supabase'
 import{attributeScore,combinedPhaseScore}from'../lib/scoring'
+import{ScoreBadge}from'../components/ScoreBadge'
 import{percentile,referenceScore,type ReferenceDataset}from'../lib/reference'
 import{roleDefaultWeights}from'../lib/roleWeights'
 import{ATTRIBUTE_LOOKUP}from'../lib/attributes'
@@ -45,7 +46,7 @@ function maximumMatching(players:Player[],slots:Assignment[],latest:(p:Player)=>
 function depthCoverage(players:Player[],slots:Assignment[],latest:(p:Player)=>Snapshot|undefined){if(!slots.length)return{full:0,next:0};let full=0;for(let l=1;l<=3;l++){if(maximumMatching(players,slots,latest,l)===slots.length*l)full=l;else break}return{full,next:Math.max(0,maximumMatching(players,slots,latest,full+1)-full*slots.length)}}
 const scoreClass=(v:number|null)=>v===null?'score-none':v>=75?'score-high':v>=50?'score-mid':'score-low',attributeClass=(v:number)=>v>=15?'attribute-high':v>=10?'attribute-mid':'attribute-low',footLabel=(foot:string|null)=>foot?`Pé ${foot}`:'Pé —'
 function combinePhaseScores({ip,oop}:{ip:number|null;oop:number|null}){return combinedPhaseScore(ip,oop)}
-function OverallScore({value,rank}:{value:number|null;rank:number|null}){const level=rank===null?'score-none':rank>=75?'score-high':rank>=25?'score-mid':'score-low',fill=rank??0,display=value===null?'—':value.toLocaleString('pt-BR',{maximumFractionDigits:2});return <span className={`overall-score ${level}`} title={rank===null?'Sem amostra de referência':`Percentil ${rank} entre jogadores da base de ligas aptos para esta posição`}><span className="score-meter" style={{width:`${fill}%`}}/><b>{display}</b></span>}
+function OverallScore({value,rank}:{value:number|null;rank:number|null}){return <ScoreBadge value={value} rank={rank}/>}
 
 function DepthRowV2({pair,index,groups,players,planning,latest,activePlayer,setHoverGroup,startDrag,dragEnd,drop,score,open,context}:{pair:Pair;index:number;groups:Group[];players:Player[];planning:Planning;latest:(p:Player)=>Snapshot|undefined;activePlayer?:Player;setHoverGroup:(id:string|null)=>void;startDrag:(id:string)=>void;dragEnd:()=>void;drop:(g:string,s:string,i:number)=>void;score:(p:Player)=>{value:number|null;rank:number|null};open:(id:string)=>void;context:(e:ReactMouseEvent,data:Omit<Menu,'x'|'y'>)=>void}){
  const compatible=activePlayer&&(canPlay(latest(activePlayer)?.positions??[],pair.ip.position)||canPlay(latest(activePlayer)?.positions??[],pair.oop.position))
