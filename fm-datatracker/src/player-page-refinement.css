@@ -1,0 +1,10 @@
+.player-attribute-row {
+  flex: 0 0 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  box-sizing: border-box;
+}
+.player-attribute-row b { font-weight: 900; }
+.player-attribute-row b.attribute-high { color: var(--attribute-high) !important; }
+.player-attribute-row b.attribute-mid { color: var(--attribute-mid) !important; }
+.player-attribute-row b.attribute-low { color: var(--attribute-low) !important; }
