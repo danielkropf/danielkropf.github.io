@@ -5,19 +5,17 @@ export type PositionCapability = { family: string; sides: string }
 /** Expande a notação compacta do FM: em `D, WB (R)`, o `(R)` vale para D e WB. */
 export function positionCapabilities(positions: string[]): PositionCapability[] {
   const capabilities: PositionCapability[] = []
-  for (const raw of positions) {
-    const pending: string[] = []
-    const tokens = raw.toUpperCase().split(',').map(token => token.trim()).filter(Boolean)
-    for (const token of tokens) {
-      const side = token.match(/\(([^)]+)\)/)?.[1]?.replace(/[^RCL]/g, '') ?? ''
-      const families = token.replace(/\([^)]*\)/g, '').split('/').map(value => value.trim()).filter(Boolean)
-      pending.push(...families)
-      if (side) {
-        capabilities.push(...pending.splice(0).map(family => ({ family, sides: side })))
-      }
+  const pending: string[] = []
+  const tokens = positions.flatMap(raw => raw.toUpperCase().split(',')).map(token => token.trim()).filter(Boolean)
+  for (const token of tokens) {
+    const side = token.match(/\(([^)]+)\)/)?.[1]?.replace(/[^RCL]/g, '') ?? ''
+    const families = token.replace(/\([^)]*\)/g, '').split('/').map(value => value.trim()).filter(Boolean)
+    pending.push(...families)
+    if (side) {
+      capabilities.push(...pending.splice(0).map(family => ({ family, sides: side })))
     }
-    capabilities.push(...pending.map(family => ({ family, sides: '' })))
   }
+  capabilities.push(...pending.map(family => ({ family, sides: '' })))
   return capabilities
 }
 

@@ -29,4 +29,14 @@ describe('ordenação por posição', () => {
     expect(canPlayPosition(['D, WB (R)'], 'D (L)')).toBe(false)
     expect(canPlayPosition(['D (C)'], 'D (L)')).toBe(false)
   })
+
+  it('preserva o lado quando o import separa a notação compacta em um array', () => {
+    expect(positionCapabilities(['D', 'WB (L)'])).toEqual([
+      { family: 'D', sides: 'L' },
+      { family: 'WB', sides: 'L' },
+    ])
+    expect(canPlayPosition(['D', 'WB (L)'], 'D (L)')).toBe(true)
+    expect(canPlayPosition(['D', 'WB (L)'], 'D (C)')).toBe(false)
+    expect(canPlayPosition(['D', 'WB (L)'], 'D (R)')).toBe(false)
+  })
 })
