@@ -94,6 +94,25 @@ select{background-image:linear-gradient(45deg,transparent 50%,#b9f35b 50%),linea
 
 .transfer-group-panel > header h2 { margin: 3px 0 0; }
 .transfer-group-panel > header strong { color: #91a59a; }
+.transfer-group-actions { display: flex; align-items: center; gap: 10px; }
+
+.depth-group-head:has(.clear-current-group) { grid-template-columns: minmax(0, 1fr) auto; }
+.depth-group-head:has(.clear-current-group) > strong { padding-left: 0; }
+.depth-group-head:has(.clear-current-group) > small { grid-column: 1 / -1; }
+
+.clear-current-group {
+  min-height: 30px;
+  padding: .35rem .6rem !important;
+  border: 1px solid #735c27 !important;
+  border-radius: 6px;
+  color: #f0c65a !important;
+  background: #261f10 !important;
+  font-size: .68rem !important;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.clear-current-group:hover:not(:disabled) { border-color: #f0c65a !important; background: #392e15 !important; }
 
 .transfer-player-grid {
   display: grid;
