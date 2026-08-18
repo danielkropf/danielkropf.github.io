@@ -159,3 +159,74 @@ select{background-image:linear-gradient(45deg,transparent 50%,#b9f35b 50%),linea
 
 .transfer-empty b { color: #e8efe9; font-size: 1.05rem; }
 .transfer-drop-hint { position: sticky; bottom: 0; margin-top: 12px; padding: 10px; border-radius: 7px; color: #071208; background: #b9f35b; font-weight: 900; text-align: center; }
+
+/* Tabela personalizável do elenco */
+.table-customization-hint {
+  flex: 1 1 auto;
+  min-width: 180px;
+  color: #82978a;
+  font-size: .72rem;
+}
+
+.customizable-squad-table { overflow: auto; }
+.customizable-squad-table table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+.customizable-squad-table th,
+.customizable-squad-table td { box-sizing: border-box; }
+.customizable-squad-table th { background: #0e1b14; }
+.customizable-squad-table td[style*="sticky"] { background: #0f1d15; }
+.customizable-squad-table tr:hover td[style*="sticky"] { background: #17291e; }
+.customizable-squad-table .frozen-player-name,
+.customizable-squad-table th.frozen-column:last-of-type {
+  box-shadow: 2px 0 0 #52705d, 8px 0 14px rgb(0 0 0 / 22%);
+}
+.customizable-squad-table .draggable-column { cursor: grab; user-select: none; }
+.customizable-squad-table .draggable-column:active { cursor: grabbing; }
+.customizable-squad-table .role-score-cell { text-align: center; }
+.customizable-squad-table .role-score-cell .score-badge { margin-inline: auto; }
+
+.squad-column-context {
+  position: fixed !important;
+  z-index: 7000 !important;
+  display: grid !important;
+  align-content: start !important;
+  gap: 7px !important;
+  width: 290px !important;
+  min-width: 290px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: min(460px, calc(100vh - 24px)) !important;
+  overflow: auto !important;
+  padding: 10px !important;
+  border: 1px solid #45624f !important;
+  border-radius: 9px !important;
+  background: #0d1912 !important;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 52%) !important;
+}
+.squad-column-context hr { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid #2d4937; }
+.squad-column-context strong { color: #b9f35b; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
+.squad-column-context button,
+.squad-column-context select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #36513f;
+  border-radius: 6px;
+  color: #e9f0eb;
+  background: #12231a;
+  font: inherit;
+}
+.squad-column-context button { padding: 7px 9px; text-align: left; cursor: pointer; }
+.squad-column-context button:hover:not(:disabled) { border-color: #b9f35b; color: #b9f35b; background: #1a3022; }
+.squad-column-context button:disabled { opacity: .38; cursor: not-allowed; }
+.squad-column-context label { display: grid; gap: 4px; color: #91a59a; font-size: .68rem; }
+.squad-column-context select { padding-inline: 9px; }
+.squad-column-context .context-data-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.squad-column-context .add-role-column { color: #071208; background: #b9f35b; font-weight: 900; text-align: center; }
+
+@media (max-width: 850px) {
+  .table-customization-hint { display: none; }
+  .squad-evaluation-bar { flex-wrap: wrap; }
+}
