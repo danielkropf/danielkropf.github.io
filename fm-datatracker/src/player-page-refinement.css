@@ -8,3 +8,23 @@
 .player-attribute-row b.attribute-high { color: var(--attribute-high) !important; }
 .player-attribute-row b.attribute-mid { color: var(--attribute-mid) !important; }
 .player-attribute-row b.attribute-low { color: var(--attribute-low) !important; }
+
+.player-attribute-groups {
+  height: 100%;
+}
+
+.player-attribute-groups > section {
+  display: grid !important;
+  grid-template-rows: auto repeat(14, minmax(32px, 1fr));
+  align-content: stretch;
+}
+
+.player-attribute-groups > section > h3 {
+  margin-top: 0;
+}
+
+.player-attribute-groups .player-attribute-row {
+  flex: none !important;
+  height: auto !important;
+  min-height: 32px !important;
+}
