@@ -1,0 +1,34 @@
+/* Controles nativos e ajustes finais compartilhados entre todas as telas. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.35rem !important;
+  border: 1px solid #36513f !important;
+  background-color: #101d16 !important;
+  background-image: linear-gradient(45deg, transparent 50%, #b9f35b 50%), linear-gradient(135deg, #b9f35b 50%, transparent 50%), linear-gradient(to right, #2b4134, #2b4134) !important;
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%, calc(100% - 2.25rem) 50% !important;
+  background-repeat: no-repeat !important;
+  background-size: 5px 5px, 5px 5px, 1px 62% !important;
+  color: #e8efe9 !important;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+select:hover { border-color: #6b8d76 !important; background-color: #14251b !important; }
+select:focus { outline: none; border-color: #b9f35b !important; box-shadow: 0 0 0 2px #b9f35b22; }
+select:disabled { opacity: .45; cursor: not-allowed; }
+select option { background: #101d16; color: #e8efe9; }
+
+.manage-squads-button { display: grid !important; place-items: center !important; margin: 0 !important; line-height: 1 !important; text-align: center !important; }
+.depth-group-head { grid-template-columns: minmax(0, 1fr) !important; align-content: center; }
+.depth-group-head strong { width: 100%; overflow: visible; text-overflow: clip; white-space: nowrap; }
+.depth-group-head small { grid-column: 1; }
+.depth-three-slots .depth-player-chip { align-items: center; border-color: #36513f !important; background: #14231a !important; }
+.matrix-player-info .player-name {
+  display: block !important; width: 100% !important; min-width: 0 !important; height: auto !important;
+  padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important;
+  box-shadow: none !important; color: #edf4ee !important; font-size: .86rem !important; font-weight: 900 !important;
+  line-height: 1.1 !important; text-align: left !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.matrix-player-info .player-name:hover { color: #b9f35b !important; text-decoration: underline; }
+.matrix-player-info small { font-size: .62rem !important; line-height: 1.15; }
+.fm-player-tooltip-portal { transform: translate(-50%, -50%); }
