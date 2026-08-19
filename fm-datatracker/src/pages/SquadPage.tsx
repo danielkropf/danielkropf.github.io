@@ -1,4 +1,4 @@
-import{useEffect,useLayoutEffect,useMemo,useRef,useState,type DragEvent,type MouseEvent,type ReactNode}from'react'
+import{createContext,useContext,useEffect,useId,useLayoutEffect,useMemo,useRef,useState,type Dispatch,type DragEvent,type MouseEvent,type ReactNode,type SetStateAction}from'react'
 import{createPortal}from'react-dom'
 import{useNavigate}from'react-router-dom'
 import{supabase}from'../lib/supabase'
@@ -140,27 +140,35 @@ function ColumnContextMenu({x,y,column,dataColumns,attributeColumns,tactics,inse
   const categories:Array<[AttributeCategory,string]>=[['technical','Técnico'],['mental','Mental'],['physical','Físico'],['goalkeeping','Goleiro']]
   return <aside className="squad-column-context" style={{left:Math.max(12,Math.min(x,window.innerWidth-260)),top:Math.max(12,Math.min(y,window.innerHeight-190))}} onClick={event=>event.stopPropagation()}>
     <button onClick={freeze}>Congelar até esta coluna</button><button onClick={unfreeze}>Remover congelamento</button><button onClick={remove} disabled={column.id==='name'}>Remover coluna</button><hr/>
-    <MenuBranch label="Adicionar coluna">
+    <MenuRoot><MenuBranch label="Adicionar coluna">
       <MenuBranch label="Geral">{dataColumns.length?dataColumns.map(item=><button onClick={()=>insert(item)} key={item.id}>{item.label}</button>):<small>Todas já adicionadas</small>}</MenuBranch>
       <MenuBranch label="Atributos">{categories.map(([category,label])=><MenuBranch label={label} key={category}>{attributeColumns.filter(item=>ATTRIBUTE_CATALOG.find(attribute=>attribute.key===item.attributeKey)?.category===category).map(item=><button onClick={()=>insert(item)} key={item.id}>{item.label}</button>)}</MenuBranch>)}</MenuBranch>
       <MenuBranch label="Notas">
         <MenuBranch label="Táticas">{tactics.length?tactics.map(tactic=><MenuBranch label={tactic.name} key={tactic.id}>{tactic.ipAssignments.map(ip=>{const oop=tactic.oopAssignments.find(item=>item.playerId===ip.playerId)??ip;return <button onClick={()=>insert(tacticColumn(tactic,ip,oop))} key={ip.playerId}>{ip.position} {ip.roleCode} ↔ {oop.position} {oop.roleCode}</button>})}</MenuBranch>):<small>Nenhuma tática criada</small>}</MenuBranch>
         {(['IP','OOP']as TacticPhase[]).map(phase=><MenuBranch label={phase} key={phase}>{positions.map(([position,label])=><MenuBranch label={`${position} · ${label}`} key={position}>{rolesFor(position,phase).map(([code,name])=><button onClick={()=>insert(roleColumn(phase,position,code))} key={code}>{code} · {name}</button>)}</MenuBranch>)}</MenuBranch>)}
       </MenuBranch>
-    </MenuBranch>
+    </MenuBranch></MenuRoot>
   </aside>
 }
+type MenuLevelState={active:string|null;setActive:Dispatch<SetStateAction<string|null>>;keepOpen:()=>void;scheduleClose:()=>void}
+const MenuLevelContext=createContext<MenuLevelState|null>(null)
+function MenuRoot({children}:{children:ReactNode}){
+  const[active,setActive]=useState<string|null>(null),closeTimer=useRef<number|null>(null)
+  const keepOpen=()=>{if(closeTimer.current!==null){window.clearTimeout(closeTimer.current);closeTimer.current=null}}
+  const scheduleClose=()=>{keepOpen();closeTimer.current=window.setTimeout(()=>setActive(null),150)}
+  useEffect(()=>()=>keepOpen(),[])
+  return <MenuLevelContext.Provider value={{active,setActive,keepOpen,scheduleClose}}>{children}</MenuLevelContext.Provider>
+}
+function NestedMenuLevel({children,parent}:{children:ReactNode;parent:MenuLevelState}){const[active,setActive]=useState<string|null>(null);return <MenuLevelContext.Provider value={{...parent,active,setActive}}>{children}</MenuLevelContext.Provider>}
 function MenuBranch({label,children}:{label:string;children:ReactNode}){
-  const[anchor,setAnchor]=useState<DOMRect|null>(null),[position,setPosition]=useState<{left:number;top:number}|null>(null),panelRef=useRef<HTMLDivElement>(null),closeTimer=useRef<number|null>(null)
-  const cancelClose=()=>{if(closeTimer.current!==null){window.clearTimeout(closeTimer.current);closeTimer.current=null}}
-  const keepOpen=()=>window.dispatchEvent(new Event('squad-context-keepopen'))
-  const open=(element:HTMLElement)=>{keepOpen();setPosition(null);setAnchor(element.getBoundingClientRect())}
-  const close=()=>{cancelClose();closeTimer.current=window.setTimeout(()=>window.dispatchEvent(new Event('squad-context-close')),110)}
+  const level=useContext(MenuLevelContext),id=useId(),[anchor,setAnchor]=useState<DOMRect|null>(null),[position,setPosition]=useState<{left:number;top:number}|null>(null),panelRef=useRef<HTMLDivElement>(null),openState=level?.active===id
+  const open=(element:HTMLElement)=>{level?.keepOpen();level?.setActive(id);setPosition(null);setAnchor(element.getBoundingClientRect())}
   useLayoutEffect(()=>{if(!anchor||!panelRef.current)return;const panel=panelRef.current.getBoundingClientRect(),gap=5,padding=12,left=anchor.right+gap+panel.width<=window.innerWidth-padding?anchor.right+gap:Math.max(padding,anchor.left-gap-panel.width),top=Math.max(padding,Math.min(anchor.top,window.innerHeight-panel.height-padding));setPosition({left,top})},[anchor,children])
-  useEffect(()=>{const hide=()=>setAnchor(null);window.addEventListener('squad-context-keepopen',cancelClose);window.addEventListener('squad-context-close',hide);return()=>{cancelClose();window.removeEventListener('squad-context-keepopen',cancelClose);window.removeEventListener('squad-context-close',hide)}},[])
-  return <div className="context-branch" onMouseEnter={keepOpen} onMouseLeave={close}>
+  useEffect(()=>{if(!openState){setAnchor(null);setPosition(null)}},[openState])
+  if(!level)return null
+  return <div className="context-branch" onMouseEnter={level.keepOpen} onMouseLeave={level.scheduleClose}>
     <button onMouseEnter={event=>open(event.currentTarget)} onFocus={event=>open(event.currentTarget)}><span>{label}</span><span>›</span></button>
-    {anchor&&createPortal(<div ref={panelRef} className="context-submenu-portal" style={{left:position?.left??-10000,top:position?.top??-10000,visibility:position?'visible':'hidden'}} onMouseEnter={keepOpen} onMouseLeave={close} onClick={event=>event.stopPropagation()}>{children}</div>,document.body)}
+    {openState&&anchor&&createPortal(<div ref={panelRef} className="context-submenu-portal" style={{left:position?.left??-10000,top:position?.top??-10000,visibility:position?'visible':'hidden'}} onMouseEnter={level.keepOpen} onMouseLeave={level.scheduleClose} onClick={event=>event.stopPropagation()}><NestedMenuLevel parent={level}>{children}</NestedMenuLevel></div>,document.body)}
   </div>
 }
 function Tooltip({content,children}:{content:string;children:ReactNode}){const[anchor,setAnchor]=useState<DOMRect|null>(null),show=(element:HTMLElement)=>setAnchor(element.getBoundingClientRect()),width=Math.min(330,typeof window==='undefined'?330:window.innerWidth-24),left=anchor?Math.min(Math.max(12,anchor.left+anchor.width/2-width/2),window.innerWidth-width-12):0,above=Boolean(anchor&&anchor.top>145);return <span className="tooltip-anchor" onMouseEnter={event=>show(event.currentTarget)} onMouseLeave={()=>setAnchor(null)} onFocus={event=>show(event.currentTarget)} onBlur={()=>setAnchor(null)}>{children}{anchor&&createPortal(<span role="tooltip" className={`floating-tooltip ${above?'above':'below'}`} style={{left,width,top:above?anchor.top-8:anchor.bottom+8}}>{content}</span>,document.body)}</span>}
