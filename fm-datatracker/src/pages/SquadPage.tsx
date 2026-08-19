@@ -26,6 +26,14 @@ type Row={player:PlayerRow;latest:Snapshot|undefined;score:number|null;status:st
 type Filter={id:string;column:SortKey;operator:'contains'|'equals'|'gte'|'lte';value:string}
 
 const positions=[['GK','Goleiro'],['D (L)','Defesa esquerda'],['D (C)','Defesa central'],['D (R)','Defesa direita'],['WB (L)','Ala esquerdo'],['WB (R)','Ala direito'],['DM (C)','Médio defensivo'],['M (L)','Médio esquerdo'],['M (C)','Médio central'],['M (R)','Médio direito'],['AM (L)','Extremo esquerdo'],['AM (C)','Médio ofensivo'],['AM (R)','Extremo direito'],['ST (C)','Atacante']] as const
+const positionGrid=[
+  {label:'Goleiro',group:'gk',slots:[null,'GK',null]},
+  {label:'Defesa',group:'d',slots:['D (R)','D (C)','D (L)']},
+  {label:'Médio defensivo',group:'dm',slots:['WB (R)','DM (C)','WB (L)']},
+  {label:'Médio central',group:'m',slots:['M (R)','M (C)','M (L)']},
+  {label:'Médio avançado',group:'am',slots:['AM (R)','AM (C)','AM (L)']},
+  {label:'Atacantes',group:'st',slots:[null,'ST (C)',null]}
+] as const
 const allColumns:ColumnKey[]=['status','name','age','nationality','value','team','position','height','weight','foot','contract','snapshot','score','reference']
 const defaultColumnKeys:ColumnKey[]=['status','name','age','nationality','value','team','position','score','reference']
 const columnLabels:Record<ColumnKey,string>={status:'Status',name:'Nome',age:'Idade',nationality:'Nacionalidade',value:'Valor',team:'Equipe',position:'Posições',height:'Altura',weight:'Peso',foot:'Pé preferido',contract:'Fim do contrato',snapshot:'Data do snapshot',score:'Nota geral',reference:'Nível de referência'}
@@ -100,7 +108,14 @@ export function SquadPage(){
   </div>
 }
 
-function PositionChooser({selected,change}:{selected:string[];change:(value:string[])=>void}){const label=!selected.length?'Todas as posições':selected.length===1?selected[0]:`${selected.length} posições`;return <details className="position-multi-filter squad-position-filter"><summary>{label}<span>⌄</span></summary><div className="position-multi-menu"><header><b>Jogadores que atuem em</b>{selected.length>0&&<button type="button" onClick={()=>change([])}>Limpar</button>}</header>{positions.map(([value,name])=><label className={`planning-line-${positionGroup(value).toLowerCase()}`} key={value}><input type="checkbox" checked={selected.includes(value)} onChange={event=>change(event.target.checked?[...selected,value]:selected.filter(item=>item!==value))}/><span><b>{value}</b> {name}</span></label>)}</div></details>}
+function PositionChooser({selected,change}:{selected:string[];change:(value:string[])=>void}){
+  const label=!selected.length?'Todas as posições':selected.length===1?selected[0]:`${selected.length} posições`,toggle=(value:string,checked:boolean)=>change(checked?[...selected,value]:selected.filter(item=>item!==value))
+  return <details className="position-multi-filter squad-position-filter"><summary>{label}<span>⌄</span></summary><div className="position-multi-menu position-pitch-filter">
+    <header><b>Jogadores que atuem em</b>{selected.length>0&&<button type="button" onClick={()=>change([])}>Limpar</button>}</header>
+    <div className="position-grid-head"><span>Linha</span><b>Lado direito</b><b>Centro</b><b>Lado esquerdo</b></div>
+    <div className="position-grid-body">{positionGrid.map(row=><div className={`position-grid-row planning-line-${row.group}`} key={row.label}><strong>{row.label}</strong>{row.slots.map((value,index)=>value?<label className={selected.includes(value)?'selected':''} key={value}><input type="checkbox" checked={selected.includes(value)} onChange={event=>toggle(value,event.target.checked)}/><span>{value}</span></label>:<span className="position-grid-empty" aria-hidden="true" key={index}>—</span>)}</div>)}</div>
+  </div></details>
+}
 function SquadCell({column,row,referenceCountry,referenceDivision,model,frozen,frozenEdge,left}:{column:TableColumn;row:Row;referenceCountry:string;referenceDivision:number;model:ModelConfig;frozen:boolean;frozenEdge:boolean;left:number}){
   const style=frozen?{position:'sticky' as const,left,zIndex:3}:undefined,cellClass=frozenEdge?'frozen-edge':''
   if(column.kind==='tacticRole'){const score=scoreForTacticRole(row,column,model);return <td className={`role-score-cell ${cellClass}`} style={style}><ScoreBadge value={score} rank={null} className="score-badge-compact"/></td>}
