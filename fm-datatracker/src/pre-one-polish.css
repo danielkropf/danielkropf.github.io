@@ -179,6 +179,12 @@ select{background-image:linear-gradient(45deg,transparent 50%,#b9f35b 50%),linea
 .customizable-squad-table th { background: #0e1b14; }
 .customizable-squad-table td[style*="sticky"] { background: #0f1d15; }
 .customizable-squad-table tr:hover td[style*="sticky"] { background: #17291e; }
+.customizable-squad-table .selectable-player-row { cursor: pointer; }
+.customizable-squad-table .selectable-player-row.selected-player-row td { background: #1b3424; box-shadow: inset 0 1px #65df70, inset 0 -1px #65df70; }
+.customizable-squad-table .selectable-player-row.selected-player-row td[style*="sticky"] { background: #203c29; }
+.squad-player-name-cell { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: .48rem; min-width: 0; }
+.squad-player-name-cell .player-name { justify-self: start; min-width: 0; padding: 0 !important; border: 0 !important; background: transparent !important; color: #e8efe9; font: inherit; font-weight: 800; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transform: none !important; }
+.squad-player-name-cell .player-name:hover { color: #b9f35b; text-decoration: underline; text-shadow: 0 0 10px rgb(185 243 91 / 35%); }
 .customizable-squad-table .frozen-player-name,
 .customizable-squad-table th.frozen-column:last-of-type {
   box-shadow: 2px 0 0 #52705d, 8px 0 14px rgb(0 0 0 / 22%);
