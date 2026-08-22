@@ -160,6 +160,64 @@ select{background-image:linear-gradient(45deg,transparent 50%,#b9f35b 50%),linea
 .transfer-empty b { color: #e8efe9; font-size: 1.05rem; }
 .transfer-drop-hint { position: sticky; bottom: 0; margin-top: 12px; padding: 10px; border-radius: 7px; color: #071208; background: #b9f35b; font-weight: 900; text-align: center; }
 
+/* Importação: o modal mantém controles fixos e rola apenas o conteúdo. */
+.settings-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-modal > header,
+.settings-modal .settings-tabs { flex: 0 0 auto; }
+
+.settings-modal .settings-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem .4rem 1rem 0;
+}
+
+.imports-page { min-width: 0; }
+.imports-page .title-row { gap: 1rem; }
+.imports-page .title-row > div { min-width: 0; }
+.imports-page .preview { margin-bottom: 1rem; }
+.imports-page .import-history .table-wrap { max-height: min(280px, 35vh); }
+
+/* Importação: mantém o resumo compacto e deixa o diagnóstico sob demanda. */
+.imports-page { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.import-panel { flex: 0 0 auto; min-width: 0; }
+.import-panel .title-row { min-height: 0; margin-bottom: .8rem; }
+.import-panel .title-row p { max-width: 760px; }
+.import-panel .preview { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: .75rem 1rem; padding: 1rem 1.1rem; margin: 0; }
+.import-panel .stats { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin: 0; }
+.import-panel .stats > div { padding-top: .45rem; min-width: 0; }
+.import-panel .stats strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-panel .import-fields { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(180px, .8fr) minmax(150px, .7fr) minmax(230px, 1.3fr); gap: .75rem; }
+.import-panel .import-fields label { min-width: 0; }
+.import-panel .import-fields input, .import-panel .import-fields select { width: 100%; margin-top: .3rem; padding: .55rem; }
+.import-panel .notice, .import-panel .warning { grid-column: span 6; margin: 0; padding: .6rem .75rem; }
+.import-panel .import-debug { grid-column: 1 / -1; border: 1px solid #294532; border-radius: 8px; background: #0d1912; }
+.import-panel .import-debug summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .65rem .75rem; cursor: pointer; color: #d8e5dd; font-weight: 700; }
+.import-panel .import-debug summary small { color: #91aa99; font-weight: 600; }
+.import-panel .import-debug[open] summary { border-bottom: 1px solid #294532; }
+.import-panel .import-debug .chips { max-height: min(180px, 24vh); overflow: auto; margin: 0; padding: .75rem; }
+.import-panel .import-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+.import-panel .import-actions button { min-width: 205px; }
+.imports-page .import-history { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; margin-top: .9rem; }
+.imports-page .import-history h2 { margin: .15rem 0 .55rem; }
+.imports-page .import-history .table-wrap { flex: 1 1 auto; min-height: 120px; max-height: none; }
+.settings-modal { width: min(1320px, 97vw); height: min(920px, calc(100dvh - 28px)); }
+.settings-modal .imports-page { height: auto; min-height: 0; overflow: visible; }
+.settings-modal .imports-page .import-history { min-height: 240px; }
+
+@media (max-width: 900px) {
+  .settings-modal { overflow: auto; }
+  .settings-modal .settings-content { min-height: auto; overflow: visible; padding-right: 0; }
+  .imports-page { height: auto; overflow: visible; }
+  .import-panel .stats, .import-panel .import-fields { grid-template-columns: 1fr; }
+  .import-panel .notice, .import-panel .warning { grid-column: 1 / -1; }
+}
+
 /* Tabela personalizável do elenco */
 .table-customization-hint {
   flex: 1 1 auto;

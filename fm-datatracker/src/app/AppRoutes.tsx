@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { RequireSave } from '../components/RequireSave'
 import { Dashboard } from '../pages/Dashboard'
+import { ImportsPage } from '../pages/ImportsPage'
 import { ModelLabPage } from '../pages/ModelLabPage'
 import { PlanningPage } from '../pages/PlanningPage'
 import { PlayerPage } from '../pages/PlayerPage'
@@ -13,6 +14,7 @@ function Protected({ children }: { children: ReactNode }) { return <RequireSave>
 export function AppRoutes() {
   return <Routes>
     <Route path="/" element={<Dashboard />} />
+    <Route path="/imports" element={<Protected><ImportsPage /></Protected>} />
     <Route path="/squad" element={<Protected><SquadPage /></Protected>} />
     <Route path="/players/:id" element={<Protected><PlayerPage /></Protected>} />
     <Route path="/planning" element={<Protected><PlanningPage /></Protected>} />
