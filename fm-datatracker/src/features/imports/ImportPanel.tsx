@@ -49,7 +49,7 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
 
   const recognized = preview && nameColumn ? prepareRows(preview, nameColumn) : []
   return <section className="import-panel">
-    <div className="title-row"><div><span className="eyebrow">IMPORTAÇÃO SEGURA</span><h2>Novo snapshot</h2><p>Quando idade e nascimento permitem, sugerimos 01/01 do ano mais provável. Você pode corrigir a data.</p></div><label className="button">Escolher CSV<input hidden type="file" accept=".csv,text/csv" onChange={event => void choose(event.target.files?.[0])} /></label></div>
+    <div className="title-row"><div><span className="eyebrow">IMPORTAÇÃO SEGURA</span><h2>Novo snapshot</h2><p>Quando idade e nascimento permitem, sugerimos 01/01 do ano mais provável. Você pode corrigir a data.</p></div><label className="button">Escolher arquivo<input hidden type="file" accept=".csv,text/csv" onChange={event => void choose(event.target.files?.[0])} /></label></div>
     {error && <p className="error">{error}</p>}
     {result && <div className="notice"><strong>{result.duplicate ? 'Arquivo duplicado — nada foi alterado.' : 'Import concluído.'}</strong><br />{String(result.rows ?? 0)} linhas · {String(result.new_players ?? 0)} novos · {String(result.updated_players ?? 0)} reconhecidos</div>}
     {preview ? <div className="card preview">
