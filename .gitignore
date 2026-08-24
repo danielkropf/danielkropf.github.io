@@ -12,9 +12,9 @@ tools/fm26-save-reader/**/*.fm
 docs/fm26-reader/
 tools/fm26-oracle/
 tools/fm26-save-reader/
-fm-datatracker/src/lib/fm26-*.ts
-fm-datatracker/src/lib/fm26-*.js
-fm-datatracker/src/lib/fm26-*.d.ts
+# O leitor de produção em src/lib/fm26-* é versionado com o site. Somente
+# ferramentas, fixtures e saves de pesquisa continuam locais acima.
+fm-datatracker/src/lib/fm26-offline-reader.private-fixtures.test.ts
 fm-datatracker/supabase/migrations/*_oracle_*.sql
 AGENTS.md
 package-lock.json

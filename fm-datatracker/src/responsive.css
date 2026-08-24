@@ -48,7 +48,7 @@ html,body,#root{width:100%;max-width:100%;min-height:100%;overflow-x:hidden}
 }
 
 @media(max-width:600px){
-  .shell>aside{grid-template-columns:auto minmax(90px,1fr) auto;gap:.35rem}.brand strong{display:none}.shell>aside .sidebar-actions button{width:34px;padding:0;font-size:0}.shell>aside .sidebar-actions button:first-child:before{content:'⚙';font-size:1rem}.shell>aside .sidebar-actions button:last-child:before{content:'↪';font-size:1rem}
+  .shell>aside{grid-template-columns:auto minmax(90px,1fr) auto;gap:.35rem}.brand strong{display:none}.shell>aside .sidebar-actions button,.shell>aside .sidebar-actions .sidebar-import{width:34px;padding:0;font-size:0}.shell>aside .sidebar-actions .sidebar-import:before{content:'↥';font-size:1rem}.shell>aside .sidebar-actions button:nth-child(2):before{content:'⚙';font-size:1rem}.shell>aside .sidebar-actions button:last-child:before{content:'↪';font-size:1rem}
   .shell>main{height:calc(100dvh - 108px);padding:.4rem}
   .title-row .save-state{font-size:.6rem}.screen-page>.title-row h1,.tactics-page>.title-row h1{font-size:1.35rem}
 
