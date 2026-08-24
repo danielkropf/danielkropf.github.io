@@ -26,4 +26,9 @@ describe('FM26 Oracle roster normalizer', () => {
   it('rejects a partial roster rather than silently importing it', () => {
     expect(() => parseOracleRosterJson(JSON.stringify({ OracleVersion: '0.4.9', PlayerCountExpected: 2, PlayerCountRead: 1, Players: [{ RosterIndex: 0 }] }))).toThrow('incompleto')
   })
+
+  it('maps runtime-only international, personality, wage and value fields without treating them as binary mappings', () => {
+    const [player] = normalizeOracleRoster({ players: [{ rosterIndex: 0, identity: { UniqueId: { value: '1' }, Name: { value: 'Ana' }, InternationalCapsAndGoalsString: { value: '31 caps / 4 goals' }, InternationalU21Caps: { value: '5' }, InternationalU21Goals: { value: '2' } }, otherProperties: { Personality: { value: 'Professional' }, TransferValueRange: { value: '€10M - €12M' }, ContextContractWeeklyWage: { value: '€50K p/w' } } }] })
+    expect(player.normalized_data).toMatchObject({ personality: 'Professional', international: { senior: { caps: 31, goals: 4 }, u21_caps: 5, u21_goals: 2 }, transfer_value_range: '€10M - €12M', context_contract_weekly_wage: '€50K p/w' })
+  })
 })

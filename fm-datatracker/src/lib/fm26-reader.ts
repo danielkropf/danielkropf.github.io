@@ -33,6 +33,10 @@ const numericProperties = (source: Record<string, OracleProperty> | undefined, n
   const parsed = numberValue(source, name)
   return parsed === null ? [] : [[name.replace(/[A-Z]/g, (letter, index) => `${index ? '_' : ''}${letter.toLowerCase()}`), parsed]]
 }))
+const internationalSummary = (raw: string | null) => {
+  const match = raw?.match(/(\d+)\s*caps?\s*\/\s*(\d+)\s*goals?/i)
+  return match ? { caps: Number(match[1]), goals: Number(match[2]), raw } : { caps: null, goals: null, raw }
+}
 const SEASON_STAT_PROPERTIES = ['ClubAppearancesThisSeason', 'ClubGoalsThisSeason', 'ClubAssistsThisSeason', 'ClubAverageRatingThisSeason', 'StartingAppearances', 'SubAppearances', 'Minutes', 'ExpectedGoals', 'ExpectedAssists', 'PassCompletionPercentage', 'ShotsOnTargetPercentage', 'TacklesCompletedPer90', 'CleanSheets', 'TotalSaves']
 
 const object = (value: unknown, label: string): Record<string, unknown> => {
@@ -103,6 +107,12 @@ export function normalizeOracleRoster(batch: OracleRosterBatch): NormalizedOracl
       date_of_birth: value(identity, 'DateOfBirth'), preferred_foot: value(identity, 'Footedness'),
       best_role: value(identity, 'BestRole'), best_oop_role: value(identity, 'BestOOPRole'),
       season_stats: numericProperties(player.otherProperties, SEASON_STAT_PROPERTIES),
+      international: {
+        senior: internationalSummary(value(identity, 'InternationalCapsAndGoalsString') ?? value(player.otherProperties, 'InternationalCapsAndGoalsString')),
+        u21_caps: numberValue(identity, 'InternationalU21Caps') ?? numberValue(player.otherProperties, 'InternationalU21Caps'),
+        u21_goals: numberValue(identity, 'InternationalU21Goals') ?? numberValue(player.otherProperties, 'InternationalU21Goals'),
+      },
+      personality: value(player.otherProperties, 'Personality') ?? value(identity, 'Personality'),
       positional_abilities: positionalAbilities,
       club_appearances_this_season: numberValue(player.otherProperties, 'ClubAppearancesThisSeason'),
       club_goals_this_season: numberValue(player.otherProperties, 'ClubGoalsThisSeason'),

@@ -828,7 +828,7 @@
               const old=current.get(eid);
               if (!old || dist<old.distance_to_identity) {
                 current.set(eid,{
-                  eid,uid:uid1,identity_offset:q,contract_offset:contractOffset,
+                  eid,uid:uid1,identity_offset:q,contract_offset:contractOffset,contract_team_id:teamId,
                   distance_to_identity:dist
                 });
               }
@@ -965,6 +965,7 @@
             seenUid.add(known.uid);
             players.push({
               eid,uid:known.uid,identity_offset:known.identity_offset,
+              contract_offset:known.contract_offset,contract_team_id:known.contract_team_id,
               roster_group:{
                 index:idx,label:g.label,primary:g.primary,record_offset:g.start,
                 raw_count:g.count,root_contract_players:g.root_hits,resolved_roster_players:g.roster_eids.length,
