@@ -1,6 +1,7 @@
 import { ZSTDDecoder } from 'zstddec/stream'
 import { FM26OfflineReaderV022 } from './fm26-offline-reader-v022.js'
 import { enrichOfflineTeamNames } from './fm26-team-resolver'
+import { parseFm26SaveSummaryDate } from './fm26-save-summary'
 
 type ReaderResult = Record<string, unknown>
 type ReaderConstructor = new (args: {
@@ -49,11 +50,27 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
   onStatus('Descompactando estatísticas…')
   const stats = await archive.getMember('rgman/player_stats.dat')
   const history = archive.memberByName.has('player_stats_hist_dt.cmt') ? await archive.getMember('player_stats_hist_dt.cmt') : null
-  onStatus('Descompactando tática e técnicos humanos…')
-  const [tactics, humans] = await Promise.all([archive.getMember('tactics_man.dat'), archive.getMember('humans.dat')])
+  onStatus('Descompactando tática, técnicos humanos e resumo do save…')
+  const [tactics, humans, saveSummaryData] = await Promise.all([
+    archive.getMember('tactics_man.dat'),
+    archive.getMember('humans.dat'),
+    archive.memberByName.has('save_game_summary.dat') ? archive.getMember('save_game_summary.dat') : Promise.resolve(null),
+  ])
   onStatus('Interpretando elencos, atributos, estatísticas e táticas…')
   const Reader = FM26OfflineReaderV022.FM26V1Reader as unknown as ReaderConstructor
   const result = new Reader({ gameDb, stats, tactics, humans, historyDt: history, fileName, internalName: archive.saveName, manifestMembers: archive.members.length }).read()
+  const expectedHumanCount = humans.length >= 10 ? humans[8] | (humans[9] << 8) : 0
+  const saveSummary = parseFm26SaveSummaryDate(saveSummaryData, expectedHumanCount)
+  const currentSave = result.save && typeof result.save === 'object' && !Array.isArray(result.save) ? result.save as Record<string, unknown> : {}
+  result.save = {
+    ...currentSave,
+    ...(saveSummary.status === 'confirmed' ? {
+      current_date: saveSummary.current_date,
+      current_date_precision: 'day',
+      current_date_source: saveSummary.source,
+    } : {}),
+    save_game_summary: saveSummary,
+  }
   onStatus('Resolvendo nomes de equipes confirmados…')
   enrichOfflineTeamNames(result, gameDb)
   onStatus('Concluído.')

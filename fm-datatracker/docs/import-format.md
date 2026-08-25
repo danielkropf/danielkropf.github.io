@@ -12,13 +12,12 @@ Os arquivos são lidos no navegador. CSV usa Papa Parse em worker; `.fm` usa `fm
 
 ## Datas
 
-- Toda importação exige uma data completa `AAAA-MM-DD` válida antes da confirmação.
-- CSV sem `.fm`: idade + nascimento podem sugerir apenas o **ano**. A interface mostra essa sugestão, mas não inventa `01/01`; o usuário informa/confirma a data completa.
-- Com `.fm`: uma data com precisão `day` controla o snapshot e pode bloquear o campo. Se o leitor confirmar apenas `year`, o ano aparece como evidência, o campo permanece editável e o usuário precisa informar dia/mês no mesmo ano. Uma âncora `YYYY-01-01` interna jamais pode ser persistida como se fosse a data real.
+- CSV sem `.fm`: a data é sugerida a partir de idade e data de nascimento; em empate, o ano menor vence. O usuário pode corrigir antes de confirmar.
+- Com `.fm`: a data extraída do save controla o snapshot e o campo fica bloqueado. O mapping confirmado usa `save_game_summary.dat`: após o cabeçalho/listas e os records dos técnicos humanos, o `packed_date` é `u32 little-endian`, com **ano nos 16 bits superiores**, **dia do ano (1-based) nos 9 bits inferiores** e flags preservadas nos bits restantes. A leitura só recebe precisão `day` quando a gramática do resumo é válida e a quantidade de técnicos coincide com `humans.dat`; se essa validação falhar, o leitor deve falhar fechado e pode manter apenas a âncora anual já conhecida, sem inventar dia/mês. A hipótese foi confirmada por saves controlados consecutivos `30/01/2025`, `31/01/2025` e `01/02/2025`, além das regressões Bayern/Tenerife/J1/Mapeamento 2.
 
 ## Validação CSV × `.fm`
 
-Jogadores são associados por `Unique ID` sempre que ele existir. Sem ID no CSV, o fallback seguro é nome normalizado + data de nascimento; nome isolado só é aceito quando é único nas duas fontes. A mesma linha do `.fm` nunca pode validar dois jogadores. A validação compara apenas dados com interpretação confirmada. Comparações semânticas normalizam:
+Jogadores são associados preferencialmente por `Unique ID`; nome normalizado é fallback. A validação compara apenas dados com interpretação confirmada. Comparações semânticas normalizam:
 
 - datas `d/m/yyyy` e `yyyy-mm-dd`;
 - pé preferido;
@@ -28,8 +27,6 @@ Jogadores são associados por `Unique ID` sempre que ele existir. Sem ID no CSV,
 Uma leitura combinada só habilita recursos dependentes do save quando a cobertura de jogadores e de dados comparáveis atingir o limiar definido no painel. Caso contrário, o import segue como fallback CSV e deixa o motivo visível.
 
 Campos sem mapeamento confirmado não são tratados como divergência: aparecem como **não comparáveis**. Divergências devem mostrar jogador, campo, valor CSV e valor `.fm`; não reduza o diagnóstico a um percentual geral.
-
-Para habilitar o modo combinado, todos os jogadores do CSV precisam ser associados sem ambiguidade e os campos efetivamente comparados não podem divergir. O CSV define quais linhas serão persistidas; jogadores extras encontrados no `.fm` ficam fora daquele import em vez de serem acrescentados silenciosamente.
 
 ## Dados `.fm`: contrato atual
 

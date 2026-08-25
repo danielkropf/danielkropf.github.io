@@ -6,7 +6,7 @@ Aplicação pessoal para acompanhar saves do Football Manager por meio de snapsh
 
 ## Estado atual
 
-- Versão do aplicativo: **v0.22.3**.
+- Versão do aplicativo: **v0.23.1**.
 - CSV é o caminho de importação estável.
 - A leitura direta de `.fm` funciona localmente no navegador e permanece beta: campos sem mapeamento confirmado nunca devem ser inventados.
 - O projeto usa Supabase para autenticação e dados do usuário; o navegador recebe apenas a chave pública `anon`.

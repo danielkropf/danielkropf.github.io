@@ -56,7 +56,7 @@ O projeto usa `HashRouter` e `base: /fm-datatracker/`. Não troque por router de
 - `features/imports`: painel de CSV/`.fm`, validação e histórico.
 - `features/appearance`: aplicação de preferências visuais.
 - `lib/importer`: CSV, normalização, detecção de colunas, hash e data sugerida.
-- `lib/fm26-offline-*`: leitor local beta de `.fm`, normalização e worker.
+- `lib/fm26-offline-*`: leitor local beta de `.fm`, normalização e worker. `fm26-save-summary.ts` interpreta de forma fail-closed o `packed_date` confirmado de `save_game_summary.dat` e só expõe precisão de dia quando a contagem de técnicos coincide com `humans.dat`.
 - `lib/fm26-team-resolver`: camada separada e fail-closed que resolve Team IDs estruturais para nomes de equipes a partir do próprio `game_db.dat`; ela não altera o parser legado e não classifica clube proprietário/empréstimo.
 - `lib/fm-comparison`: normalização semântica de datas, pés e posições para CSV × `.fm`.
 - `lib/fm26-reader`: normalizador para o resultado JSON do Oracle de runtime; é um caminho separado do leitor offline.
