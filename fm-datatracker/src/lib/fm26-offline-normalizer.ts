@@ -114,6 +114,8 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
         ...positionalAbility, preferred_central_position: null,
       }
       const rosterGroup = record(player.roster_group)
+      const contractTeamResolution = record(player.contract_team_name_resolution)
+      const rosterTeamResolution = record(rosterGroup.team_name_resolution)
       const statistics = Object.keys(record(player.statistics)).length ? record(player.statistics) : null
       const tactic = Object.keys(record(player.tactic)).length ? record(player.tactic) : null
       players.push({
@@ -133,14 +135,22 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
           fm_hidden: fmHidden,
           unresolved_fm_hidden_fields: ['world_reputation', 'preferred_central_position'],
           positional_ratings: player.positions ?? {}, feet: player.feet ?? {}, preferred_foot: preferredFoot,
+          left_foot: left, right_foot: right,
+          left_foot_raw: numberOrNull(feet.left_raw), right_foot_raw: numberOrNull(feet.right_raw),
           personality_hidden_attributes: player.hidden_personality ?? null,
           personality_status: player.hidden_personality ? 'confirmed_binary_eight_traits' : 'unresolved',
-          // Contract owner is distinct from the roster group: a player can be
-          // registered to B/U19 or be on loan while contracted elsewhere.
+          // Historical compatibility keys below retain their old names, but the
+          // person↔Team shape alone does not prove contract ownership. Keep the
+          // semantic status explicit until permanent/loan relationships are mapped.
           contracted_club_team_id: player.contract_team_id ?? null,
           contracted_club_contract_offset: player.contract_offset ?? null,
           contracted_club_status: player.contract_team_id != null ? 'confirmed_binary_contract_shape' : 'unresolved',
+          contract_team_name: stringOrNull(player.contract_team_name),
+          contract_team_name_resolution: Object.keys(contractTeamResolution).length ? contractTeamResolution : null,
+          contract_team_semantics_status: player.contract_team_id != null ? 'owner_unresolved_person_team_relation' : 'unresolved',
           roster_team_id: rosterGroup.team_id ?? null,
+          roster_team_name: stringOrNull(rosterGroup.team_name),
+          roster_team_name_resolution: Object.keys(rosterTeamResolution).length ? rosterTeamResolution : null,
           statistics, tactic, roster_group: player.roster_group ?? null,
         },
       })

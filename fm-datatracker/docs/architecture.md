@@ -1,32 +1,24 @@
-# Arquitetura do FM DataTracker
+# Arquitetura
 
-## Princípios
-
-- O app permanece isolado do site estático e usa `base: /fm-datatracker/`.
-- O `HashRouter` mantém todas as rotas compatíveis com GitHub Pages.
-- A chave pública do Supabase é o único segredo disponível no cliente; o isolamento dos dados depende de RLS.
-- Regras de negócio puras ficam fora dos componentes React e possuem testes unitários.
-- Páginas coordenam casos de uso. Componentes de aplicação cuidam somente da estrutura global.
-- Imports nunca alteram snapshots anteriores: o histórico é append-only.
-
-## Camadas e dependências
+## Visão geral
 
 ```text
 main.tsx
-└── app/                    composição global
-    ├── AppShell            navegação e layout
-    ├── AppRoutes           mapa de rotas e proteção por save
-    ├── SettingsModal       composição das configurações
-    └── styles/index.css    ordem única dos estilos globais
+└── app/
+    ├── AppShell              layout, menu, preload do save e Configurações
+    ├── AppRoutes             rotas e proteção por save ativo
+    ├── SettingsModal         abas administrativas
+    └── styles/index.css      ordem única de importação dos estilos
 
-pages/                      telas e coordenação de casos de uso
-features/                   estado e comportamento de cada domínio
-components/                 componentes compartilhados sem domínio específico
-lib/                        regras puras, parsers, cálculos e infraestrutura
-types/                      contratos persistidos e compartilhados
+pages/                        telas e composição de casos de uso
+features/                     estado e interface de um domínio
+components/                   componentes reutilizáveis de interface
+lib/                          regras puras, parsers, cache e infraestrutura
+types/                        contratos compartilhados e persistidos
+supabase/migrations/          esquema e RPCs executados no Supabase
 ```
 
-Fluxo permitido de dependências:
+Dependências permitidas:
 
 ```text
 app → pages/features/components → lib/types
@@ -35,53 +27,60 @@ features → components/lib/types
 lib → types
 ```
 
-`lib` não deve importar páginas, componentes ou estado React. Uma página pode temporariamente conter componentes privados quando eles só existem naquela tela; ao serem reutilizados, devem migrar para a feature correspondente.
+`lib` não importa React, páginas ou estado de tela. Ao extrair código de páginas grandes, preserve comportamento com testes de caracterização antes de mover a lógica.
 
-## Domínios existentes
+## Rotas públicas
 
-- `features/auth`: sessão e entrada do usuário.
-- `features/saves`: save ativo e persistência da escolha local.
-- `features/imports`: fluxo interativo de importação.
-- `features/appearance`: leitura, escrita e aplicação das preferências visuais.
-- `lib/importer`: CSV, normalização, datas, inferência e preparação de linhas.
-- `lib/positions`: interpretação da notação posicional completa do FM.
-- `lib/tactics`: nós do campo, fases e funções disponíveis.
-- `lib/scoring`: normalização e composição matemática das notas.
-- `lib/reference`: percentis e comparação com a base de referência.
-- `lib/roleWeights`: matriz estática de pesos por função.
+| Rota | Tela | Observação |
+| --- | --- | --- |
+| `#/` | Visão Geral | Pode ser acessada sem save; inicia ações de importação. |
+| `#/imports` | Novo snapshot | Exige save ativo. |
+| `#/squad` | Elenco | Tabela configurável, perfis e notas. |
+| `#/players/:id` | Perfil do jogador | Não aparece no menu; mantém retorno contextual. |
+| `#/planning` | Planejamento | Elencos, matriz e grupos de mercado. |
+| `#/tactics` | Táticas | IP/OOP, funções e seleção de jogadores. |
+| `#/scoring`, `#/models` | Pontuação & Funções | A mesma tela por compatibilidade. |
 
-## Persistência e fluxo de dados
+O projeto usa `HashRouter` e `base: /fm-datatracker/`. Não troque por router de histórico sem reconfigurar GitHub Pages.
+
+## Estado e cache
+
+- `features/saves/SaveContext.tsx` consulta saves não arquivados e guarda o save ativo em `localStorage` sob `fm-datatracker:active-save`.
+- `lib/dataCache.ts` memoriza a promessa da consulta rica de jogadores por `saveId`; `preloadSave` é disparado pelo `AppShell` em segundo plano. Use `invalidateSaveData(saveId)` após uma mutação que afete jogadores/snapshots.
+- Preferências de aparência e escolhas estritamente visuais são locais ao navegador. Dados de save, táticas, planejamento, imports e jogadores são persistidos no Supabase.
+
+## Domínios principais
+
+- `features/auth`: autenticação e proteção de sessão.
+- `features/saves`: lista, criação e seleção persistente de saves.
+- `features/imports`: painel de CSV/`.fm`, validação e histórico.
+- `features/appearance`: aplicação de preferências visuais.
+- `lib/importer`: CSV, normalização, detecção de colunas, hash e data sugerida.
+- `lib/fm26-offline-*`: leitor local beta de `.fm`, normalização e worker.
+- `lib/fm26-team-resolver`: camada separada e fail-closed que resolve Team IDs estruturais para nomes de equipes a partir do próprio `game_db.dat`; ela não altera o parser legado e não classifica clube proprietário/empréstimo.
+- `lib/fm-comparison`: normalização semântica de datas, pés e posições para CSV × `.fm`.
+- `lib/fm26-reader`: normalizador para o resultado JSON do Oracle de runtime; é um caminho separado do leitor offline.
+- `lib/positions`, `lib/tactics`: notação posicional, funções e ligações IP/OOP.
+- `lib/scoring`, `lib/roleWeights`, `lib/reference`: notas, pesos por função e percentis de referência.
+
+## Persistência
 
 ```text
 arquivo local
-→ parser e normalização
-→ preview obrigatório
-→ hash e duplicidade
-→ identidade do jogador
-→ RPC transacional de importação
-→ snapshots imutáveis
-→ scoring derivado
-→ páginas de análise e planejamento
+  → parser/worker no navegador
+  → preview e validação explícita
+  → hash do(s) arquivo(s)
+  → RPC transacional import_fm_export
+  → imports + players + snapshots + atributos
+  → cache invalidado e telas derivadas recalculadas
 ```
 
-Configurações específicas do save, como táticas, pesos e planejamento, são persistidas no modelo do save. Preferências puramente visuais são locais ao navegador.
+Snapshots são append-only. A importação nunca deve sobrescrever uma fotografia anterior. A identidade prioriza `fm_player_id`/`UniqueId`; nome é apenas fallback quando inequivocamente único no save.
 
-## Estilos
+## Estilos e UX
 
-`app/styles/index.css` é o único ponto importado pelo JavaScript e documenta a ordem de cascata existente. A fragmentação histórica dos arquivos foi preservada nesta reorganização para não alterar a aparência. Novos estilos devem ser agrupados por feature; estilos globais de controles ficam no final da cascata.
+`src/app/styles/index.css` é o único arquivo CSS importado pelo JavaScript e define a ordem de cascata. Adicione estilos globais no fim dessa cascata; mantenha estilos de tela/feature no seu arquivo específico. Controles de dropdown, tooltip, score badge, barras de rolagem e estados de interação devem reutilizar os padrões existentes, não criar uma aparência paralela.
 
-## Dívida técnica controlada
+## Dívida técnica consciente
 
-- `PlanningPage`, `TacticsPage` e `SquadPage` ainda são coordenadores grandes. A extração futura deve ocorrer por componente ou hook, acompanhada de testes de caracterização.
-- `roleWeights.ts` é um dataset estático grande; deve continuar isolado de componentes.
-- O bundle principal ultrapassa 500 kB. Lazy loading por rota é uma otimização futura, não aplicada agora para preservar rigorosamente o comportamento de carregamento.
-
-## Critérios para mudanças estruturais
-
-Toda reorganização deve manter:
-
-1. URLs e rotas públicas.
-2. Formato persistido no Supabase e no `localStorage`.
-3. Ordem da cascata CSS.
-4. Resultados dos cálculos e parsers.
-5. Testes, TypeScript e build de produção aprovados.
+`PlanningPage`, `TacticsPage`, `SquadPage` e `ImportPanel` têm coordenação considerável. Extrações futuras devem ser incrementais, mantendo rotas, dados persistidos, atalhos de interação, CSS e testes.

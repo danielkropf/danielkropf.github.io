@@ -7,6 +7,7 @@ import{ScoreBadge}from'../components/ScoreBadge'
 import{roleDefaultWeights,usesLegacyRoleDefaults}from'../lib/roleWeights'
 import{PITCH_NODES,positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{useSaves}from'../features/saves/SaveContext'
+import{patchModelConfig}from'../lib/model-config'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Assignment={playerId:string;nodeId:string;position:string;roleId:string;roleCode:string;roleName:string}
@@ -73,7 +74,6 @@ function normalizeTactic(t:Partial<Tactic>&Pick<Tactic,'id'|'name'>):Tactic{
 
 export function TacticsPage(){
   const{selected}=useSaves()
-  const[modelId,setModelId]=useState<string|null>(null)
   const[config,setConfig]=useState<Config>(fresh)
   const[status,setStatus]=useState('Carregando…')
   const[phase,setPhase]=useState<TacticPhase>('IP')
@@ -100,9 +100,11 @@ export function TacticsPage(){
   useEffect(()=>{
     loaded.current=false
     if(!supabase||!selected)return
-    void supabase.from('scoring_models').select('id,config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data})=>{
-      if(data){const c=data.config as Partial<Config>;setModelId(data.id);setConfig({...fresh(),...c,tactics:(c.tactics??[]).map(t=>normalizeTactic(t))})}
-      else{setModelId(null);setConfig(fresh())}
+    setStatus('Carregando…')
+    void supabase.from('scoring_models').select('config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data,error})=>{
+      if(error){setStatus(`Erro ao carregar: ${error.message}`);return}
+      if(data){const c=data.config as Partial<Config>;setConfig({...fresh(),...c,tactics:(c.tactics??[]).map(t=>normalizeTactic(t))})}
+      else setConfig(fresh())
       loaded.current=true
       setStatus('Salvo automaticamente')
     })
@@ -122,14 +124,17 @@ export function TacticsPage(){
     if(!loaded.current||!selected||!supabase)return
     setStatus('Salvando…')
     const timer=setTimeout(async()=>{
-      const{data:{user}}=await supabase!.auth.getUser()
-      const payload={owner_id:user!.id,save_id:selected.id,name:'Model Lab',version:'2.2.0',config,is_active:true}
-      const result=modelId?await supabase!.from('scoring_models').update(payload).eq('id',modelId).select('id').single():await supabase!.from('scoring_models').insert(payload).select('id').single()
-      if(result.data?.id)setModelId(result.data.id)
-      setStatus(result.error?`Erro: ${result.error.message}`:'Salvo automaticamente')
+      try{
+        await patchModelConfig(selected.id,'2.9.0',{
+          tactics:config.tactics,
+          selected_tactic_id:config.selected_tactic_id,
+          selected_role_id:config.selected_role_id,
+        })
+        setStatus('Salvo automaticamente')
+      }catch(error){setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`)}
     },450)
     return()=>clearTimeout(timer)
-  },[config,modelId,selected?.id])
+  },[config.tactics,config.selected_tactic_id,config.selected_role_id,selected?.id])
 
   const tactic=config.tactics.find(t=>t.id===config.selected_tactic_id)
   const assignments=tactic?(phase==='IP'?tactic.ipAssignments:tactic.oopAssignments):[]

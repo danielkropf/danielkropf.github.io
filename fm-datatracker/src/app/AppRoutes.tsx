@@ -5,6 +5,7 @@ import { Dashboard } from '../pages/Dashboard'
 import { ImportsPage } from '../pages/ImportsPage'
 import { ModelLabPage } from '../pages/ModelLabPage'
 import { PlanningPage } from '../pages/PlanningPage'
+import { SavesPage } from '../pages/SavesPage'
 import { PlayerPage } from '../pages/PlayerPage'
 import { SquadPage } from '../pages/SquadPage'
 import { TacticsPage } from '../pages/TacticsPage'
@@ -14,6 +15,7 @@ function Protected({ children }: { children: ReactNode }) { return <RequireSave>
 export function AppRoutes() {
   return <Routes>
     <Route path="/" element={<Dashboard />} />
+    <Route path="/saves" element={<SavesPage />} />
     <Route path="/imports" element={<Protected><ImportsPage /></Protected>} />
     <Route path="/squad" element={<Protected><SquadPage /></Protected>} />
     <Route path="/players/:id" element={<Protected><PlayerPage /></Protected>} />

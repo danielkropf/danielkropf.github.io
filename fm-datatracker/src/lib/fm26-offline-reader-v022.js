@@ -2367,6 +2367,8 @@
         for (const rp of roster.players) {
           const player=this.gameDb._playerFromIdentity(rp.eid,rp.identity_offset,rp.uid);
           player.roster_group=rp.roster_group;
+          player.contract_offset=rp.contract_offset??null;
+          player.contract_team_id=rp.contract_team_id??null;
           const ts=tacticByUid.get(player.uid);
           player.tactic=ts ? {
             slot:ts.slot,ip:ts.ip,oop:ts.oop,ip_to_oop_link:ts.ip_to_oop_link

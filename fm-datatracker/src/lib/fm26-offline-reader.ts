@@ -1,5 +1,6 @@
 import { ZSTDDecoder } from 'zstddec/stream'
 import { FM26OfflineReaderV022 } from './fm26-offline-reader-v022.js'
+import { enrichOfflineTeamNames } from './fm26-team-resolver'
 
 type ReaderResult = Record<string, unknown>
 type ReaderConstructor = new (args: {
@@ -53,6 +54,8 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
   onStatus('Interpretando elencos, atributos, estatísticas e táticas…')
   const Reader = FM26OfflineReaderV022.FM26V1Reader as unknown as ReaderConstructor
   const result = new Reader({ gameDb, stats, tactics, humans, historyDt: history, fileName, internalName: archive.saveName, manifestMembers: archive.members.length }).read()
+  onStatus('Resolvendo nomes de equipes confirmados…')
+  enrichOfflineTeamNames(result, gameDb)
   onStatus('Concluído.')
   return result
 }

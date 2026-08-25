@@ -1,20 +1,33 @@
-# Local Football Manager runtime references; proprietary and never versioned.
-tools/fm26-oracle/refs/
-tools/fm26-oracle/bin/
-tools/fm26-oracle/obj/
+# -----------------------------------------------------------------------------
+# Local-only project material
+# -----------------------------------------------------------------------------
+# Documentation/handoff and reverse-engineering workspaces are useful locally,
+# but are not part of the website delivered by GitHub Pages.
+/docs/
+/tools/
+/fm-datatracker/docs/
 
-# Private FM save-reader validation outputs and save archives are local-only.
-tools/fm26-save-reader/private-fixtures/
-tools/fm26-save-reader/**/*.fm
+# Private FM reader / Oracle validation material.
+/fm-datatracker/src/lib/fm26-offline-reader.private-fixtures.test.ts
+/fm-datatracker/supabase/migrations/*_oracle_*.sql
 
-# FM26 reader / Oracle reverse-engineering workspace. These files are local
-# research artifacts and must remain outside the public website repository.
-docs/fm26-reader/
-tools/fm26-oracle/
-tools/fm26-save-reader/
-# O leitor de produção em src/lib/fm26-* é versionado com o site. Somente
-# ferramentas, fixtures e saves de pesquisa continuam locais acima.
-fm-datatracker/src/lib/fm26-offline-reader.private-fixtures.test.ts
-fm-datatracker/supabase/migrations/*_oracle_*.sql
-AGENTS.md
-package-lock.json
+# Local agent/instruction files.
+/AGENTS.md
+
+# A package lock in the repository root is not used. The lockfile inside
+# fm-datatracker MUST remain versioned because GitHub Actions uses npm ci.
+/package-lock.json
+
+# -----------------------------------------------------------------------------
+# OS / editor / temporary files
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp

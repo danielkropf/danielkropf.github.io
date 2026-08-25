@@ -125,7 +125,7 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
   async function remove(item: ImportRecord) {
     if (!supabase || !selected) return
     setMessage('')
-    const { error } = await supabase.from('imports').delete().eq('id', item.id).eq('save_id', selected.id)
+    const { error } = await supabase.rpc('delete_fm_import', { p_save_id: selected.id, p_import_id: item.id })
     if (error) { setMessage(`Não foi possível excluir a importação: ${error.message}`); return }
     invalidateSaveData(selected.id)
     await load()

@@ -4,6 +4,7 @@ import{ATTRIBUTE_CATALOG,DEFAULT_ATTRIBUTE_WEIGHTS,type AttributeCategory}from'.
 import{positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{roleDefaultWeights}from'../lib/roleWeights'
 import{useSaves}from'../features/saves/SaveContext'
+import{patchModelConfig}from'../lib/model-config'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Tactic={id:string;name:string;roles:Role[];[key:string]:unknown}
@@ -16,7 +17,6 @@ const fresh=():Config=>({general_weights:generalDefaults(),role_weight_overrides
 
 export function ModelLabPage(){
   const{selected}=useSaves()
-  const[modelId,setModelId]=useState<string|null>(null)
   const[config,setConfig]=useState<Config>(fresh)
   const[mode,setMode]=useState<'general'|'role'>('general')
   const[phase,setPhase]=useState<TacticPhase>('IP')
@@ -39,9 +39,11 @@ export function ModelLabPage(){
   useEffect(()=>{
     loaded.current=false
     if(!supabase||!selected)return
-    void supabase.from('scoring_models').select('id,config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data})=>{
-      if(data){const c=data.config as Partial<Config>;setModelId(data.id);setConfig({...fresh(),...c,general_weights:{...generalDefaults(),...(c.general_weights??{})},role_weight_overrides:c.role_weight_overrides??{}})}
-      else{setModelId(null);setConfig(fresh())}
+    setStatus('Carregando…')
+    void supabase.from('scoring_models').select('config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data,error})=>{
+      if(error){setStatus(`Erro ao carregar: ${error.message}`);return}
+      if(data){const c=data.config as Partial<Config>;setConfig({...fresh(),...c,general_weights:{...generalDefaults(),...(c.general_weights??{})},role_weight_overrides:c.role_weight_overrides??{}})}
+      else setConfig(fresh())
       loaded.current=true;setStatus('Salvo automaticamente')
     })
   },[selected?.id])
@@ -50,14 +52,16 @@ export function ModelLabPage(){
     if(!loaded.current||!selected||!supabase)return
     setStatus('Salvando…')
     const timer=setTimeout(async()=>{
-      const{data:{user}}=await supabase!.auth.getUser()
-      const payload={owner_id:user!.id,save_id:selected.id,name:'Model Lab',version:'2.3.0',config,is_active:true}
-      const result=modelId?await supabase!.from('scoring_models').update(payload).eq('id',modelId).select('id').single():await supabase!.from('scoring_models').insert(payload).select('id').single()
-      if(result.data?.id)setModelId(result.data.id)
-      setStatus(result.error?`Erro: ${result.error.message}`:'Salvo automaticamente')
+      try{
+        await patchModelConfig(selected.id,'2.9.0',{
+          general_weights:config.general_weights,
+          role_weight_overrides:config.role_weight_overrides,
+        })
+        setStatus('Salvo automaticamente')
+      }catch(error){setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`)}
     },450)
     return()=>clearTimeout(timer)
-  },[config,modelId,selected?.id])
+  },[config.general_weights,config.role_weight_overrides,selected?.id])
 
   function changeWeight(key:string,value:number){
     if(mode==='general')setConfig(c=>({...c,general_weights:{...c.general_weights,[key]:value}}))

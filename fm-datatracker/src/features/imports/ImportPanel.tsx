@@ -1,21 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { chooseImportDirectory, chooseImportFile, getImportDirectoryName, IMPORT_DIRECTORY_CHANGED, supportsPersistentFilePicker, type ImportFileKind } from '../../lib/file-picker'
-import { detectNameColumn, filesHash, inferSnapshotYear, normalizeHeader, parseCsvFile, prepareRows } from '../../lib/importer'
+import { detectNameColumn, filesHash, inferSnapshotYear, isValidIsoDate, normalizeHeader, parseCsvFile, prepareRows } from '../../lib/importer'
+import { matchImportRows, mergeValidatedRows, type PreparedImportRow } from '../../lib/import-match'
 import { normalizedDate, normalizedFoot, normalizedText, positionsMatch } from '../../lib/fm-comparison'
 import { supabase } from '../../lib/supabase'
 import type { ImportPreview, ImportType } from '../../types/domain'
 import { useSaves } from '../saves/SaveContext'
 
-type PreparedRow = ReturnType<typeof prepareRows>[number]
+type PreparedRow = PreparedImportRow
 type OfflineRead = { players: PreparedRow[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null }
 type ComparisonDifference = { player: string; field: string; csv: string; fm: string }
 type DataComparison = {
-  matched: number; csvTotal: number; fmTotal: number; coverage: number; valid: boolean; csvOnly: number; fmOnly: number
+  matched: number; csvTotal: number; fmTotal: number; coverage: number; valid: boolean; csvOnly: number; fmOnly: number; ambiguous: number
   checkedFields: number; matchingFields: number; divergentFields: number; unavailableFields: string[]; missingValues: number; dataCoverage: number; samples: string[]; differences: ComparisonDifference[]
 }
 
-const rowIdentity = (row: Pick<PreparedRow, 'fm_player_id' | 'normalized_name' | 'date_of_birth'>) => row.fm_player_id
-  ? `fm:${row.fm_player_id}` : `bio:${row.normalized_name}:${row.date_of_birth ?? 'unknown'}`
 const comparable = (value: string | null | undefined) => normalizedText(value)
 const comparableNumber = (value: unknown) => {
   const match = String(value ?? '').replace(',', '.').match(/-?\d+(?:\.\d+)?/)
@@ -31,7 +30,7 @@ const csvRaw = (row: PreparedRow, names: string[]) => {
 const unavailableFromOfflineReader = [
   'Club', 'Transfer Value', 'Wage', 'Expires (Contract)', 'Minimum Fee Release Clause',
   'Yth Apps', 'Yth Gls', 'Int Apps', 'Int Gls', 'World Reputation', 'Playing Time Happiness', 'Happiness', 'Morale',
-  'Left Foot', 'Right Foot', 'Personality',
+  'Personality',
 ]
 
 function errorMessage(error: unknown): string {
@@ -45,15 +44,12 @@ function errorMessage(error: unknown): string {
 }
 
 function comparePlayers(csvRows: PreparedRow[], fmRows: PreparedRow[]): DataComparison {
-  const fmByKey = new Map(fmRows.map(row => [rowIdentity(row), row]))
-  const fmByName = new Map(fmRows.map(row => [row.normalized_name, row]))
-  let matched = 0; let checkedFields = 0; let matchingFields = 0; let missingValues = 0
+  const association = matchImportRows(csvRows, fmRows)
+  let checkedFields = 0; let matchingFields = 0; let missingValues = 0
   const samples: string[] = []
   const differences: ComparisonDifference[] = []
-  for (const csv of csvRows) {
-    const fm = fmByKey.get(rowIdentity(csv)) ?? fmByName.get(csv.normalized_name)
-    if (!fm) continue
-    matched += 1
+
+  for (const { csv, fm } of association.matches) {
     const compare = (label: string, left: unknown, right: unknown, normalize?: (value: unknown) => string | null) => {
       if (!comparable(left === null || left === undefined ? null : String(left)) || !comparable(right === null || right === undefined ? null : String(right))) { missingValues += 1; return }
       checkedFields += 1
@@ -65,8 +61,9 @@ function comparePlayers(csvRows: PreparedRow[], fmRows: PreparedRow[]): DataComp
         if (differences.length < 30) differences.push({ player: csv.current_name, field: label, csv: readable(left), fm: readable(right) })
       }
     }
+
     const fmRaw = fm.raw_data as Record<string, unknown>
-    compare('Unique ID', csv.fm_player_id, fm.fm_player_id)
+    if (csv.fm_player_id) compare('Unique ID', csv.fm_player_id, fm.fm_player_id)
     compare('Player (Name)', csv.current_name, fm.current_name)
     const positionChecked = csv.positions.length && fm.positions.length
     if (positionChecked) {
@@ -99,32 +96,38 @@ function comparePlayers(csvRows: PreparedRow[], fmRows: PreparedRow[]): DataComp
       }
     }
   }
-  const coverage = csvRows.length ? matched / csvRows.length : 0
-  const dataCoverage = checkedFields ? matchingFields / checkedFields : 1
-  const divergentFields = checkedFields - matchingFields
-  return { matched, csvTotal: csvRows.length, fmTotal: fmRows.length, coverage, checkedFields, matchingFields, divergentFields, unavailableFields: unavailableFromOfflineReader, missingValues, dataCoverage, samples, differences,
-    valid: matched > 0 && coverage >= .9 && dataCoverage >= .9, csvOnly: Math.max(0, csvRows.length - matched), fmOnly: Math.max(0, fmRows.length - matched) }
-}
 
-function mergeRows(csvRows: PreparedRow[], fmRows: PreparedRow[]) {
-  const byKey = new Map(csvRows.map(row => [rowIdentity(row), row]))
-  const byName = new Map(csvRows.map(row => [row.normalized_name, row]))
-  return fmRows.map(fm => {
-    const csv = byKey.get(rowIdentity(fm)) ?? byName.get(fm.normalized_name)
-    if (!csv) return fm
-    return { ...fm, age: fm.age ?? csv.age, club: fm.club ?? csv.club, squad: fm.squad ?? csv.squad,
-      positions: fm.positions.length ? fm.positions : csv.positions, date_of_birth: fm.date_of_birth ?? csv.date_of_birth,
-      nationality: fm.nationality ?? csv.nationality, attributes: fm.attributes.length ? fm.attributes : csv.attributes,
-      raw_data: { csv: csv.raw_data, fm: fm.raw_data },
-      normalized_data: { ...csv.normalized_data, ...fm.normalized_data, import_source: 'csv+fm26-offline' },
-    } as unknown as PreparedRow
-  })
+  const dataCoverage = checkedFields ? matchingFields / checkedFields : 0
+  const divergentFields = checkedFields - matchingFields
+  const valid = csvRows.length > 0
+    && association.csvOnly === 0
+    && association.ambiguous === 0
+    && divergentFields === 0
+    && checkedFields > 0
+
+  return {
+    matched: association.matches.length,
+    csvTotal: csvRows.length,
+    fmTotal: fmRows.length,
+    coverage: association.coverage,
+    valid,
+    csvOnly: association.csvOnly,
+    fmOnly: association.fmOnly,
+    ambiguous: association.ambiguous,
+    checkedFields,
+    matchingFields,
+    divergentFields,
+    unavailableFields: unavailableFromOfflineReader,
+    missingValues,
+    dataCoverage,
+    samples,
+    differences,
+  }
 }
 
 function tagRows(rows: PreparedRow[], source: string, validation: 'validated' | 'unverified' | 'unavailable') {
   return rows.map(row => ({ ...row, normalized_data: { ...row.normalized_data, import_source: source, fm_validation: validation } }))
 }
-function isoFromYear(year: number | null) { return `${year ?? new Date().getFullYear()}-01-01` }
 
 export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const { selected } = useSaves()
@@ -163,15 +166,20 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const comparison = useMemo(() => csvRows.length && fmRows.length ? comparePlayers(csvRows, fmRows) : null, [csvRows, fmRows])
   const { importRows, importMode } = useMemo(() => {
     if (csvRows.length && fmRows.length) {
-      if (comparison?.valid) return { importRows: tagRows(mergeRows(csvRows, fmRows), 'csv+fm26-offline', 'validated'), importMode: 'validated' }
+      if (type === 'stats') return { importRows: tagRows(csvRows, 'csv-only', 'unavailable'), importMode: 'csv-stats' }
+      if (comparison?.valid) return { importRows: tagRows(mergeValidatedRows(csvRows, matchImportRows(csvRows, fmRows).matches), 'csv+fm26-offline', 'validated'), importMode: 'validated' }
       return { importRows: tagRows(csvRows, 'csv-only', 'unavailable'), importMode: 'csv-fallback' }
     }
     if (fmRows.length) return { importRows: tagRows(fmRows, 'fm26-offline-beta', 'unverified'), importMode: 'fm-beta' }
     return { importRows: tagRows(csvRows, 'csv-only', 'unavailable'), importMode: 'csv-only' }
-  }, [comparison, csvRows, fmRows])
-  const effectiveType = importMode === 'fm-beta' || importMode === 'validated' ? 'squad' : type
+  }, [comparison, csvRows, fmRows, type])
+  const effectiveType: ImportType = importMode === 'fm-beta' ? 'squad' : type
   const isReading = loadingCsv || loadingFm
-  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading)
+  const suggestedSnapshotYear = useMemo(() => inferSnapshotYear(csvRows), [csvRows])
+  const exactFmDate = fmRead?.snapshot_date_precision === 'day' ? fmRead.snapshot_date ?? null : null
+  const confirmedFmYear = fmRead?.snapshot_date_precision === 'year' && fmRead.snapshot_date ? fmRead.snapshot_date.slice(0, 4) : null
+  const snapshotDateValid = isValidIsoDate(snapshotDate) && (!confirmedFmYear || snapshotDate.startsWith(`${confirmedFmYear}-`))
+  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid)
 
   async function chooseCsv(file: File | undefined) {
     if (!file) return
@@ -180,7 +188,7 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       const next = await parseCsvFile(file)
       const detected = detectNameColumn(next.headers)
       setPreview(next); setNameColumn(detected); setType(next.fileType === 'unknown' ? 'squad' : next.fileType)
-      setSnapshotDate(isoFromYear(inferSnapshotYear(prepareRows(next, detected))))
+      if (!fmFile && !snapshotDate) setSnapshotDate('')
       setCsvStatus(`${next.rowCount} linhas e ${next.headers.length} dados detectados.`)
     } catch (error) { setCsvStatus(`Não foi possível ler o CSV: ${errorMessage(error)}`) }
     finally { setLoadingCsv(false) }
@@ -210,8 +218,12 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
     try {
       const read = await readFmInWorker(file)
       setFmRead(read)
-      if (read.snapshot_date) setSnapshotDate(read.snapshot_date)
-      setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. O campo permanece bloqueado porque o leitor ainda não confirmou dia e mês.` : ' A data exata do save ainda não foi localizada pelo leitor; o campo permanece bloqueado para evitar uma data inventada.'}`)
+      if (read.snapshot_date_precision === 'day' && read.snapshot_date) setSnapshotDate(read.snapshot_date)
+      else if (read.snapshot_date_precision === 'year' && read.snapshot_date) {
+        const year = read.snapshot_date.slice(0, 4)
+        setSnapshotDate(current => current.startsWith(`${year}-`) ? current : '')
+      } else setSnapshotDate('')
+      setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. Informe dia e mês antes de confirmar; 01/01 não será usado como data inventada.` : ' A data exata do save ainda não foi localizada pelo leitor; informe a data manualmente antes de confirmar.'}`)
     } catch (error) { setFmStatus(`Não foi possível ler o arquivo .fm: ${errorMessage(error)}`) }
     finally { setLoadingFm(false) }
   }
@@ -259,17 +271,23 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
     setSaving(true); setMessage('')
     try {
       if (!supabase) throw new Error('Banco mestre não configurado.')
+      if (!snapshotDateValid) throw new Error(confirmedFmYear ? `Informe uma data completa de ${confirmedFmYear} antes de confirmar.` : 'Informe uma data completa e válida antes de confirmar.')
       const warnings = [...(preview?.warnings ?? [])]
       if (importMode === 'fm-beta') warnings.push('Leitura .fm em beta: campos podem estar vazios ou incorretos.')
       if (importMode === 'csv-only') warnings.push('Importação CSV: recursos que dependem do arquivo .fm ficam indisponíveis.')
       if (importMode === 'csv-fallback') warnings.push('A validação CSV × .fm não foi suficiente; os dados do .fm não foram usados nesta importação.')
-      const { error } = await supabase.rpc('import_fm_export', {
+      const { data, error } = await supabase.rpc('import_fm_export', {
         p_save_id: selected.id, p_filename: [csvFile?.name, fmFile?.name].filter(Boolean).join(' + '),
         p_file_hash: await filesHash([csvFile, fmFile].filter((file): file is File => Boolean(file))), p_file_type: effectiveType,
-        p_snapshot_date: snapshotDate || isoFromYear(inferSnapshotYear(importRows)), p_delimiter: preview?.delimiter ?? ',',
+        p_snapshot_date: snapshotDate, p_delimiter: preview?.delimiter ?? ',',
         p_rows: importRows, p_warnings: warnings,
       })
       if (error) throw error
+      const result = data as { duplicate?: boolean } | null
+      if (result?.duplicate) {
+        setMessage('Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.')
+        return
+      }
       setMessage(importMode === 'validated' ? 'Importação concluída: CSV e .fm foram validados juntos.' : 'Importação concluída.')
       onImported?.()
     } catch (error) { setMessage(`Falha na persistência: ${errorMessage(error)}`) }
@@ -291,12 +309,13 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       </div>
       {fmFile && !csvFile && <p className="warning">Leitura <code>.fm</code> em construção e testes: ela pode trazer jogadores ou campos incorretos e valores vazios. Revise os dados antes de usar o snapshot.</p>}
       {csvFile && !fmFile && <p className="notice">O CSV continua sendo o caminho estável. Alguns dados e recursos que dependem da leitura do save não ficam disponíveis sem o arquivo <code>.fm</code>.</p>}
-      <div className="stats import-overview"><div><span>Save</span><strong>{selected?.name ?? 'Nenhum save ativo'}</strong></div><div><span>Snapshot</span><strong>{snapshotDate || 'Aguardando dados'}</strong></div><div><span>Dados detectados</span><strong>{detectedSummary}</strong></div><div><span>Leitura .fm</span><strong>{fmSummary}</strong></div></div>
-      <div className="import-fields"><label>{fmFile ? fmRead?.snapshot_date_precision === 'day' ? 'Data atual do save .fm' : 'Data do save .fm (precisão em análise)' : 'Data do snapshot'}<input value={snapshotDate} onChange={event => setSnapshotDate(event.target.value)} placeholder="AAAA-MM-DD" disabled={Boolean(fmFile)} /></label><label>Fonte dos dados<input value={sourceLabel} disabled /></label><label>Coluna com o nome<select value={nameColumn} onChange={event => setNameColumn(event.target.value)} disabled={!preview}>{preview ? preview.headers.map(header => <option key={header} value={header}>{header}</option>) : <option>Carregue um CSV</option>}</select></label></div>
+      <div className="stats import-overview"><div><span>Save</span><strong>{selected?.name ?? 'Nenhum save ativo'}</strong></div><div><span>Snapshot</span><strong>{snapshotDate || (confirmedFmYear ? `Ano ${confirmedFmYear} confirmado · falta dia/mês` : suggestedSnapshotYear ? `Ano sugerido: ${suggestedSnapshotYear}` : 'Informe a data')}</strong></div><div><span>Dados detectados</span><strong>{detectedSummary}</strong></div><div><span>Leitura .fm</span><strong>{fmSummary}</strong></div></div>
+      <div className="import-fields"><label>{exactFmDate ? 'Data atual do save .fm' : confirmedFmYear ? `Data do snapshot (ano ${confirmedFmYear} confirmado)` : 'Data do snapshot'}<input type="date" value={snapshotDate} onChange={event => setSnapshotDate(event.target.value)} placeholder="AAAA-MM-DD" disabled={Boolean(exactFmDate)} /></label><label>Fonte dos dados<input value={sourceLabel} disabled /></label><label>Tipo<select value={type} onChange={event => setType(event.target.value as ImportType)} disabled={Boolean(fmFile)}><option value="squad">Elenco</option><option value="intake">Intake</option><option value="stats">Estatísticas</option></select></label><label>Coluna com o nome<select value={nameColumn} onChange={event => setNameColumn(event.target.value)} disabled={!preview}>{preview ? preview.headers.map(header => <option key={header} value={header}>{header}</option>) : <option>Carregue um CSV</option>}</select></label></div>
+      {(csvFile || fmFile) && !snapshotDateValid && <p className="warning">{confirmedFmYear ? `O leitor confirmou apenas o ano ${confirmedFmYear}. Informe dia e mês reais para liberar a importação.` : suggestedSnapshotYear ? `O CSV sugere o ano ${suggestedSnapshotYear}, mas a data completa precisa ser confirmada manualmente.` : 'Informe uma data completa e válida para o snapshot.'}</p>}
       {preview && csvRows.length === 0 && <p className="warning">Nenhum jogador com nome foi encontrado. Escolha uma coluna de nome válida.</p>}
       <details className="import-debug"><summary>Dados detectados <small>{preview ? `${preview.headers.length} dados · abrir para conferir o mapeamento` : 'a leitura do CSV exibirá os dados aqui'}</small></summary>{preview && <div className="chips">{preview.headers.map(header => <span key={header} className={preview.ignoredColumns.includes(header) ? 'chip muted' : 'chip'}>{header}</span>)}</div>}</details>
       <div className={`fm-reader-status ${fmFile ? (loadingFm ? 'reading' : fmRead ? 'valid' : 'invalid') : ''}`}><strong>Arquivo .fm</strong><span>{fmStatus}</span></div>
-      <div className={`fm-comparison ${comparison ? (comparison.valid ? 'valid' : 'invalid') : ''}`}><strong>Validação CSV × .fm</strong>{comparison ? <><span>{comparison.matched}/{comparison.csvTotal} jogadores associados · {comparison.matchingFields}/{comparison.checkedFields} dados coincidem ({Math.round(comparison.dataCoverage * 100)}%).</span><small>{comparison.valid ? `Validação aprovada. ${comparison.unavailableFields.length} campos ainda não têm equivalência confirmada entre CSV e .fm e não entraram no cálculo.` : `Há ${comparison.divergentFields} divergência(s) objetiva(s). Por segurança, serão usados apenas dados CSV.`}</small><div className="comparison-actions">{comparison.differences.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('differences')}>Ver {comparison.divergentFields} divergência(s)</button>}{comparison.unavailableFields.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('unavailable')}>Ver campos ainda não comparáveis</button>}</div>{comparison.missingValues > 0 && <small>{comparison.missingValues} comparação(ões) foram ignoradas porque o valor estava vazio em pelo menos um dos arquivos.</small>}</> : <span>Envie os dois arquivos para validar identidade, posições, atributos, nascimento e nacionalidade.</span>}</div>
+      <div className={`fm-comparison ${comparison ? (comparison.valid ? 'valid' : 'invalid') : ''}`}><strong>Validação CSV × .fm</strong>{comparison ? <><span>{comparison.matched}/{comparison.csvTotal} jogadores associados · {comparison.matchingFields}/{comparison.checkedFields} dados coincidem ({Math.round(comparison.dataCoverage * 100)}%).</span><small>{comparison.valid ? `Validação aprovada. O CSV define os ${comparison.csvTotal} jogadores persistidos; ${comparison.fmOnly} jogador(es) extra(s) do .fm ficam fora deste import. ${comparison.unavailableFields.length} campos ainda não têm equivalência confirmada e não entraram no cálculo.` : `Validação recusada: ${comparison.csvOnly} jogador(es) do CSV sem associação, ${comparison.ambiguous} associação(ões) ambígua(s) e ${comparison.divergentFields} divergência(s) objetiva(s). Por segurança, serão usados apenas dados CSV.`}</small><div className="comparison-actions">{comparison.differences.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('differences')}>Ver {comparison.divergentFields} divergência(s)</button>}{comparison.unavailableFields.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('unavailable')}>Ver campos ainda não comparáveis</button>}</div>{comparison.missingValues > 0 && <small>{comparison.missingValues} comparação(ões) foram ignoradas porque o valor estava vazio em pelo menos um dos arquivos.</small>}</> : <span>Envie os dois arquivos para validar identidade, posições, atributos, nascimento e nacionalidade.</span>}</div>
       {comparison && !comparison.valid && <div className="diagnostic-consent"><label><input type="checkbox" checked={shareForDiagnostics} onChange={event => setShareForDiagnostics(event.target.checked)} /> Autorizo o envio privado destes dois arquivos para diagnóstico e melhoria do leitor.</label><button className="ghost" disabled={!shareForDiagnostics || sendingDiagnostics} onClick={() => void uploadDiagnostics()}>{sendingDiagnostics ? 'Enviando…' : 'Enviar arquivos para diagnóstico'}</button></div>}
       {message && <p className={message.startsWith('Falha') || message.startsWith('Não foi') ? 'warning' : 'notice'}>{message}</p>}
       <div className="import-actions"><button className="primary" disabled={!canConfirm} onClick={() => void confirm()}>{saving ? 'Importando…' : isReading ? 'Aguardando leitura…' : importMode === 'csv-fallback' ? 'Importar CSV sem dados do .fm' : 'Confirmar importação'}</button></div>
