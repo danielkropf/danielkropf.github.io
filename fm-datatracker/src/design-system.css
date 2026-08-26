@@ -43,3 +43,27 @@
 .dt-position-group>div{gap:3px}
 .dt-position-group label,.dt-position-spacer{min-height:33px}
 .dt-position-group label{padding:4px 6px;font-size:.65rem}
+
+
+/* v0.25.5 — containment contract: controls and score boxes must fit their own content */
+.dt-control,
+.dt-select-trigger,
+.dt-position-trigger{
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:0;
+  line-height:1.15;
+}
+.dt-control{overflow:visible}
+.dt-control > span,
+.dt-control > b,
+.dt-select-trigger > span,
+.dt-position-trigger > span{
+  max-width:100%;
+}
+.overall-score{
+  margin-block:0;
+  align-self:center;
+}

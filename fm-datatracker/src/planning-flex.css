@@ -120,3 +120,168 @@
 
 @media(max-width:700px){:root{--dt-player-card-min-width:148px}.planning-set-player-card{grid-template-columns:minmax(0,1fr) 46px}.planning-score-wrap,.planning-score-wrap>.overall-score{width:46px;min-width:46px;max-width:46px}}
 @media(max-width:520px){:root{--dt-player-card-min-width:132px}.planning-set-player-card{grid-template-columns:minmax(0,1fr) 44px}.planning-score-wrap,.planning-score-wrap>.overall-score{width:44px;min-width:44px;max-width:44px}}
+
+
+/* v0.25.5 — screenshot-driven containment and toolbar corrections */
+.planning-flex-page{
+  --planning-card-height:42px;
+  --planning-row-pad-y:5px;
+}
+
+/* Context controls stay together; actions consume only the remaining space. */
+.planning-flex-toolbar{
+  display:flex!important;
+  flex-wrap:nowrap!important;
+  align-items:center;
+  gap:var(--dt-related-gap);
+  width:100%;
+  min-width:0;
+}
+.tactic-custom-select{
+  flex:0 0 var(--planning-roster-width);
+  width:var(--planning-roster-width);
+  min-width:var(--planning-roster-width);
+}
+.planning-group-selector{
+  flex:0 1 430px;
+  width:min(430px,30vw);
+  min-width:270px;
+  max-width:430px;
+}
+.coverage-toggle{
+  flex:0 0 auto;
+  width:auto;
+  min-width:max-content;
+  box-sizing:border-box;
+  margin:0;
+}
+.planning-flex-actions{
+  flex:1 1 auto;
+  min-width:0;
+  margin-left:auto;
+  justify-content:flex-end;
+}
+.planning-flex-actions>.ghost{
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1.1;
+  overflow:visible;
+}
+.manage-sets-button,.manage-squads-button{
+  flex:0 0 166px;
+  width:166px;
+  min-width:166px;
+  max-width:166px;
+  padding-inline:12px!important;
+  font-size:.66rem;
+}
+.undo-planning-button{flex:0 0 var(--dt-control-height);width:var(--dt-control-height);padding:0!important}
+.planning-clear-current{flex:0 0 var(--dt-control-height)}
+
+/* The slot heading must breathe before IP/OOP information. */
+.planning-set-position{
+  row-gap:3px;
+}
+.planning-position-heading{
+  margin-bottom:3px;
+}
+.planning-phase-line{
+  line-height:1.2!important;
+}
+
+/* Card content must live inside the padding instead of being clipped by it. */
+.planning-set-player-card{
+  box-sizing:border-box;
+  height:var(--planning-card-height);
+  min-height:var(--planning-card-height);
+  padding:5px 7px;
+  grid-template-columns:minmax(0,1fr) 46px;
+  grid-template-rows:minmax(12px,1fr) minmax(11px,auto);
+  column-gap:7px;
+  overflow:hidden;
+}
+.planning-set-player-card .player-name{
+  line-height:1.15;
+}
+.planning-card-meta{
+  min-height:11px;
+  line-height:1.05;
+}
+.planning-score-wrap{
+  width:46px;
+  min-width:46px;
+  max-width:46px;
+  height:30px;
+  min-height:30px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin-block:auto;
+  overflow:visible;
+}
+.planning-score-wrap>.overall-score{
+  box-sizing:border-box;
+  width:46px;
+  min-width:46px;
+  max-width:46px;
+  height:26px;
+  margin-block:2px;
+  overflow:hidden;
+}
+.planning-score-wrap>.overall-score b{font-size:.8rem;line-height:1}
+
+/* One-row groups use one card height; double groups use exactly two card rows. */
+.planning-set-row{
+  box-sizing:border-box;
+  min-height:calc(var(--planning-card-height) + (var(--planning-row-pad-y) * 2));
+  padding-block:var(--planning-row-pad-y);
+}
+.planning-set-cards{
+  box-sizing:border-box;
+  min-height:var(--planning-card-height);
+  overflow:hidden;
+}
+.planning-player-drop-placeholder{
+  box-sizing:border-box;
+  height:var(--planning-card-height);
+  min-height:var(--planning-card-height);
+}
+.planning-set-row.is-grouped:not(.is-expanded){
+  box-sizing:border-box;
+  min-height:calc((var(--planning-card-height) * 2) + var(--dt-card-gap) + (var(--planning-row-pad-y) * 2));
+}
+.planning-set-row.is-grouped:not(.is-expanded) .planning-set-cards{
+  box-sizing:border-box;
+  height:calc((var(--planning-card-height) * 2) + var(--dt-card-gap));
+  min-height:calc((var(--planning-card-height) * 2) + var(--dt-card-gap));
+  max-height:calc((var(--planning-card-height) * 2) + var(--dt-card-gap));
+  align-content:flex-start;
+  overflow:hidden;
+  row-gap:0!important;
+}
+/* The explicit break itself owns the only vertical gap. This prevents a hidden third flex row. */
+.planning-set-row.is-grouped:not(.is-expanded) .planning-card-row-break{
+  flex:0 0 100%!important;
+  width:100%;
+  height:var(--dt-card-gap)!important;
+  min-height:var(--dt-card-gap)!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+@media(max-width:1500px){
+  .planning-group-selector{flex-basis:360px;width:min(360px,27vw);min-width:245px}
+  .manage-sets-button,.manage-squads-button{flex-basis:154px;width:154px;min-width:154px;max-width:154px;font-size:.62rem;padding-inline:9px!important}
+}
+@media(max-width:1240px){
+  .planning-flex-toolbar{flex-wrap:wrap!important}
+  .planning-flex-actions{flex:1 1 100%;width:100%}
+}
+@media(max-width:700px){
+  .planning-flex-toolbar{align-items:stretch}
+  .tactic-custom-select,.planning-group-selector,.coverage-toggle{flex:1 1 100%;width:100%;min-width:0;max-width:none}
+  .planning-flex-actions{justify-content:flex-start;flex-wrap:wrap}
+  .manage-sets-button,.manage-squads-button{flex:1 1 150px;width:auto;min-width:150px;max-width:none}
+}
