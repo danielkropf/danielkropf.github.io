@@ -11,11 +11,13 @@ export type OfflinePlayerRow = {
   date_of_birth: string | null
   nationality: string | null
   age: number | null
-  club: null
+  club: string | null
   squad: string | null
   positions: string[]
   preferred_foot: string | null
   height: number | null
+  weight: number | null
+  contract_expiry: string | null
   attributes: Array<{ attribute_key: string; attribute_label: string; value: number; category: AttributeCategory; source_column: string }>
   statistics: UnknownRecord | null
   tactic: UnknownRecord | null
@@ -66,8 +68,8 @@ const POSITIONAL_ABILITY_KEYS: Record<string, string> = {
 }
 
 /**
- * Converts the proven v0.22 offline result into the site-facing player shape.
- * Raw structures stay attached so unresolved fields and all stat contexts remain auditable.
+ * Converts the proven offline result into the site-facing player shape.
+ * Raw structures stay attached so unresolved fields and all stat/contract contexts remain auditable.
  */
 export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
   const raw = record(rawResult)
@@ -101,8 +103,6 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
         .map(([label, value]) => [attributeKey(label), numberOrNull(value)]))
       const positionalAbility = Object.fromEntries(Object.entries(record(player.positions)).map(([position, value]) => [POSITIONAL_ABILITY_KEYS[position] ?? position.toLowerCase(), numberOrNull(value)]))
       const hiddenPersonality = record(player.hidden_personality)
-      // Keep the complete consumer-facing hidden-data contract stable. A null is
-      // intentional evidence that this reader version has not confirmed the mapping.
       const fmHidden = {
         current_ability: numberOrNull(player.ca), potential_ability: numberOrNull(player.pa), world_reputation: null,
         adaptability: numberOrNull(hiddenPersonality.adaptability), ambition: numberOrNull(hiddenPersonality.ambition),
@@ -116,19 +116,28 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
       const rosterGroup = record(player.roster_group)
       const contractTeamResolution = record(player.contract_team_name_resolution)
       const rosterTeamResolution = record(rosterGroup.team_name_resolution)
+      const currentContract = record(player.current_contract)
+      const loan = record(player.loan)
+      const currentTeamId = numberOrNull(currentContract.team_id)
+      const currentTeamName = stringOrNull(currentContract.team_name)
+      const weeklyWage = numberOrNull(currentContract.weekly_wage)
+      const joinedDate = isoDateOrNull(currentContract.joined_date)
+      const signedDate = isoDateOrNull(currentContract.signed_or_effective_date)
+      const expiryDate = isoDateOrNull(currentContract.expiry_date)
+      const futureContracts = Array.isArray(player.future_contracts) ? player.future_contracts : []
+      const relationships = Array.isArray(player.contract_relationships) ? player.contract_relationships : []
+      const contractTerms = Array.isArray(currentContract.terms) ? currentContract.terms : []
       const statistics = Object.keys(record(player.statistics)).length ? record(player.statistics) : null
       const tactic = Object.keys(record(player.tactic)).length ? record(player.tactic) : null
       players.push({
         fm_player_id: String(uid), current_name: name, normalized_name: normalizedName(name), identity_key: `fm:${uid}`,
         date_of_birth: stringOrNull(player.birth_date), nationality: stringOrNull(player.nation), age: null,
-        club: null, squad: stringOrNull(rosterGroup.label) ?? groupLabel, positions, preferred_foot: preferredFoot,
-        height: numberOrNull(player.height_cm), attributes, statistics, tactic, raw_data: player,
+        club: currentTeamName, squad: stringOrNull(rosterGroup.label) ?? groupLabel, positions, preferred_foot: preferredFoot,
+        height: numberOrNull(player.height_cm), weight: null, contract_expiry: expiryDate, attributes, statistics, tactic, raw_data: player,
         normalized_data: {
           source: 'fm26-save-offline', parser: raw.parser ?? null, eid: player.eid ?? null, uid,
           ca_candidate: player.ca ?? null, pa_candidate: player.pa ?? null,
           ca_pa_status: 'candidate_with_provenance_not_universally_validated',
-          // These values are persisted as normalized hidden data, while raw_data retains
-          // the reader evidence and offsets for later validation.
           current_ability: fmHidden.current_ability, potential_ability: fmHidden.potential_ability,
           hidden_personality: hiddenPersonality, hidden_attributes: hiddenAttributes,
           positional_ability: positionalAbility, preferred_central_position: null,
@@ -139,15 +148,38 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
           left_foot_raw: numberOrNull(feet.left_raw), right_foot_raw: numberOrNull(feet.right_raw),
           personality_hidden_attributes: player.hidden_personality ?? null,
           personality_status: player.hidden_personality ? 'confirmed_binary_eight_traits' : 'unresolved',
-          // Historical compatibility keys below retain their old names, but the
-          // person↔Team shape alone does not prove contract ownership. Keep the
-          // semantic status explicit until permanent/loan relationships are mapped.
+
+          // v0.23.4 contract model. The complete current object supersedes the old
+          // single person↔Team compatibility field whenever it was structurally resolved.
+          current_contract: Object.keys(currentContract).length ? currentContract : null,
+          future_contracts: futureContracts,
+          contract_relationships: relationships,
+          contract_current_team_id: currentTeamId,
+          contract_current_team_name: currentTeamName,
+          contract_weekly_wage: weeklyWage,
+          contract_joined_date: joinedDate,
+          contract_signed_or_effective_date: signedDate,
+          contract_expiry_date: expiryDate,
+          contract_terms: contractTerms,
+          contract_terms_status: stringOrNull(currentContract.terms_status) ?? (Object.keys(currentContract).length ? 'unresolved_variant' : 'unresolved'),
+          loan_status: stringOrNull(loan.status) ?? 'unresolved',
+          loan_from_team_id: numberOrNull(loan.from_team_id),
+          loan_from_team_name: stringOrNull(loan.from_team_name),
+          loan_to_team_id: numberOrNull(loan.to_team_id),
+          loan_to_team_name: stringOrNull(loan.to_team_name),
+          loan_start_date: isoDateOrNull(loan.start_date),
+          loan_end_date: isoDateOrNull(loan.end_date),
+          market_value: null,
+          market_value_status: 'unresolved',
+
+          // Historical compatibility keys. They remain available for old consumers,
+          // but do not regain ownership semantics when no complete current object exists.
           contracted_club_team_id: player.contract_team_id ?? null,
           contracted_club_contract_offset: player.contract_offset ?? null,
           contracted_club_status: player.contract_team_id != null ? 'confirmed_binary_contract_shape' : 'unresolved',
           contract_team_name: stringOrNull(player.contract_team_name),
           contract_team_name_resolution: Object.keys(contractTeamResolution).length ? contractTeamResolution : null,
-          contract_team_semantics_status: player.contract_team_id != null ? 'owner_unresolved_person_team_relation' : 'unresolved',
+          contract_team_semantics_status: currentTeamId !== null ? 'superseded_by_resolved_current_contract' : player.contract_team_id != null ? 'owner_unresolved_person_team_relation' : 'unresolved',
           roster_team_id: rosterGroup.team_id ?? null,
           roster_team_name: stringOrNull(rosterGroup.team_name),
           roster_team_name_resolution: Object.keys(rosterTeamResolution).length ? rosterTeamResolution : null,
@@ -168,21 +200,17 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
   const snapshot_date = exactDate ?? (latestYear ? `${latestYear}-01-01` : null)
   const playersWithAge = players.map(player => ({
     ...player,
-    // Age is derived only when the reader has an exact save day. With a
-    // year-only anchor it stays null rather than creating a potentially wrong age.
     age: exactDate ? ageAt(player.date_of_birth, exactDate) : null,
   }))
   const diagnostics = record(raw.humans_summary)
   return { raw, players: playersWithAge, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null }
 }
 
-/** Byte-based entry point used by the web worker. It stays fully offline and read-only. */
 export async function readFmSaveBytes(bytes: Uint8Array, fileName = 'save.fm', onStatus?: (status: string) => void): Promise<OfflineFmRead> {
   const raw = await readOfflineSaveBytes(bytes, fileName, onStatus)
   return normalizeOfflineFmResult(raw)
 }
 
-/** Offline-only entry point. It never calls the FM runtime, Oracle, or BepInEx. */
 export async function readFmSave(file: File | Uint8Array, onStatus?: (status: string) => void): Promise<OfflineFmRead> {
   const bytes = file instanceof Uint8Array ? file : new Uint8Array(await file.arrayBuffer())
   const fileName = file instanceof Uint8Array ? 'save.fm' : file.name

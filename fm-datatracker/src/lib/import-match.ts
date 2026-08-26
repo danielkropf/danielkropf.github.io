@@ -36,11 +36,6 @@ const bucket = (rows: PreparedImportRow[], key: (row: PreparedImportRow) => stri
 
 const bioKey = (row: PreparedImportRow) => row.date_of_birth ? `${row.normalized_name}|${row.date_of_birth}` : null
 
-/**
- * Matches rows conservatively. An explicit FM id never falls back to a name;
- * without an id we require name+birth, and name-only is accepted only when
- * unique in both sources. One FM row can validate at most one CSV row.
- */
 export function matchImportRows(csvRows: PreparedImportRow[], fmRows: PreparedImportRow[]): ImportMatchResult {
   const fmById = bucket(fmRows, row => row.fm_player_id || null)
   const fmByBio = bucket(fmRows, bioKey)
@@ -112,6 +107,8 @@ export function mergeValidatedRows(csvRows: PreparedImportRow[], matches: Import
       nationality: fm.nationality ?? csv.nationality,
       preferred_foot: fm.preferred_foot ?? csv.preferred_foot,
       height: fm.height ?? csv.height,
+      weight: fm.weight ?? csv.weight,
+      contract_expiry: csv.contract_expiry ?? fm.contract_expiry,
       attributes: fm.attributes.length ? fm.attributes : csv.attributes,
       raw_data: { csv: csv.raw_data, fm: fm.raw_data },
       normalized_data: { ...csv.normalized_data, ...fm.normalized_data, import_source: 'csv+fm26-offline' },

@@ -1,6 +1,7 @@
 import { ZSTDDecoder } from 'zstddec/stream'
 import { FM26OfflineReaderV022 } from './fm26-offline-reader-v022.js'
 import { enrichOfflineTeamNames } from './fm26-team-resolver'
+import { enrichOfflineContracts } from './fm26-contract-reader'
 import { parseFm26SaveSummaryDate } from './fm26-save-summary'
 
 type ReaderResult = Record<string, unknown>
@@ -30,7 +31,6 @@ const decoderInstance = () => decoderPromise ??= (async () => {
   return decoder
 })()
 
-/** Local browser decoder; no CDN, game process, Oracle or server is involved. */
 async function localZstd(frame: Uint8Array): Promise<Uint8Array> {
   const decoder = await decoderInstance()
   const chunks = [...decoder.decodeStreaming([frame])]
@@ -40,7 +40,7 @@ async function localZstd(frame: Uint8Array): Promise<Uint8Array> {
   return output
 }
 
-/** Reads the required FM26 members using the characterized v0.22 parser core. */
+/** Reads the required FM26 members locally and keeps the characterized v0.22 core read-only. */
 export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'save.fm', onStatus: (status: string) => void = () => {}): Promise<ReaderResult> {
   onStatus('Lendo contêiner e manifesto…')
   const ArchiveConstructor = FM26OfflineReaderV022.FMArchive as unknown as new (data: Uint8Array, fileName: string, decompress: (frame: Uint8Array) => Promise<Uint8Array>) => Archive
@@ -73,6 +73,8 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
   }
   onStatus('Resolvendo nomes de equipes confirmados…')
   enrichOfflineTeamNames(result, gameDb)
+  onStatus('Interpretando contratos, termos e empréstimos…')
+  enrichOfflineContracts(result, gameDb, saveSummary.status === 'confirmed' ? saveSummary.current_date : null)
   onStatus('Concluído.')
   return result
 }
