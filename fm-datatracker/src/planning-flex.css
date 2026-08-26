@@ -285,3 +285,189 @@
   .planning-flex-actions{justify-content:flex-start;flex-wrap:wrap}
   .manage-sets-button,.manage-squads-button{flex:1 1 150px;width:auto;min-width:150px;max-width:none}
 }
+
+/* v0.25.6 — screenshot-driven hierarchy, toolbar parity and card border balance */
+.planning-flex-page{
+  --planning-toolbar-control-height:38px;
+}
+
+/* Saving feedback must be clearly visible beside the page title. */
+.planning-title-row .save-state-control.save-state-saved{
+  min-width:0;
+  min-height:auto;
+  padding:0;
+  border:0;
+  background:transparent;
+  font-size:1.45rem;
+  font-weight:850;
+  line-height:1;
+  letter-spacing:.01em;
+}
+
+/* Every control on the context/action row shares the same physical height. */
+.tactic-custom-select .dt-select-trigger,
+.planning-group-selector,
+.coverage-toggle,
+.planning-flex-actions>.dt-control{
+  box-sizing:border-box;
+  height:var(--planning-toolbar-control-height)!important;
+  min-height:var(--planning-toolbar-control-height)!important;
+  max-height:var(--planning-toolbar-control-height);
+}
+.planning-group-selector>button{
+  box-sizing:border-box;
+  height:100%;
+  min-height:100%;
+  padding-block:0;
+  display:grid;
+  place-items:center;
+}
+.coverage-toggle{
+  align-self:center;
+  padding-block:0;
+}
+
+/* Tactic chooser deliberately mirrors the visual language of the sidebar save selector. */
+.tactic-custom-select .dt-select-trigger{
+  padding:0!important;
+  overflow:hidden;
+  justify-content:flex-start;
+  border:1px solid #36513f;
+  border-radius:6px;
+  background:#101d16;
+  color:#e8efe9;
+  box-shadow:none;
+}
+.tactic-custom-select .dt-select-trigger:hover:not(:disabled){
+  border-color:#6b8d76;
+  background:#14251b;
+}
+.tactic-custom-select.is-open .dt-select-trigger{
+  border-color:#b9f35b;
+  box-shadow:0 0 0 2px #b9f35b1c;
+}
+.tactic-custom-select .dt-select-trigger>span{
+  flex:1 1 auto;
+  display:flex;
+  align-items:center;
+  min-width:0;
+  height:100%;
+  padding:0 12px;
+  color:#e8efe9;
+  font-size:.76rem;
+  font-weight:700;
+  text-align:left;
+}
+.tactic-custom-select .dt-select-trigger>b{
+  flex:0 0 38px;
+  align-self:stretch;
+  display:grid;
+  place-items:center;
+  width:38px;
+  height:100%;
+  border-left:1px solid #2b4134;
+  background:#14251b;
+  color:#b9f35b;
+  font-size:0;
+}
+.tactic-custom-select .dt-select-trigger>b::before{
+  content:'';
+  width:0;
+  height:0;
+  border-left:4px solid transparent;
+  border-right:4px solid transparent;
+  border-top:5px solid #b9f35b;
+}
+.tactic-custom-select.is-open .dt-select-trigger>b::before{
+  transform:rotate(180deg);
+}
+
+/* Enabled action buttons need the same visual confidence as the selectors beside them. */
+.planning-flex-actions>.dt-control:not(:disabled){
+  border:2px solid #3b5a46!important;
+  background:#101f17!important;
+  color:#d7e4dc!important;
+  opacity:1!important;
+  box-shadow:inset 0 0 0 1px #ffffff05;
+}
+.planning-flex-actions>.dt-control:not(:disabled):hover{
+  border-color:#6d9178!important;
+  background:#15291d!important;
+  color:#f0f6f2!important;
+}
+.planning-flex-actions>.planning-clear-current:not(:disabled){
+  border-color:#75602c!important;
+  background:#211d12!important;
+  color:#e4ca5f!important;
+}
+.planning-flex-actions>.planning-clear-current:not(:disabled):hover{
+  border-color:#b99a3e!important;
+  background:#2a2414!important;
+}
+.planning-flex-actions>.dt-control:disabled{
+  border-width:1px!important;
+}
+
+/* Position title and phase requirements are two separate information levels. */
+.planning-set-position{
+  row-gap:4px;
+}
+.planning-position-heading{
+  margin-bottom:5px;
+}
+
+/* Equal physical breathing room around the score: 7px top/right/bottom. */
+.planning-set-player-card{
+  height:42px;
+  min-height:42px;
+  padding:7px;
+  grid-template-columns:minmax(0,1fr) 48px;
+  grid-template-rows:minmax(11px,1fr) minmax(10px,auto);
+  column-gap:7px;
+  border-width:2px;
+  border-style:solid;
+  border-color:color-mix(in srgb,var(--set-accent) 68%,#385946);
+}
+.planning-score-wrap{
+  width:48px;
+  min-width:48px;
+  max-width:48px;
+  height:28px;
+  min-height:28px;
+  margin:0;
+  align-self:center;
+  overflow:visible;
+}
+.planning-score-wrap>.overall-score{
+  width:48px;
+  min-width:48px;
+  max-width:48px;
+  height:28px;
+  min-height:28px;
+  margin:0;
+}
+
+/* Normal cards carry the structure; out-of-position cards carry a lighter warning treatment. */
+.planning-set-player-card.is-coverage{
+  border-width:2px;
+}
+.planning-set-player-card.is-out-of-position{
+  border-width:1px;
+  border-style:dashed;
+  border-color:#d7bb4c;
+  outline:0;
+  box-shadow:inset 0 0 0 1px #d7bb4c20;
+}
+.planning-set-player-card.is-coverage.is-out-of-position{
+  border-width:1px;
+  border-color:#c5aa45;
+}
+
+@media(max-width:700px){
+  .planning-score-wrap,.planning-score-wrap>.overall-score{width:46px;min-width:46px;max-width:46px}
+  .planning-set-player-card{grid-template-columns:minmax(0,1fr) 46px}
+}
+@media(max-width:520px){
+  .planning-score-wrap,.planning-score-wrap>.overall-score{width:44px;min-width:44px;max-width:44px}
+  .planning-set-player-card{grid-template-columns:minmax(0,1fr) 44px}
+}
