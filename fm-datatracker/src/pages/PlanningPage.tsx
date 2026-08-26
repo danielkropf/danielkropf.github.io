@@ -7,6 +7,7 @@ import { SaveState } from '../components/SaveState'
 import { percentile, referenceScore, type ReferenceDataset } from '../lib/reference'
 import { roleDefaultWeights } from '../lib/roleWeights'
 import { canPlayPosition } from '../lib/positions'
+import { isPlanningFamiliar, isPlanningOutOfPosition, planningFamiliarity, planningFamiliarityLabel, type PlanningFamiliarity } from '../lib/planning-familiarity'
 import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
 import { PlayerPeek } from '../components/PlayerPeek'
@@ -52,7 +53,7 @@ type Tactic = { id: string; name: string; ipAssignments: Assignment[]; oopAssign
 type Config = Record<string, unknown> & { planning?: Planning; tactics?: Tactic[]; selected_tactic_id?: string | null; role_weight_overrides?: Record<string, Record<string, number>> }
 type DragItem = { type: 'player'; id: string }
 type Menu = { x: number; y: number; playerId: string }
-type Familiarity = 'familiar' | 'out' | 'unknown'
+type Familiarity = PlanningFamiliarity
 type PlayerDropPreview = { setId: string; beforePlayerId: string | null }
 type SetDropPreview = { beforeSetId: string | null }
 
@@ -60,64 +61,6 @@ const transferGroups: Group[] = [{ id: 'loan', name: 'Empréstimo' }, { id: 'sal
 const EMPTY_ROLE_OVERRIDES: Record<string, Record<string, number>> = {}
 const defaults = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }, ...transferGroups], slotAssignments: {}, setLayouts: {} })
 const canPlay = canPlayPosition
-
-const POSITION_ABILITY_KEYS: Record<string, string> = {
-  GK: 'goalkeeper', DL: 'defender_left', DC: 'defender_center', DR: 'defender_right', DM: 'defensive_midfielder',
-  WBL: 'wing_back_left', WBR: 'wing_back_right', ML: 'midfielder_left', MC: 'midfielder_central', MR: 'midfielder_right',
-  AML: 'attacking_midfielder_left', AMC: 'attacking_midfielder_central', AMR: 'attacking_midfielder_right', ST: 'striker',
-}
-
-function compactPositionCode(position: string) {
-  const raw = position.toUpperCase().replace(/[^A-Z]/g, '')
-  if (raw === 'G' || raw.startsWith('GK')) return 'GK'
-  if (raw.startsWith('WBL')) return 'WBL'
-  if (raw.startsWith('WBR')) return 'WBR'
-  if (raw.startsWith('AML')) return 'AML'
-  if (raw.startsWith('AMC')) return 'AMC'
-  if (raw.startsWith('AMR')) return 'AMR'
-  if (raw.startsWith('DM')) return 'DM'
-  if (raw.startsWith('DL')) return 'DL'
-  if (raw.startsWith('DC')) return 'DC'
-  if (raw.startsWith('DR')) return 'DR'
-  if (raw.startsWith('ML')) return 'ML'
-  if (raw.startsWith('MC')) return 'MC'
-  if (raw.startsWith('MR')) return 'MR'
-  if (raw.startsWith('ST')) return 'ST'
-  return raw
-}
-
-function positionalRating(snapshot: Snapshot, position: string): number | null {
-  const normalized = snapshot.normalized_data ?? {}
-  const code = compactPositionCode(position)
-  const rawRatings = normalized.positional_ratings
-  if (rawRatings && typeof rawRatings === 'object' && !Array.isArray(rawRatings)) {
-    const value = Number((rawRatings as Record<string, unknown>)[code])
-    if (Number.isFinite(value)) return value
-  }
-  const ability = normalized.positional_ability
-  const abilityKey = POSITION_ABILITY_KEYS[code]
-  if (abilityKey && ability && typeof ability === 'object' && !Array.isArray(ability)) {
-    const value = Number((ability as Record<string, unknown>)[abilityKey])
-    if (Number.isFinite(value)) return value
-  }
-  return null
-}
-
-function familiarityFor(snapshot: Snapshot | undefined, pairs: Pair[]): Familiarity {
-  if (!snapshot || !pairs.length) return 'unknown'
-  let hasNumericEvidence = false
-  for (const pair of pairs) {
-    for (const position of [pair.ip.position, pair.oop.position]) {
-      const rating = positionalRating(snapshot, position)
-      if (rating === null) continue
-      hasNumericEvidence = true
-      if (rating >= 15) return 'familiar'
-    }
-  }
-  if (hasNumericEvidence) return 'out'
-  if (!snapshot.positions.length) return 'unknown'
-  return pairs.some(pair => canPlay(snapshot.positions, pair.ip.position) || canPlay(snapshot.positions, pair.oop.position)) ? 'familiar' : 'out'
-}
 
 function modelDiagnostic(result: { diagnostic?: string | null }) { return result.diagnostic ?? '' }
 
@@ -259,7 +202,7 @@ export function PlanningPage() {
     const score = pair ? pairRating(player, pair) : null
     const rank = pair ? pairPercentile(player, pair) : null
     const snapshot = latest(player)
-    const compatible = contextualPairs.length ? familiarityFor(snapshot, contextualPairs) === 'familiar' : true
+    const compatible = contextualPairs.length ? isPlanningFamiliar(planningFamiliarity(snapshot, contextualPairs)) : true
     return { player, score, rank, compatible }
   }).filter(row => !assignmentIndex[row.player.id] && row.player.current_name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => Number(b.compatible) - Number(a.compatible) || (b.score ?? 0) - (a.score ?? 0) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')), [players, search, contextualPairs, playerScores, assignmentIndex, latestByPlayer])
@@ -298,11 +241,11 @@ export function PlanningPage() {
     const candidates = setPairs(set).map(pair => ({ pair, value: pairRating(player, pair), rank: pairPercentile(player, pair) }))
     return candidates.reduce<{ pair: Pair | null; value: number | null; rank: number | null }>((best, current) => best.pair === null || (current.value ?? -1) > (best.value ?? -1) ? current : best, { pair: null, value: null, rank: null })
   }
-  function setFamiliarity(player: Player, set: PlanningSetLayout) { return familiarityFor(latest(player), setPairs(set)) }
+  function setFamiliarity(player: Player, set: PlanningSetLayout) { return planningFamiliarity(latest(player), setPairs(set)) }
   function coveragePlayers(set: PlanningSetLayout) {
     if (!currentGroup) return []
     return players.filter(player => {
-      if (!currentGroupPlayerIds.has(player.id) || setFamiliarity(player, set) !== 'familiar') return false
+      if (!currentGroupPlayerIds.has(player.id) || !isPlanningFamiliar(setFamiliarity(player, set))) return false
       const primary = primarySetForPlayer(planning, currentGroup.id, currentSets, player.id)
       return Boolean(primary && primary.id !== set.id)
     })
@@ -497,7 +440,7 @@ function PlanningSetRow({ set, pairs, assignedIds, players, latest, expanded, fo
       <div className="planning-set-position"><span className="planning-position-label">{set.label}</span>{grouped && <b>{set.slotIds.length} POS.</b>}<small><i>IP:</i>{ipRoles.join('/') || '—'} <em>OOP:</em>{oopRoles.join('/') || '—'}</small>{members.length > 0 && <small className="planning-set-depth">{members.length} jogador{members.length === 1 ? '' : 'es'}{grouped ? ` · ${set.slotIds.length} posições` : ''}</small>}</div>
     </div>
 
-    <div ref={cardsRef} className={`planning-set-cards ${activeFamiliarity === 'familiar' ? 'is-compatible-drop' : activeFamiliarity === 'out' ? 'is-training-drop' : ''}`} onDragOver={event => { if (activePlayer) { event.preventDefault(); event.stopPropagation(); previewPlayer(null); event.dataTransfer.dropEffect = 'move' } }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? null) }}>
+    <div ref={cardsRef} className={`planning-set-cards ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (activePlayer) { event.preventDefault(); event.stopPropagation(); previewPlayer(null); event.dataTransfer.dropEffect = 'move' } }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? null) }}>
       {visible.map((option, index) => {
         const player = option.player
         const snapshot = latest(player)
@@ -552,12 +495,13 @@ function BoardPlayerCard({ player, snapshot, score, rank, coverage, source, fami
   open: () => void
   context: (event: ReactMouseEvent) => void
 }) {
-  const out = familiarity === 'out'
-  const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, out ? 'Fora de posição: os dados disponíveis não indicam familiaridade suficiente com esta posição.' : null].filter(Boolean).join('\n')
+  const out = isPlanningOutOfPosition(familiarity)
+  const familiarityLabel = planningFamiliarityLabel(familiarity)
+  const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, familiarityLabel ? `${familiarityLabel}: os dados disponíveis não indicam familiaridade suficiente nesta fase da tática.` : null].filter(Boolean).join('\n')
   return <article className={`planning-set-player-card ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onDragOver={event => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; preview(event) }} onDrop={event => { event.preventDefault(); event.stopPropagation(); drop(event) }} onContextMenu={context}>
     <button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
     <ScoreBadge value={score} rank={rank} showTitle={false} />
-    <div className="planning-card-meta"><small>{snapshot.age ?? '—'} anos</small><span className="planning-card-badges">{coverage && <b className="coverage-badge">Cobertura</b>}{out && <b className="out-position-badge">Fora de posição</b>}</span></div>
+    <div className="planning-card-meta"><small>{snapshot.age ?? '—'} anos</small><span className="planning-card-badges">{coverage && <b className="coverage-badge">Cobertura</b>}{familiarityLabel && <b className="out-position-badge">{familiarityLabel}</b>}</span></div>
   </article>
 }
 

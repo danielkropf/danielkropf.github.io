@@ -10,6 +10,7 @@ import{PITCH_NODES,positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{useSaves}from'../features/saves/SaveContext'
 import{loadModelConfig,patchModelConfig,retryModelConfigPatch,scheduleModelConfigPatch}from'../lib/model-config'
 import{describeDbError}from'../lib/db-error'
+import{loadCurrentPlayers}from'../lib/dataCache'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Assignment={playerId:string;nodeId:string;position:string;roleId:string;roleCode:string;roleName:string}
@@ -125,13 +126,16 @@ export function TacticsPage(){
   },[selected?.id])
 
   useEffect(()=>{
-    if(!supabase||!selected){setCandidates([]);return}
-    void supabase.from('imports').select('id').eq('save_id',selected.id).eq('status','imported').in('file_type',['squad','intake']).order('created_at',{ascending:false}).limit(1).maybeSingle().then(async({data})=>{
-      if(!data){setCandidates([]);return}
-      const result=await supabase!.from('player_snapshots').select('player_id,positions,age,players!inner(id,current_name),player_attributes(attribute_key,value)').eq('save_id',selected.id).eq('import_id',data.id)
-      const rows=(result.data??[])as unknown as Array<{player_id:string;positions:string[];age:number|null;players:{id:string;current_name:string};player_attributes:Array<{attribute_key:string;value:number}>}>
-      setCandidates(rows.map(row=>({id:row.player_id,name:row.players.current_name,positions:row.positions??[],age:row.age,attributes:row.player_attributes.map(a=>({key:a.attribute_key,value:a.value}))})))
-    })
+    let active=true
+    if(!supabase||!selected){setCandidates([]);return()=>{active=false}}
+    void loadCurrentPlayers(selected.id).then(rows=>{
+      if(!active)return
+      setCandidates(rows.map(player=>{
+        const snapshot=player.player_snapshots[0]
+        return{id:player.id,name:player.current_name,positions:snapshot?.positions??[],age:snapshot?.age??null,attributes:(snapshot?.player_attributes??[]).map(a=>({key:a.attribute_key,value:a.value}))}
+      }))
+    }).catch(error=>{if(active){setCandidates([]);console.error('Falha ao carregar elenco atual em Táticas.',describeDbError(error).full)}})
+    return()=>{active=false}
   },[selected?.id])
 
   useEffect(()=>{
@@ -154,13 +158,23 @@ export function TacticsPage(){
     if(!clean)return
     const id=crypto.randomUUID()
     const created=normalizeTactic({id,name:clean,roles:[],ipAssignments:assignmentsFor(ipFormation,'IP'),oopAssignments:assignmentsFor(oopFormation,'OOP')})
-    setConfig(c=>{const next={...c,tactics:[...c.tactics,created],selected_tactic_id:id,selected_role_id:null};void persistPatch({tactics:next.tactics,selected_tactic_id:id,selected_role_id:null});return next})
+    const next={...config,tactics:[...config.tactics,created],selected_tactic_id:id,selected_role_id:null}
+    setConfig(next)
+    void persistPatch({tactics:next.tactics,selected_tactic_id:id,selected_role_id:null})
     setName('');setCreateOpen(false)
   }
 
   function remove(){
     if(!tactic||!confirm(`Excluir a tática “${tactic.name}”?`))return
-    setConfig(c=>{const next={...c,tactics:c.tactics.filter(t=>t.id!==tactic.id),selected_tactic_id:null,selected_role_id:null};void persistPatch({tactics:next.tactics,selected_tactic_id:null,selected_role_id:null});return next})
+    const next={...config,tactics:config.tactics.filter(item=>item.id!==tactic.id),selected_tactic_id:null,selected_role_id:null}
+    setConfig(next)
+    void persistPatch({tactics:next.tactics,selected_tactic_id:null,selected_role_id:null})
+  }
+
+  function selectTactic(id:string|null){
+    const next={...config,selected_tactic_id:id,selected_role_id:null}
+    setConfig(next)
+    void persistPatch({selected_tactic_id:id,selected_role_id:null})
   }
 
   function updatePhase(targetPhase:TacticPhase,transform:(items:Assignment[])=>Assignment[]){
@@ -266,7 +280,7 @@ export function TacticsPage(){
 
   return <div className="tactics-page">
     <div className="title-row"><div><span className="eyebrow">ESTRUTURA DO TIME · FM26</span><h1>Táticas</h1><p>Configure separadamente as posições e funções com e sem a bola.</p></div><SaveState status={status} detail={saveDetail} onRetry={status.startsWith('⚠')?()=>void retrySave():undefined}/></div>
-    <div className="tactic-topbar"><div className="tactic-toolbar"><select aria-label="Tática selecionada" value={tactic?.id??''} onChange={e=>{const id=e.target.value||null;setConfig(c=>({...c,selected_tactic_id:id,selected_role_id:null}));void persistPatch({selected_tactic_id:id,selected_role_id:null})}}><option value="">Selecione uma tática</option>{config.tactics.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button onClick={()=>setCreateOpen(true)}>+ Adicionar</button><button className="danger-button" disabled={!tactic} onClick={remove}>Excluir</button></div><div className="tactic-tabs"><button className={sideTab==='structure'?'active':''} onClick={()=>setSideTab('structure')}>Estrutura</button><button className={sideTab==='players'?'active':''} onClick={()=>setSideTab('players')}>Jogadores</button></div></div>
+    <div className="tactic-topbar"><div className="tactic-toolbar"><select aria-label="Tática selecionada" value={tactic?.id??''} onChange={e=>selectTactic(e.target.value||null)}><option value="">Selecione uma tática</option>{config.tactics.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button onClick={()=>setCreateOpen(true)}>+ Adicionar</button><button className="danger-button" disabled={!tactic} onClick={remove}>Excluir</button></div><div className="tactic-tabs"><button className={sideTab==='structure'?'active':''} onClick={()=>setSideTab('structure')}>Estrutura</button><button className={sideTab==='players'?'active':''} onClick={()=>setSideTab('players')}>Jogadores</button></div></div>
     <div className="tactic-workspace">
       <section className={`football-pitch ${!tactic?'pitch-empty':''}`} onDragOver={e=>e.preventDefault()} onDrop={drop}>
         <div className="phase-switch field-phase-switch" aria-label="Fase da tática"><button className={phase==='IP'?'active':''} onClick={()=>setPhase('IP')}>IP</button><button className={phase==='OOP'?'active':''} onClick={()=>setPhase('OOP')}>OOP</button></div>

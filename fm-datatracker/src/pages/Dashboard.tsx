@@ -39,6 +39,8 @@ export function Dashboard() {
         .from('imports')
         .select('snapshot_date,original_filename,row_count,status')
         .eq('save_id', selected.id)
+        .eq('status', 'imported')
+        .eq('file_type', 'squad')
         .order('snapshot_date', { ascending: false })
         .limit(1)
         .maybeSingle(),
@@ -62,9 +64,10 @@ export function Dashboard() {
     const young = ages.filter(age => age <= 21).length
     const prime = ages.filter(age => age >= 22 && age <= 29).length
     const veterans = ages.filter(age => age >= 30).length
+    const unknownAge = latest.length - ages.length
     const tactic = model.tactics?.find(item => item.id === model.selected_tactic_id)?.name ?? model.tactics?.[0]?.name ?? null
 
-    return { ...distribution, young, prime, veterans, tactic }
+    return { ...distribution, young, prime, veterans, unknownAge, tactic }
   }, [players, model.planning, model.tactics, model.selected_tactic_id])
 
   if (!selected) return <section className="dashboard-empty card">
@@ -113,6 +116,7 @@ export function Dashboard() {
           <Age value={summary.young} label="Até 21" tone="young"/>
           <Age value={summary.prime} label="22–29" tone="prime"/>
           <Age value={summary.veterans} label="30+" tone="veteran"/>
+          {summary.unknownAge > 0 && <Age value={summary.unknownAge} label="Idade desconhecida" tone="unknown"/>}
         </div>
         <p>Use o equilíbrio entre desenvolvimento, auge e experiência para orientar o planejamento.</p>
       </article>
