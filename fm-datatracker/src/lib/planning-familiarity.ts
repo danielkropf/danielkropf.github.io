@@ -22,7 +22,7 @@ function compactPositionCode(position: string) {
   return raw
 }
 
-function positionalRating(snapshot: FamiliaritySnapshot, position: string): number | null {
+export function positionalRating(snapshot: FamiliaritySnapshot, position: string): number | null {
   const normalized = snapshot.normalized_data ?? {}
   const code = compactPositionCode(position)
   const rawRatings = normalized.positional_ratings
@@ -75,4 +75,33 @@ export function planningFamiliarityLabel(familiarity: PlanningFamiliarity) {
   if (familiarity === 'out-oop') return 'Fora de posição · OOP'
   if (familiarity === 'out-both') return 'Fora de posição · IP/OOP'
   return null
+}
+
+
+export type FamiliarityDetail = { phase: FamiliarityPhase; position: string; rating: number | null; label: string }
+
+function familiarityEvidenceLabel(snapshot: FamiliaritySnapshot, position: string) {
+  const rating = positionalRating(snapshot, position)
+  if (rating !== null) return { rating, label: `${rating}/20` }
+  if (!snapshot.positions.length) return { rating: null, label: 'Desconhecida' }
+  return { rating: null, label: canPlayPosition(snapshot.positions, position) ? 'Familiar' : 'Sem familiaridade' }
+}
+
+export function planningFamiliarityDetails(snapshot: FamiliaritySnapshot | undefined, pairs: PositionPair[]): FamiliarityDetail[] {
+  if (!snapshot) return []
+  const result: FamiliarityDetail[] = []
+  for (const phase of ['ip', 'oop'] as FamiliarityPhase[]) {
+    for (const position of [...new Set(pairs.map(pair => pair[phase].position))]) {
+      const evidence = familiarityEvidenceLabel(snapshot, position)
+      result.push({ phase, position, rating: evidence.rating, label: evidence.label })
+    }
+  }
+  return result
+}
+
+export function planningFamiliarityTooltip(snapshot: FamiliaritySnapshot | undefined, pairs: PositionPair[]) {
+  const details = planningFamiliarityDetails(snapshot, pairs)
+  if (!details.length) return 'Familiaridade neste slot\nDados insuficientes'
+  const lines = details.map(detail => `${detail.phase.toUpperCase()} — ${detail.position.replaceAll(' ', '')}: ${detail.label}`)
+  return `Familiaridade neste slot\n\n${lines.join('\n')}`
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultPlanningSets, groupEquivalentSets, layoutsFor, movePlayerToSet, planningSetDisplayLabel, positionFamily, primarySetForPlayer, renamePlanningSet, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, splitPlanningSet, type FlexiblePlanning } from './planningSets'
+import { canGroupAdjacentPlanningSets, defaultPlanningSets, groupAdjacentPlanningSets, groupEquivalentSets, layoutsFor, movePlayerToSet, planningSetDisplayLabel, planningSlotDisplayLabel, positionFamily, primarySetForPlayer, renamePlanningSet, renamePlanningSlotLabel, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, splitPlanningSet, type FlexiblePlanning } from './planningSets'
 
 const slots = [
   { id: 'dc-l', position: 'DCL' },
@@ -70,6 +70,34 @@ describe('flexible planning sets', () => {
     const reordered = reorderPlanningGroups(planning, 'base', 'principal')
     expect(reordered.groups.map(group => group.id)).toEqual(['base', 'principal', 'b'])
     expect(reordered.slotAssignments).toEqual(planning.slotAssignments)
+  })
+
+  it('only offers the final grouping interaction for adjacent compatible tactical slots', () => {
+    const tacticalSlots = [
+      { id: 'dc1', position: 'D(C)', oopPosition: 'D(C)' },
+      { id: 'dc2', position: 'D(C)', oopPosition: 'D(C)' },
+      { id: 'mc', position: 'M(C)', oopPosition: 'DM(C)' },
+    ]
+    const sets = defaultPlanningSets(tacticalSlots)
+    expect(canGroupAdjacentPlanningSets(sets[0], sets[1], tacticalSlots)).toBe(true)
+    expect(canGroupAdjacentPlanningSets(sets[1], sets[2], tacticalSlots)).toBe(false)
+    const planning: FlexiblePlanning = { groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: { principal: { dc1: ['a'], dc2: ['b'], mc: ['c'] } } }
+    const grouped = groupAdjacentPlanningSets(planning, 't1', 'principal', sets, 'dc1', 'dc2', tacticalSlots, 'cbs')
+    expect(layoutsFor(grouped, 't1', 'principal', tacticalSlots)[0].slotIds).toEqual(['dc1', 'dc2'])
+    expect(grouped.slotAssignments.principal.cbs).toEqual(['a', 'b'])
+  })
+
+  it('keeps a general group name and editable individual labels inside a grouped block', () => {
+    const tacticalSlots = [{ id: 'dc1', position: 'D(C)' }, { id: 'dc2', position: 'D(C)' }]
+    const sets = defaultPlanningSets(tacticalSlots)
+    let planning: FlexiblePlanning = { groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: { principal: { dc1: [], dc2: [] } } }
+    planning = groupAdjacentPlanningSets(planning, 't1', 'principal', sets, 'dc1', 'dc2', tacticalSlots, 'cbs')
+    let grouped = layoutsFor(planning, 't1', 'principal', tacticalSlots)
+    expect(grouped[0].label).toBe('Zagueiros')
+    planning = renamePlanningSlotLabel(planning, 't1', 'principal', grouped, 'cbs', 'dc1', 'DC esquerdo')
+    grouped = layoutsFor(planning, 't1', 'principal', tacticalSlots)
+    expect(planningSlotDisplayLabel(grouped[0], 'dc1', tacticalSlots)).toBe('DC esquerdo')
+    expect(planningSlotDisplayLabel(grouped[0], 'dc2', tacticalSlots)).toBe('D(C) 2')
   })
 
 })

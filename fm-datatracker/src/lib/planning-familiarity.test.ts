@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planningFamiliarity } from './planning-familiarity'
+import { planningFamiliarity, planningFamiliarityTooltip } from './planning-familiarity'
 
 const pairs = [{ ip: { position: 'DC' }, oop: { position: 'DM' } }]
 const snapshot = (DC?: number, DM?: number) => ({
@@ -23,4 +23,11 @@ describe('planning familiarity by tactical phase', () => {
   it('keeps unknown data unknown instead of inventing an issue', () => {
     expect(planningFamiliarity({ positions: [] }, pairs)).toBe('unknown')
   })
+  it('describes the actual IP/OOP positional evidence in the tooltip', () => {
+    const snapshot = { positions: ['D(C)'], normalized_data: { positional_ratings: { DC: 18, WBL: 8 } } }
+    const text = planningFamiliarityTooltip(snapshot, [{ ip: { position: 'D(C)' }, oop: { position: 'WB(L)' } }])
+    expect(text).toContain('IP — D(C): 18/20')
+    expect(text).toContain('OOP — WB(L): 8/20')
+  })
+
 })

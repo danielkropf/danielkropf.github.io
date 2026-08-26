@@ -1,6 +1,6 @@
 export type PlanningGroup = { id: string; name: string }
-export type TacticSlotDescriptor = { id: string; position: string }
-export type PlanningSetLayout = { id: string; label: string; slotIds: string[] }
+export type TacticSlotDescriptor = { id: string; position: string; oopPosition?: string }
+export type PlanningSetLayout = { id: string; label: string; slotIds: string[]; slotLabels?: Record<string, string> }
 export type PlanningSetLayouts = Record<string, Record<string, PlanningSetLayout[]>>
 export type FlexiblePlanning = {
   groups: PlanningGroup[]
@@ -50,6 +50,31 @@ export function planningSetDisplayLabel(set: PlanningSetLayout, sets: PlanningSe
   if (peers.length < 2) return stored || base
   const index = peers.findIndex(candidate => candidate.id === set.id)
   return `${base} ${Math.max(0, index) + 1}`
+}
+
+
+export function planningSlotDisplayLabel(set: PlanningSetLayout, slotId: string, slots: TacticSlotDescriptor[]): string {
+  const custom = set.slotLabels?.[slotId]?.trim()
+  if (custom) return custom
+  const slot = slots.find(item => item.id === slotId)
+  if (!slot) return slotId
+  const peers = set.slotIds.filter(id => {
+    const candidate = slots.find(item => item.id === id)
+    return candidate && positionIdentity(candidate.position) === positionIdentity(slot.position)
+  })
+  if (peers.length < 2) return defaultSetLabel(slot.position)
+  return `${defaultSetLabel(slot.position)} ${peers.indexOf(slotId) + 1}`
+}
+
+export function planningSlotCompatibilityKey(slot: TacticSlotDescriptor): string {
+  return `${positionFamily(slot.position)}>${positionFamily(slot.oopPosition ?? slot.position)}`
+}
+
+export function canGroupAdjacentPlanningSets(first: PlanningSetLayout, second: PlanningSetLayout, slots: TacticSlotDescriptor[]): boolean {
+  if (first.slotIds.length !== 1 || second.slotIds.length !== 1) return false
+  const firstSlot = slots.find(slot => slot.id === first.slotIds[0])
+  const secondSlot = slots.find(slot => slot.id === second.slotIds[0])
+  return Boolean(firstSlot && secondSlot && planningSlotCompatibilityKey(firstSlot) === planningSlotCompatibilityKey(secondSlot))
 }
 
 export function reorderPlanningGroups(planning: FlexiblePlanning, draggedId: string, beforeId: string | null): FlexiblePlanning {
@@ -106,6 +131,31 @@ export function renamePlanningSet(planning: FlexiblePlanning, tacticId: string, 
   return withLayouts(planning, tacticId, groupId, next)
 }
 
+
+export function renamePlanningSlotLabel(planning: FlexiblePlanning, tacticId: string, groupId: string, sets: PlanningSetLayout[], setId: string, slotId: string, label: string): FlexiblePlanning {
+  const next = sets.map(set => set.id === setId ? { ...set, slotLabels: { ...(set.slotLabels ?? {}), [slotId]: label.trim() } } : set)
+  return withLayouts(planning, tacticId, groupId, next)
+}
+
+export function groupAdjacentPlanningSets(planning: FlexiblePlanning, tacticId: string, groupId: string, sets: PlanningSetLayout[], firstId: string, secondId: string, slots: TacticSlotDescriptor[], newId: string): FlexiblePlanning {
+  const firstIndex = sets.findIndex(set => set.id === firstId)
+  const secondIndex = sets.findIndex(set => set.id === secondId)
+  if (firstIndex < 0 || secondIndex !== firstIndex + 1) return planning
+  const first = sets[firstIndex], second = sets[secondIndex]
+  if (!canGroupAdjacentPlanningSets(first, second, slots)) return planning
+  const slotIds = [...first.slotIds, ...second.slotIds]
+  const firstPosition = slots.find(slot => slot.id === slotIds[0])?.position ?? first.label
+  const slotLabels = Object.fromEntries(slotIds.map(slotId => { const sourceSet = first.slotIds.includes(slotId) ? first : second; return [slotId, planningSetDisplayLabel(sourceSet, sets, slots)] }))
+  const grouped: PlanningSetLayout = { id: newId, label: defaultSetLabel(firstPosition, slotIds.length), slotIds, slotLabels }
+  const nextSets = [...sets]
+  nextSets.splice(firstIndex, 2, grouped)
+  const groupAssignments = { ...(planning.slotAssignments[groupId] ?? {}) }
+  const players = [...(groupAssignments[first.id] ?? []), ...(groupAssignments[second.id] ?? [])].filter(Boolean)
+  delete groupAssignments[first.id]; delete groupAssignments[second.id]
+  groupAssignments[newId] = [...new Set(players)]
+  return { ...withLayouts(planning, tacticId, groupId, nextSets), slotAssignments: { ...planning.slotAssignments, [groupId]: groupAssignments } }
+}
+
 export function reorderPlanningSets(planning: FlexiblePlanning, tacticId: string, groupId: string, sets: PlanningSetLayout[], draggedId: string, beforeId: string | null): FlexiblePlanning {
   if (draggedId === beforeId) return planning
   const dragged = sets.find(set => set.id === draggedId)
@@ -158,7 +208,7 @@ export function splitPlanningSet(planning: FlexiblePlanning, tacticId: string, g
   if (!source || source.slotIds.length < 2) return planning
   const slotById = new Map(slots.map(slot => [slot.id, slot]))
   const sourceIndex = sets.findIndex(set => set.id === setId)
-  const replacements = source.slotIds.map(id => ({ id, label: defaultSetLabel(slotById.get(id)?.position ?? id), slotIds: [id] }))
+  const replacements = source.slotIds.map(id => ({ id, label: source.slotLabels?.[id]?.trim() || defaultSetLabel(slotById.get(id)?.position ?? id), slotIds: [id] }))
   const nextSets = [...sets]
   nextSets.splice(sourceIndex, 1, ...replacements)
   const previousPlayers = planning.slotAssignments[groupId]?.[setId] ?? []
