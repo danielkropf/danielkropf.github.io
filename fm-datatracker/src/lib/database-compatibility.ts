@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { describeDbError, isMissingRpcError } from './db-error'
 
-export const REQUIRED_DATABASE_SCHEMA = '202608260002'
+export const REQUIRED_DATABASE_SCHEMA = '202608260003'
 const STALE_RECHECK_MS = 30_000
 
 export type DatabaseCompatibility = {

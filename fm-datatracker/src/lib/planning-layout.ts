@@ -18,8 +18,14 @@ const CARD_GAP = 6
 const EXPAND_CONTROL_WIDTH = 40
 const MAX_COLUMNS = 4
 const IDEAL_CARD_WIDTH = 220
+const PROJECTED_IDEAL_CARD_WIDTH = 260
 
-function minimumCardWidth(width: number) {
+function minimumCardWidth(width: number, showProjection = false) {
+  if (showProjection) {
+    if (width < 520) return 188
+    if (width < 700) return 204
+    return 220
+  }
   if (width < 520) return 132
   if (width < 700) return 148
   return 164
@@ -35,8 +41,8 @@ function columnsThatFit(width: number, minCardWidth: number, reserveExpand: bool
  * below the readability floor. The +N control is budgeted before card width is
  * calculated, so excess players are hidden instead of shrinking the row.
  */
-export function calculatePlanningCardLayout(width: number, grouped: boolean, optionCount: number): PlanningCardLayout {
-  const minCardWidth = minimumCardWidth(width)
+export function calculatePlanningCardLayout(width: number, grouped: boolean, optionCount: number, showProjection = false): PlanningCardLayout {
+  const minCardWidth = minimumCardWidth(width, showProjection)
   const rows = grouped ? 2 : 1
   const fullColumns = columnsThatFit(width, minCardWidth, false)
   const theoreticalCapacity = fullColumns * rows
@@ -51,7 +57,7 @@ export function calculatePlanningCardLayout(width: number, grouped: boolean, opt
   const widthBudget = Math.max(0, width - (reserveOnSameRow ? EXPAND_CONTROL_WIDTH + CARD_GAP : 0))
   const cardWidth = Math.max(
     minCardWidth,
-    Math.min(IDEAL_CARD_WIDTH, Math.floor((widthBudget - CARD_GAP * (widestOccupiedRow - 1)) / widestOccupiedRow)),
+    Math.min(showProjection ? PROJECTED_IDEAL_CARD_WIDTH : IDEAL_CARD_WIDTH, Math.floor((widthBudget - CARD_GAP * (widestOccupiedRow - 1)) / widestOccupiedRow)),
   )
 
   return {

@@ -3,7 +3,8 @@ import{createPortal}from'react-dom'
 import{useNavigate}from'react-router-dom'
 import{supabase}from'../lib/supabase'
 import{attributeScore,combinedPhaseScore,fmScaleScore}from'../lib/scoring'
-import{ScoreBadge}from'../components/ScoreBadge'
+import{ScoreWithProjection}from'../components/ScoreWithProjection'
+import{functionProjectionKey}from'../lib/projection-player'
 import{CustomSelect}from'../components/CustomSelect'
 import{PositionSelector}from'../components/PositionSelector'
 import{positionRank,positionSideRank}from'../lib/positions'
@@ -117,7 +118,7 @@ export function SquadPage(){
 
 function SquadCell({column,row,referenceCountry,referenceDivision,model,frozen,frozenEdge,left,openPlayer}:{column:TableColumn;row:Row;referenceCountry:string;referenceDivision:number;model:ModelConfig;frozen:boolean;frozenEdge:boolean;left:number;openPlayer:()=>void}){
   const style=frozen?{position:'sticky' as const,left,zIndex:3}:undefined,cellClass=frozenEdge?'frozen-edge':''
-  if(column.kind==='tacticRole'||column.kind==='role'){const score=row.columnScores[column.id]??null;return <td className={`role-score-cell ${cellClass}`} style={style}><ScoreBadge value={score} rank={null} className="score-badge-compact"/></td>}
+  if(column.kind==='tacticRole'||column.kind==='role'){const score=row.columnScores[column.id]??null;let scoreKey='';let eligible=false;if(column.kind==='role'&&column.phase&&column.position&&column.roleCode){scoreKey=functionProjectionKey([{phase:column.phase,position:column.position,roleCode:column.roleCode}]);eligible=Boolean(row.latest&&canPlayPosition(row.latest.positions,column.position))}else if(column.kind==='tacticRole'&&column.tacticId&&column.linkId){const tactic=model.tactics?.find(item=>item.id===column.tacticId),ip=tactic?.ipAssignments.find(item=>item.playerId===column.linkId),oop=tactic?.oopAssignments.find(item=>item.playerId===column.linkId)??ip;if(ip&&oop){scoreKey=functionProjectionKey([{phase:'IP',position:ip.position,roleCode:ip.roleCode},{phase:'OOP',position:oop.position,roleCode:oop.roleCode}]);eligible=Boolean(row.latest&&canPlayPosition(row.latest.positions,ip.position)&&canPlayPosition(row.latest.positions,oop.position))}}return <td className={`role-score-cell ${cellClass}`} style={style}><ScoreWithProjection playerId={row.player.id} currentScore={score} snapshot={row.latest} scoreType="function" scoreKey={scoreKey} eligible={eligible} variant="inline" currentTitle="Nota atual nesta função" projectionTitle={'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.'}/></td>}
   if(column.kind==='attribute'){const attribute=row.latest?.player_attributes.find(item=>item.attribute_key===column.attributeKey);return <td className={`attribute-table-cell ${cellClass}`} style={style}><b>{attribute?.value??'—'}</b></td>}
   const key=column.key!
   if(key==='status')return <td className={cellClass} style={style}><span className={`planning-status ${row.status==='Não selecionado'?'unselected':'selected'}`}>{row.status}</span></td>
@@ -132,7 +133,7 @@ function SquadCell({column,row,referenceCountry,referenceDivision,model,frozen,f
   if(key==='foot')return <td className={cellClass} style={style}>{row.latest?.preferred_foot||'—'}</td>
   if(key==='contract')return <td className={cellClass} style={style}>{row.latest?.contract_expiry||'—'}</td>
   if(key==='snapshot')return <td className={cellClass} style={style}>{row.latest?.snapshot_date||'—'}</td>
-  if(key==='score')return <td className={cellClass} style={style}><ScoreBadge value={row.score} rank={row.referencePercentile} className="score-badge-compact"/></td>
+  if(key==='score')return <td className={cellClass} style={style}><ScoreWithProjection playerId={row.player.id} currentScore={row.score} currentRank={row.referencePercentile} snapshot={row.latest} scoreType="general" variant="inline" currentTitle="Nota atual"/></td>
   return <td className={cellClass} style={style}>{row.referencePercentile===null?'—':<Tooltip content={`P${row.referencePercentile}: nota igual ou superior à de ${row.referencePercentile}% dos ${row.referenceSample} jogadores aptos em ${row.referenceGroup}, na ${referenceDivision}ª divisão de ${referenceCountry}.`}><span className={`reference-level level-${row.referenceLevel?.toLowerCase().replaceAll(' ','-')}`} tabIndex={0}><b>P{row.referencePercentile}</b> {row.referenceLevel} · {row.referenceGroup}</span></Tooltip>}</td>
 }
 

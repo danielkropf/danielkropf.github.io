@@ -64,3 +64,13 @@ describe('predictive insertion zones', () => {
     expect(resolvePlanningInsertionBefore(twoRows, 10, 70, undefined)).toBe('c')
   })
 })
+
+describe('planning layout with projected potential', () => {
+  it('reduces visible columns before squeezing current + projected score', () => {
+    const normal = calculatePlanningCardLayout(760, false, 8, false)
+    const projected = calculatePlanningCardLayout(760, false, 8, true)
+    expect(projected.cardWidth).toBeGreaterThanOrEqual(220)
+    expect(projected.capacity).toBeLessThanOrEqual(normal.capacity)
+    expect(projected.capacity).toBeLessThanOrEqual(4)
+  })
+})
