@@ -1,79 +1,428 @@
-import{useEffect,useMemo,useRef,useState,useTransition,type MouseEvent as ReactMouseEvent}from'react'
-import{createPortal,flushSync}from'react-dom'
-import{useNavigate}from'react-router-dom'
-import{supabase}from'../lib/supabase'
-import{attributeScore,combinedPhaseScore}from'../lib/scoring'
-import{ScoreBadge}from'../components/ScoreBadge'
-import{percentile,referenceScore,type ReferenceDataset}from'../lib/reference'
-import{roleDefaultWeights}from'../lib/roleWeights'
-import{canPlayPosition}from'../lib/positions'
-import{loadCurrentPlayers,loadReferenceDataset}from'../lib/dataCache'
-import{useSaves}from'../features/saves/SaveContext'
-import{PlayerPeek}from'../components/PlayerPeek'
-import{loadModelConfig,patchModelConfig,scheduleModelConfigPatch}from'../lib/model-config'
-import{derivePlanningAssignmentIndex}from'../lib/planningDistribution'
-type Attribute={attribute_key:string;attribute_label:string;value:number;category:string};type Snapshot={snapshot_date:string;age:number|null;positions:string[];club:string|null;squad:string|null;preferred_foot:string|null;height:number|null;weight:number|null;player_attributes:Attribute[]};type Player={id:string;current_name:string;nationality:string|null;player_snapshots:Snapshot[]};type Group={id:string;name:string};type Planning={groups:Group[];slotAssignments:Record<string,Record<string,string[]>>};type Assignment={playerId:string;nodeId:string;position:string;roleId?:string;roleCode:string;roleName:string};type Pair={ip:Assignment;oop:Assignment};type Tactic={id:string;name:string;ipAssignments:Assignment[];oopAssignments:Assignment[];roles?:{id:string;name:string;weights:Record<string,number>}[]};type Config=Record<string,unknown>&{planning?:Planning;tactics?:Tactic[];selected_tactic_id?:string|null;role_weight_overrides?:Record<string,Record<string,number>>};type DragItem={type:'player';id:string};type SlotSelection={groupId:string;slotId:string;cellIndex:number};type Menu={x:number;y:number;playerId:string;groupId:string;slotId:string;primary:boolean}
-type ScoreEntry={id:string;ipPosition:string;ipRole:string;oopPosition:string;oopRole:string;value:number|null;rank:number|null}
-const transferGroups:Group[]=[{id:'loan',name:'Empréstimo'},{id:'sale',name:'Venda'}]
-const EMPTY_ROLE_OVERRIDES:Record<string,Record<string,number>>={}
-const defaults=():Planning=>({groups:[{id:'principal',name:'Principal'},{id:'b',name:'Time B'},{id:'base',name:'Base'},...transferGroups],slotAssignments:{}})
-export function PlanningPage(){
- const{selected}=useSaves(),navigate=useNavigate(),[players,setPlayers]=useState<Player[]>([]),[reference,setReference]=useState<ReferenceDataset|null>(null),[config,setConfig]=useState<Config>({planning:defaults()}),[undoPlanning,setUndoPlanning]=useState<Planning|null>(null),[status,setStatus]=useState('Carregando…'),[search,setSearch]=useState(''),[positionFilters,setPositionFilters]=useState<string[]>([]),[dragging,setDragging]=useState<DragItem|null>(null),[selectedGroup,setSelectedGroup]=useState('principal'),[hoverGroup,setHoverGroup]=useState<string|null>(null),[manageOpen,setManageOpen]=useState(false),[newGroup,setNewGroup]=useState(''),[menu,setMenu]=useState<Menu|null>(null),[loading,setLoading]=useState(false),[isPending,startTransition]=useTransition(),loaded=useRef(false)
- useEffect(()=>{void loadReferenceDataset().then(setReference)},[])
- useEffect(()=>{let active=true;loaded.current=false;setUndoPlanning(null);if(!supabase||!selected)return()=>{active=false};setLoading(true);setStatus('Carregando…');void Promise.all([loadCurrentPlayers(selected.id),loadModelConfig(selected.id)]).then(([cached,modelConfig])=>{if(!active)return;startTransition(()=>{setPlayers(cached as unknown as Player[]);const existing=modelConfig as Config,old=existing.planning as (Planning&{assignments?:Record<string,string>})|undefined,loadedPlanning=old?{...defaults(),groups:old.groups??defaults().groups,slotAssignments:old.slotAssignments??{}}:defaults(),next={...loadedPlanning,groups:[...loadedPlanning.groups,...transferGroups.filter(required=>!loadedPlanning.groups.some(group=>group.id===required.id))]};setConfig({...existing,planning:next});setSelectedGroup(next.groups[0]?.id??'');loaded.current=true;setStatus('Salvo automaticamente');setLoading(false)})}).catch(error=>{if(active){setStatus(`Erro ao carregar dados: ${error instanceof Error?error.message:'falha desconhecida'}`);setLoading(false)}});return()=>{active=false}},[selected?.id])
- useEffect(()=>{if(!loaded.current||!selected||!supabase)return;scheduleModelConfigPatch(selected.id,'2.9.0',{planning:config.planning??defaults()},setStatus)},[config.planning,selected?.id])
- useEffect(()=>{const close=()=>setMenu(null);window.addEventListener('click',close);return()=>window.removeEventListener('click',close)},[])
- const planning=config.planning??defaults(),assignmentIndex=useMemo(()=>derivePlanningAssignmentIndex(planning.slotAssignments),[planning.slotAssignments]),tactics=config.tactics??[],tactic=tactics.find(t=>t.id===config.selected_tactic_id)??tactics[0],pairs:Pair[]=useMemo(()=>tactic?tactic.ipAssignments.map(ip=>({ip,oop:tactic.oopAssignments.find(o=>o.playerId===ip.playerId)??ip})):[],[tactic]),roleOverrides=config.role_weight_overrides??EMPTY_ROLE_OVERRIDES
- const latestByPlayer=useMemo(()=>new Map(players.map(player=>[player.id,player.player_snapshots[0]])),[players]),latest=(p:Player)=>latestByPlayer.get(p.id)
- function roleScore(player:Player,slot:Assignment){const snap=latest(player),id=slot.roleId??slot.roleCode,weights=roleOverrides[id]??tactic?.roles?.find(r=>r.id===id)?.weights??roleDefaultWeights(id,slot.roleName);return snap?attributeScore(snap.player_attributes.map(a=>({key:a.attribute_key,value:a.value,weight:weights[a.attribute_key]??3}))):null}
- const referenceRatings=useMemo(()=>new Map(pairs.map(pair=>{const ipId=pair.ip.roleId??pair.ip.roleCode,oopId=pair.oop.roleId??pair.oop.roleCode,ipWeights=roleOverrides[ipId]??tactic?.roles?.find(role=>role.id===ipId)?.weights??roleDefaultWeights(ipId,pair.ip.roleName),oopWeights=roleOverrides[oopId]??tactic?.roles?.find(role=>role.id===oopId)?.weights??roleDefaultWeights(oopId,pair.oop.roleName),ratings=(reference?.players??[]).filter(player=>canPlay([player.p],pair.ip.position)).map(player=>combinedPhaseScore(referenceScore(player,reference!.attributes,ipWeights),referenceScore(player,reference!.attributes,oopWeights))).filter((value):value is number=>value!==null).sort((a,b)=>a-b);return[pair.ip.playerId,ratings]})),[pairs,reference,roleOverrides,tactic])
- const playerScores=useMemo(()=>new Map(players.map(player=>[player.id,new Map(pairs.map(pair=>{const value=combinePhaseScores({ip:roleScore(player,pair.ip),oop:roleScore(player,pair.oop)}),rank=value===null?null:percentile(value,referenceRatings.get(pair.ip.playerId)??[]);return[pair.ip.playerId,{value,rank}]}))])),[players,pairs,referenceRatings,roleOverrides,tactic])
- const pairRating=(player:Player,pair:Pair)=>playerScores.get(player.id)?.get(pair.ip.playerId)?.value??null
- const pairPercentile=(player:Player,pair:Pair)=>playerScores.get(player.id)?.get(pair.ip.playerId)?.rank??null
- function bestPair(p:Player){const positions=latest(p)?.positions??[],natural=pairs.filter(pair=>canPlay(positions,pair.ip.position)),pool=natural.length?natural:pairs;return pool.reduce<Pair|undefined>((best,pair)=>!best||(pairRating(p,pair)??-1)>(pairRating(p,best)??-1)?pair:best,undefined)}
- const scoreBreakdown=(player:Player):ScoreEntry[]=>pairs.map(pair=>({id:pair.ip.playerId,ipPosition:pair.ip.position,ipRole:pair.ip.roleCode,oopPosition:pair.oop.position,oopRole:pair.oop.roleCode,value:pairRating(player,pair),rank:pairPercentile(player,pair)}))
- const roster=useMemo(()=>players.map(player=>{const selectedPairs=positionFilters.map(id=>pairs.find(pair=>pair.ip.playerId===id)).filter((pair):pair is Pair=>Boolean(pair)),pair=selectedPairs.length?selectedPairs.reduce<Pair|undefined>((best,current)=>!best||(pairRating(player,current)??-1)>(pairRating(player,best)??-1)?current:best,undefined):bestPair(player),score=pair?pairRating(player,pair):null,rank=pair?pairPercentile(player,pair):null,positions=latest(player)?.positions??[],compatible=selectedPairs.length?selectedPairs.some(current=>canPlay(positions,current.ip.position)||canPlay(positions,current.oop.position)):true;return{player,pair,score,rank,compatible,breakdown:scoreBreakdown(player)}}).filter(row=>!assignmentIndex[row.player.id]&&row.player.current_name.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>Number(b.compatible)-Number(a.compatible)||(b.score??0)-(a.score??0)||a.player.current_name.localeCompare(b.player.current_name,'pt-BR')),[players,search,positionFilters,pairs,playerScores,assignmentIndex,latestByPlayer])
- const activePlayer=players.find(p=>p.id===dragging?.id),currentGroupIndex=Math.max(0,planning.groups.findIndex(group=>group.id===selectedGroup)),currentGroup=planning.groups[currentGroupIndex],currentGroups=currentGroup?[currentGroup]:[],isTransferGroup=Boolean(currentGroup&&transferGroups.some(group=>group.id===currentGroup.id))
- function update(fn:(p:Planning)=>Planning){const previous=planning,next=fn(previous);if(next===previous)return;setUndoPlanning(previous);setConfig(c=>({...c,planning:next}))}
- function undo(){if(!undoPlanning)return;setConfig(c=>({...c,planning:undoPlanning}));setUndoPlanning(null)}
- function changeGroup(direction:number){if(!planning.groups.length)return;const next=(currentGroupIndex+direction+planning.groups.length)%planning.groups.length;setSelectedGroup(planning.groups[next].id);setHoverGroup(null)}
- function addGroup(){if(!newGroup.trim())return;update(p=>({...p,groups:[...p.groups,{id:crypto.randomUUID(),name:newGroup.trim()}]}));setNewGroup('')};const rename=(id:string,name:string)=>update(p=>({...p,groups:p.groups.map(g=>g.id===id?{...g,name}:g)}))
- function removeGroup(id:string){if(!confirm('Excluir este elenco?'))return;update(p=>({groups:p.groups.filter(g=>g.id!==id),slotAssignments:Object.fromEntries(Object.entries(p.slotAssignments).filter(([g])=>g!==id))}))}
- function removePlayer(id:string){update(p=>({...p,slotAssignments:Object.fromEntries(Object.entries(p.slotAssignments).map(([g,rows])=>[g,Object.fromEntries(Object.entries(rows).map(([s,ids])=>[s,ids.filter(x=>x!==id)]))]))}))}
- function clearPlanning(){update(p=>({...p,slotAssignments:{}}))}
- function clearGroup(groupId:string){update(p=>{const removed=Object.values(p.slotAssignments[groupId]??{}).flat().some(Boolean);if(!removed)return p;return{...p,slotAssignments:{...p.slotAssignments,[groupId]:{}}}})}
- function placeInTransferGroup(groupId:string,playerId:string){update(p=>{const cleaned=Object.fromEntries(Object.entries(p.slotAssignments).map(([id,rows])=>[id,Object.fromEntries(Object.entries(rows).map(([slot,ids])=>[slot,ids.filter(value=>value!==playerId)]))])),marketPlayers=[...(cleaned[groupId]?.market??[]).filter(Boolean),playerId];return{...p,slotAssignments:{...cleaned,[groupId]:{...(cleaned[groupId]??{}),market:marketPlayers}}}})}
- function primary(group:string,slot:string,id:string,cellIndex?:number){update(p=>{const cleaned=Object.fromEntries(Object.entries(p.slotAssignments).map(([groupId,rows])=>[groupId,Object.fromEntries(Object.entries(rows).map(([slotId,ids])=>[slotId,ids.map(playerId=>playerId===id?'':playerId)]))])),targetRows=cleaned[group]??{},target=[...(targetRows[slot]??[])];while(target.length<3)target.push('');const destination=cellIndex??target.findIndex(playerId=>!playerId);if(destination<0||destination>2)return p;const displaced=target[destination];if(displaced===id)return p;target[destination]=id;return{...p,slotAssignments:{...cleaned,[group]:{...targetRows,[slot]:target}}}})}
- return <div className="screen-page planning-page"><div className="title-row"><h1>Planejamento</h1><div className="planning-header-actions"><span className="save-state">{status}</span>{(loading||isPending)&&<span className="background-loading" role="status">Carregando em segundo plano…</span>}</div></div>
- <section className="planning-matrix-toolbar planning-aligned-toolbar"><select value={tactic?.id??''} onChange={e=>{const id=e.target.value||null;setConfig(c=>({...c,selected_tactic_id:id}));if(selected)void patchModelConfig(selected.id,'2.9.0',{selected_tactic_id:id}).then(()=>setStatus('Salvo automaticamente')).catch(error=>setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`))}}><option value="">Selecione uma tática</option>{tactics.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><div className="squad-navigation-row"><div className="squad-pagination"><button onClick={()=>changeGroup(-1)} disabled={planning.groups.length<2}>‹</button><strong>{currentGroup?.name??'Nenhum elenco'}</strong><span>{planning.groups.length?`${currentGroupIndex+1} / ${planning.groups.length}`:'0 / 0'}</span><button onClick={()=>changeGroup(1)} disabled={planning.groups.length<2}>›</button></div><button className="ghost undo-planning-button" onClick={undo} disabled={!undoPlanning} title="Desfazer a última alteração do planejamento" aria-label="Desfazer a última alteração do planejamento">↶</button><button className="ghost clear-planning-button" onClick={clearPlanning} disabled={!Object.keys(assignmentIndex).length}>Limpar elencos</button><button className="ghost manage-squads-button" onClick={()=>setManageOpen(true)}>Gerenciar elencos</button></div></section>
- <section className="planning-depth-layout"><article className="planning-column roster-column"><header><h2>Elenco</h2><span>{roster.length}</span></header><div className="roster-filters"><input placeholder="Buscar" value={search} onChange={e=>setSearch(e.target.value)}/><PositionFilterDropdown pairs={pairs} selected={positionFilters} change={setPositionFilters}/></div><div className="planning-player-list">{!players.length&&(loading||isPending)&&<div className="background-loader-panel" role="status">Carregando elenco… você pode trocar de aba enquanto isso.</div>}{roster.map(({player,pair,score,rank,compatible,breakdown})=><PlayerCard player={player} snapshot={latest(player)} pair={pair} score={score} rank={rank} breakdown={breakdown} compatible={compatible} drag={()=>setDragging({type:'player',id:player.id})} dragEnd={()=>{setDragging(null);setHoverGroup(null)}} open={()=>navigate(`/players/${player.id}`)} key={player.id}/>)}</div></article>
-<div className="depth-matrix-scroll">{isTransferGroup&&currentGroup?<TransferGroupPanel group={currentGroup} playerIds={planning.slotAssignments[currentGroup.id]?.market??[]} players={players} latest={latest} dragging={Boolean(activePlayer)} drop={()=>{if(activePlayer)flushSync(()=>placeInTransferGroup(currentGroup.id,activePlayer.id));setDragging(null)}} startDrag={id=>setDragging({type:'player',id})} dragEnd={()=>setDragging(null)} open={id=>navigate(`/players/${id}`)} remove={removePlayer} clear={()=>clearGroup(currentGroup.id)}/>:tactic?<div className="depth-matrix" style={{gridTemplateColumns:'150px minmax(0,1fr)'}}><div className="depth-corner">Funções IP / OOP</div>{currentGroups.map(g=>{const coverage=depthCoverage(players.filter(p=>assignmentIndex[p.id]===g.id),pairs.map(p=>p.ip),latest),hasPlayers=Object.values(planning.slotAssignments[g.id]??{}).flat().some(Boolean);return <div className={`depth-group-head ${hoverGroup===g.id?'player-target':''} ${selectedGroup===g.id?'selected-destination':''}`} key={g.id}><strong>{g.name}</strong><button className="clear-current-group" onClick={()=>clearGroup(g.id)} disabled={!hasPlayers} title={`Limpar somente ${g.name}`} aria-label={`Limpar somente ${g.name}`}><TrashIcon/></button><small>{coverage.full} camada{coverage.full===1?'':'s'} completa{coverage.full===1?'':'s'} · próxima {coverage.next}/{pairs.length}</small></div>})}{pairs.map((pair,index)=><DepthRowV2 pair={pair} index={index} groups={currentGroups} players={players} planning={planning} latest={latest} activePlayer={activePlayer} setHoverGroup={setHoverGroup} startDrag={id=>setDragging({type:'player',id})} dragEnd={()=>{setDragging(null);setHoverGroup(null)}} drop={(group,slot,cellIndex)=>{if(activePlayer)flushSync(()=>primary(group,slot,activePlayer.id,cellIndex));setDragging(null);setHoverGroup(null)}} score={player=>({value:pairRating(player,pair),rank:pairPercentile(player,pair)})} breakdown={scoreBreakdown} open={id=>navigate(`/players/${id}`)} context={(e,data)=>{e.preventDefault();e.stopPropagation();setMenu({x:e.clientX,y:e.clientY,...data})}} key={pair.ip.playerId}/>)}</div>:<div className="empty depth-empty"><h2>Crie ou selecione uma tática</h2></div>}</div></section>
- {manageOpen&&<div className="settings-overlay" onClick={()=>setManageOpen(false)}><section className="squad-manager" onClick={e=>e.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={()=>setManageOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map(g=>{const fixed=transferGroups.some(group=>group.id===g.id);return <div className={fixed?'fixed-planning-group':''} key={g.id}><input value={g.name} readOnly={fixed} onChange={e=>rename(g.id,e.target.value)}/>{fixed?<span>Grupo de mercado</span>:<button className="column-delete" onClick={()=>removeGroup(g.id)}>Excluir</button>}</div>})}</div><footer><input placeholder="Novo elenco" value={newGroup} onChange={e=>setNewGroup(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addGroup()}/><button onClick={addGroup}>+ Adicionar</button></footer></section></div>}
- {menu&&<div className="planning-context-menu" style={{left:menu.x,top:menu.y}} onClick={e=>e.stopPropagation()}><button onClick={()=>{removePlayer(menu.playerId);setMenu(null)}}>Remover do elenco</button></div>}</div>}
+import { useEffect, useMemo, useRef, useState, useTransition, type MouseEvent as ReactMouseEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import { attributeScore, combinedPhaseScore } from '../lib/scoring'
+import { ScoreBadge } from '../components/ScoreBadge'
+import { percentile, referenceScore, type ReferenceDataset } from '../lib/reference'
+import { roleDefaultWeights } from '../lib/roleWeights'
+import { canPlayPosition } from '../lib/positions'
+import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
+import { useSaves } from '../features/saves/SaveContext'
+import { PlayerPeek } from '../components/PlayerPeek'
+import { loadModelConfig, patchModelConfig, scheduleModelConfigPatch } from '../lib/model-config'
+import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
+import {
+  groupEquivalentSets,
+  layoutsFor,
+  movePlanningSet,
+  movePlayerToSet,
+  positionFamily,
+  primarySetForPlayer,
+  removePlayerFromPlanning,
+  renamePlanningSet,
+  reorderPlanningSets,
+  restoreDefaultPlanningSets,
+  splitPlanningSet,
+  type FlexiblePlanning,
+  type PlanningSetLayout,
+  type TacticSlotDescriptor,
+} from '../lib/planningSets'
 
-function TransferGroupPanel({group,playerIds,players,latest,dragging,drop,startDrag,dragEnd,open,remove,clear}:{group:Group;playerIds:string[];players:Player[];latest:(player:Player)=>Snapshot|undefined;dragging:boolean;drop:()=>void;startDrag:(id:string)=>void;dragEnd:()=>void;open:(id:string)=>void;remove:(id:string)=>void;clear:()=>void}){const members=playerIds.map(id=>players.find(player=>player.id===id)).filter((player):player is Player=>Boolean(player));return <section className={`transfer-group-panel ${dragging?'is-receiving':''}`} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();drop()}}><header><div><span>Grupo de mercado</span><h2>{group.name}</h2></div><div className="transfer-group-actions"><strong>{members.length} jogador{members.length===1?'':'es'}</strong><button className="clear-current-group" onClick={clear} disabled={!members.length} title={`Limpar somente ${group.name}`} aria-label={`Limpar somente ${group.name}`}><TrashIcon/></button></div></header><div className="transfer-player-grid">{members.map(player=>{const snapshot=latest(player);return snapshot?<article className="transfer-player-card" draggable onDragStart={()=>startDrag(player.id)} onDragEnd={dragEnd} key={player.id}><PlayerPeek player={player} snapshot={snapshot}/><div className="transfer-player-info"><button className="player-name" onClick={()=>open(player.id)}>{player.current_name}</button><span>{snapshot.positions.join(', ')||'Sem posição'}</span><small>{snapshot.age??'—'} anos · {snapshot.club??'Sem clube'}</small></div><button className="transfer-remove" onClick={()=>remove(player.id)} title={`Remover ${player.current_name} de ${group.name}`} aria-label={`Remover ${player.current_name} de ${group.name}`}>×</button></article>:null})}{!members.length&&<div className="transfer-empty"><b>Arraste jogadores para {group.name.toLowerCase()}</b><span>Este grupo não utiliza posições ou funções da tática.</span></div>}</div>{dragging&&<div className="transfer-drop-hint">Solte para adicionar a {group.name}</div>}</section>}
+type Attribute = { attribute_key: string; attribute_label: string; value: number; category: string }
+type Snapshot = { snapshot_date: string; age: number | null; positions: string[]; club: string | null; squad: string | null; preferred_foot: string | null; height: number | null; weight: number | null; player_attributes: Attribute[] }
+type Player = { id: string; current_name: string; nationality: string | null; player_snapshots: Snapshot[] }
+type Group = { id: string; name: string }
+type Planning = FlexiblePlanning & { groups: Group[] }
+type Assignment = { playerId: string; nodeId: string; position: string; roleId?: string; roleCode: string; roleName: string }
+type Pair = { ip: Assignment; oop: Assignment }
+type Tactic = { id: string; name: string; ipAssignments: Assignment[]; oopAssignments: Assignment[]; roles?: { id: string; name: string; weights: Record<string, number> }[] }
+type Config = Record<string, unknown> & { planning?: Planning; tactics?: Tactic[]; selected_tactic_id?: string | null; role_weight_overrides?: Record<string, Record<string, number>> }
+type DragItem = { type: 'player'; id: string }
+type Menu = { x: number; y: number; playerId: string }
 
-function TrashIcon(){return <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"/></svg>}
+const transferGroups: Group[] = [{ id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }]
+const EMPTY_ROLE_OVERRIDES: Record<string, Record<string, number>> = {}
+const defaults = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }, ...transferGroups], slotAssignments: {}, setLayouts: {} })
+const canPlay = canPlayPosition
 
-function DepthRow({pair,index,groups,players,planning,latest,activePlayer,selectedPlayer,hoverGroup,setHoverGroup,startDrag,drop,scores,open,select,context}:{pair:Pair;index:number;groups:Group[];players:Player[];planning:Planning;latest:(p:Player)=>Snapshot|undefined;activePlayer?:Player;selectedPlayer:string|null;hoverGroup:string|null;setHoverGroup:(id:string|null)=>void;startDrag:(id:string)=>void;drop:(g:string,s:string)=>void;scores:(p:Player,pair:Pair)=>{ip:number|null;oop:number|null};open:(id:string)=>void;select:(id:string)=>void;context:(e:ReactMouseEvent,data:Omit<Menu,'x'|'y'>)=>void}){const compatible=activePlayer&&(canPlay(latest(activePlayer)?.positions??[],pair.ip.position)||canPlay(latest(activePlayer)?.positions??[],pair.oop.position));return <><div className={`depth-position dual-role ${activePlayer&&compatible?'drag-compatible':''}`}><span><b>{pair.ip.position}</b><em>{pair.ip.roleCode}</em></span><span><b>{pair.oop.position}</b><em>{pair.oop.roleCode}</em></span></div>{groups.map(g=>{const primary=planning.slotAssignments[g.id]?.[pair.ip.playerId]??[],groupMembers=new Set(Object.values(planning.slotAssignments[g.id]??{}).flat().filter(Boolean)),members=players.filter(p=>groupMembers.has(p.id)&&(canPlay(latest(p)?.positions??[],pair.ip.position)||canPlay(latest(p)?.positions??[],pair.oop.position)||primary.includes(p.id))),ordered=[...members].sort((a,b)=>Number(primary.includes(b.id))-Number(primary.includes(a.id))||a.current_name.localeCompare(b.current_name,'pt-BR'));return <div className={`depth-cell ${hoverGroup===g.id?'column-highlight':''} ${activePlayer&&compatible?'compatible-target':'training-target'}`} onDragEnter={()=>activePlayer&&setHoverGroup(g.id)} onDragOver={e=>e.preventDefault()} onDrop={()=>drop(g.id,pair.ip.playerId)} key={g.id}>{ordered.map(p=>{const value=scores(p,pair),isPrimary=primary.includes(p.id),extra=!isPrimary;return <div className={`depth-player-chip ${isPrimary?'primary':'extra'} ${selectedPlayer===p.id?'selected-player':''}`} draggable onDragStart={()=>startDrag(p.id)} onClick={()=>select(p.id)} onContextMenu={e=>context(e,{playerId:p.id,groupId:g.id,slotId:pair.ip.playerId,primary:isPrimary})} key={p.id}><PlayerPeek player={p} snapshot={latest(p)!}/><button className="player-name" onClick={e=>{e.stopPropagation();open(p.id)}}>{p.current_name}</button>{extra&&<i title="Opção extra; a posição primária é outra">E</i>}<span className="dual-score"><b className={scoreClass(value.ip)}>IP {value.ip?.toFixed(1)??'—'}</b><b className={scoreClass(value.oop)}>OOP {value.oop?.toFixed(1)??'—'}</b></span></div>})}{!ordered.length&&<span className="depth-missing">Sem opção</span>}</div>})}</>}
-function PlayerCard({player,snapshot,pair,score,rank,breakdown,compatible,drag,dragEnd,open}:{player:Player;snapshot:Snapshot;pair?:Pair;score:number|null;rank:number|null;breakdown:ScoreEntry[];compatible:boolean;drag:()=>void;dragEnd:()=>void;open:()=>void}){return <div className={`planning-player roster-player-card ${!compatible?'incompatible':''}`} draggable onDragStart={drag} onDragEnd={dragEnd}><PlayerPeek player={player} snapshot={snapshot}/><div className="roster-player-main"><button className="player-name" onClick={e=>{e.stopPropagation();open()}}>{player.current_name}</button><span>{snapshot.positions.join(', ')||'Sem posição informada'}</span><small>{snapshot.age??'—'} anos · {snapshot.height?`${snapshot.height} cm`:'Altura —'} · {footLabel(snapshot.preferred_foot)}</small></div><ScoreWithBreakdown value={score} rank={rank} label={pair?pairLabel(pair):'Sem função'} entries={breakdown}/></div>}
-function PositionFilterDropdown({pairs,selected,change}:{pairs:Pair[];selected:string[];change:(ids:string[])=>void}){const label=!selected.length?'Todas as posições':selected.length===1?'1 posição selecionada':`${selected.length} posições selecionadas`;return <details className="position-multi-filter"><summary>{label}<span>⌄</span></summary><div className="position-multi-menu"><header><b>Posições da tática</b>{selected.length>0&&<button type="button" onClick={()=>change([])}>Limpar</button>}</header>{pairs.map(pair=>{const checked=selected.includes(pair.ip.playerId);return <label className={`planning-line-${planningLine(pair.ip.position)}`} key={pair.ip.playerId}><input type="checkbox" checked={checked} onChange={event=>change(event.target.checked?[...selected,pair.ip.playerId]:selected.filter(id=>id!==pair.ip.playerId))}/><span><b>{pair.ip.position}</b> {pair.ip.roleCode}</span><i>→</i><span><b>{pair.oop.position}</b> {pair.oop.roleCode}</span></label>})}</div></details>}
-const canPlay=canPlayPosition
-function planningLine(position:string){const value=position.toUpperCase().replaceAll(' ','');if(value.startsWith('GK'))return'gk';if(value.startsWith('ST'))return'st';if(value.startsWith('AM'))return'am';if(value.startsWith('M'))return'm';if(value.startsWith('DM')||value.startsWith('WB'))return'dm';return'd'}
-function maximumMatching(players:Player[],slots:Assignment[],latest:(p:Player)=>Snapshot|undefined,layers:number){const expanded=Array.from({length:layers},()=>slots).flat(),matched=new Map<string,number>();function visit(index:number,seen:Set<string>):boolean{for(const p of players){if(seen.has(p.id)||!canPlay(latest(p)?.positions??[],expanded[index].position))continue;seen.add(p.id);const previous=matched.get(p.id);if(previous===undefined||visit(previous,seen)){matched.set(p.id,index);return true}}return false}let count=0;for(let i=0;i<expanded.length;i++)if(visit(i,new Set()))count++;return count}
-function depthCoverage(players:Player[],slots:Assignment[],latest:(p:Player)=>Snapshot|undefined){if(!slots.length)return{full:0,next:0};let full=0;for(let l=1;l<=3;l++){if(maximumMatching(players,slots,latest,l)===slots.length*l)full=l;else break}return{full,next:Math.max(0,maximumMatching(players,slots,latest,full+1)-full*slots.length)}}
-const scoreClass=(v:number|null)=>v===null?'score-none':v>=75?'score-high':v>=50?'score-mid':'score-low',footLabel=(foot:string|null)=>foot?`Pé ${foot}`:'Pé —'
-function combinePhaseScores({ip,oop}:{ip:number|null;oop:number|null}){return combinedPhaseScore(ip,oop)}
-function OverallScore({value,rank}:{value:number|null;rank:number|null}){return <ScoreBadge value={value} rank={rank}/>}
-function pairLabel(pair:Pair){return `${pair.ip.position} · ${pair.ip.roleCode}/${pair.oop.roleCode}`}
-function ScoreWithBreakdown({value,rank,label,entries}:{value:number|null;rank:number|null;label:string;entries:ScoreEntry[]}){const[anchor,setAnchor]=useState<DOMRect|null>(null),tooltipWidth=290,tooltipHeight=typeof window==='undefined'?690:Math.min(690,window.innerHeight-24),placeRight=Boolean(anchor&&(window.innerWidth-anchor.right>=tooltipWidth+12||anchor.left<tooltipWidth+12)),left=anchor?(placeRight?anchor.right+10:anchor.left-tooltipWidth-10):0,top=anchor?Math.min(Math.max(12,anchor.top+anchor.height/2-tooltipHeight/2),window.innerHeight-tooltipHeight-12):0;return <span className="score-context-wrap" tabIndex={0} onMouseEnter={event=>setAnchor(event.currentTarget.getBoundingClientRect())} onMouseLeave={()=>setAnchor(null)} onFocus={event=>setAnchor(event.currentTarget.getBoundingClientRect())} onBlur={()=>setAnchor(null)}><small className="score-context-label">{label}</small><ScoreBadge value={value} rank={rank} showTitle={false}/>{anchor&&createPortal(<aside className={`score-breakdown-tooltip ${placeRight?'on-right':'on-left'}`} style={{left,top}}><div>{entries.map(entry=><span className={`${pairLabelFromEntry(entry)===label?'active ':''}planning-line-${planningLine(entry.ipPosition)}`} key={entry.id}><i><b>{entry.ipPosition}</b><small>{entry.ipRole}</small></i><em>↔</em><i><b>{entry.oopPosition}</b><small>{entry.oopRole}</small></i><ScoreBadge value={entry.value} rank={entry.rank} className="score-badge-compact" showTitle={false}/></span>)}</div></aside>,document.body)}</span>}
-function pairLabelFromEntry(entry:ScoreEntry){return `${entry.ipPosition} · ${entry.ipRole}/${entry.oopRole}`}
+export function PlanningPage() {
+  const { selected } = useSaves()
+  const navigate = useNavigate()
+  const [players, setPlayers] = useState<Player[]>([])
+  const [reference, setReference] = useState<ReferenceDataset | null>(null)
+  const [config, setConfig] = useState<Config>({ planning: defaults() })
+  const [undoPlanning, setUndoPlanning] = useState<Planning | null>(null)
+  const [status, setStatus] = useState('Carregando…')
+  const [search, setSearch] = useState('')
+  const [positionFilters, setPositionFilters] = useState<string[]>([])
+  const [dragging, setDragging] = useState<DragItem | null>(null)
+  const [draggingSetId, setDraggingSetId] = useState<string | null>(null)
+  const [selectedGroup, setSelectedGroup] = useState('principal')
+  const [manageSquadsOpen, setManageSquadsOpen] = useState(false)
+  const [manageSetsOpen, setManageSetsOpen] = useState(false)
+  const [newGroup, setNewGroup] = useState('')
+  const [menu, setMenu] = useState<Menu | null>(null)
+  const [showCoverages, setShowCoverages] = useState(false)
+  const [expandedSets, setExpandedSets] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(false)
+  const [isPending, startTransition] = useTransition()
+  const loaded = useRef(false)
 
-function DepthRowV2({pair,index,groups,players,planning,latest,activePlayer,setHoverGroup,startDrag,dragEnd,drop,score,breakdown,open,context}:{pair:Pair;index:number;groups:Group[];players:Player[];planning:Planning;latest:(p:Player)=>Snapshot|undefined;activePlayer?:Player;setHoverGroup:(id:string|null)=>void;startDrag:(id:string)=>void;dragEnd:()=>void;drop:(g:string,s:string,i:number)=>void;score:(p:Player)=>{value:number|null;rank:number|null};breakdown:(p:Player)=>ScoreEntry[];open:(id:string)=>void;context:(e:ReactMouseEvent,data:Omit<Menu,'x'|'y'>)=>void}){
- const compatible=activePlayer&&(canPlay(latest(activePlayer)?.positions??[],pair.ip.position)||canPlay(latest(activePlayer)?.positions??[],pair.oop.position))
- return <><div className={`depth-position dual-role ${activePlayer&&compatible?'drag-compatible':''}`}><span className={`planning-line-${planningLine(pair.ip.position)}`}><b>{pair.ip.position}</b><em>{pair.ip.roleCode}</em></span><span className={`planning-line-${planningLine(pair.oop.position)}`}><b>{pair.oop.position}</b><em>{pair.oop.roleCode}</em></span></div>{groups.map(group=>{
-  const assignedIds=[...(planning.slotAssignments[group.id]?.[pair.ip.playerId]??[])].slice(0,3);while(assignedIds.length<3)assignedIds.push('');const cells:(Player|null)[]=assignedIds.map(id=>players.find(player=>player.id===id)??null),previewIndex=activePlayer?cells.findIndex(player=>!player):-1
-  return <div className={`depth-cell depth-three-slots planning-line-${planningLine(pair.ip.position)} ${activePlayer&&compatible?'compatible-target selected-natural':'training-target'}`} key={group.id}>{cells.map((player,cellIndex)=>player?<DepthPlayer player={player} snapshot={latest(player)!} score={score(player)} label={pairLabel(pair)} breakdown={breakdown(player)} replaceable={Boolean(activePlayer&&activePlayer.id!==player.id)} replace={()=>drop(group.id,pair.ip.playerId,cellIndex)} startDrag={()=>startDrag(player.id)} dragEnd={dragEnd} open={()=>open(player.id)} context={event=>context(event,{playerId:player.id,groupId:group.id,slotId:pair.ip.playerId,primary:true})} key={`${player.id}-${cellIndex}`}/>:<div className={`depth-vacancy ${activePlayer&&previewIndex===cellIndex?'preview-vacancy':''}`} onDragEnter={event=>{event.stopPropagation();activePlayer&&setHoverGroup(group.id);event.currentTarget.classList.add('drop-hover')}} onDragLeave={event=>event.currentTarget.classList.remove('drop-hover')} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();event.stopPropagation();event.currentTarget.classList.remove('drop-hover');drop(group.id,pair.ip.playerId,cellIndex)}} aria-label={`Vaga ${cellIndex+1} livre`} key={`vacancy-${cellIndex}`}>{activePlayer&&previewIndex===cellIndex?<PreviewPlayer player={activePlayer} snapshot={latest(activePlayer)!} score={score(activePlayer)}/>:<span>+</span>}</div>)}</div>
- })}</>}
-function DepthPlayer({player,snapshot,score,label,breakdown,replaceable,replace,startDrag,dragEnd,open,context}:{player:Player;snapshot:Snapshot;score:{value:number|null;rank:number|null};label:string;breakdown:ScoreEntry[];replaceable:boolean;replace:()=>void;startDrag:()=>void;dragEnd:()=>void;open:()=>void;context:(event:ReactMouseEvent)=>void}){return <div className={`depth-player-chip primary ${replaceable?'replace-target':''}`} draggable onDragStart={startDrag} onDragEnd={dragEnd} onDragOver={event=>{if(replaceable){event.preventDefault();event.dataTransfer.dropEffect='move'}}} onDrop={event=>{if(!replaceable)return;event.preventDefault();event.stopPropagation();replace()}} onContextMenu={context}><PlayerPeek player={player} snapshot={snapshot}/><div className="matrix-player-info"><button className="player-name" onClick={event=>{event.stopPropagation();open()}}>{player.current_name}</button><small>{snapshot.age??'—'} anos · {snapshot.positions.join(', ')||'Sem posição'}</small></div><ScoreWithBreakdown value={score.value} rank={score.rank} label={label} entries={breakdown}/></div>}
-function PreviewPlayer({player,snapshot,score}:{player:Player;snapshot:Snapshot;score:{value:number|null;rank:number|null}}){return <div className="depth-player-chip planning-player-preview"><span className="player-peek">♟</span><div className="matrix-player-info"><strong>{player.current_name}</strong><small>{snapshot.age??'—'} anos · {snapshot.positions.join(', ')||'Sem posição'}</small></div><OverallScore value={score.value} rank={score.rank}/></div>}
+  useEffect(() => { void loadReferenceDataset().then(setReference) }, [])
+  useEffect(() => {
+    let active = true
+    loaded.current = false
+    setUndoPlanning(null)
+    setExpandedSets(new Set())
+    if (!supabase || !selected) return () => { active = false }
+    setLoading(true)
+    setStatus('Carregando…')
+    void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)]).then(([cached, modelConfig]) => {
+      if (!active) return
+      startTransition(() => {
+        setPlayers(cached as unknown as Player[])
+        const existing = modelConfig as Config
+        const old = existing.planning as (Planning & { assignments?: Record<string, string> }) | undefined
+        const loadedPlanning: Planning = old ? {
+          ...defaults(),
+          groups: old.groups ?? defaults().groups,
+          slotAssignments: old.slotAssignments ?? {},
+          setLayouts: old.setLayouts ?? {},
+        } : defaults()
+        const next: Planning = {
+          ...loadedPlanning,
+          groups: [...loadedPlanning.groups, ...transferGroups.filter(required => !loadedPlanning.groups.some(group => group.id === required.id))],
+        }
+        setConfig({ ...existing, planning: next })
+        setSelectedGroup(next.groups[0]?.id ?? '')
+        loaded.current = true
+        setStatus('Salvo automaticamente')
+        setLoading(false)
+      })
+    }).catch(error => {
+      if (active) {
+        setStatus(`Erro ao carregar dados: ${error instanceof Error ? error.message : 'falha desconhecida'}`)
+        setLoading(false)
+      }
+    })
+    return () => { active = false }
+  }, [selected?.id])
+  useEffect(() => {
+    if (!loaded.current || !selected || !supabase) return
+    scheduleModelConfigPatch(selected.id, '2.9.0', { planning: config.planning ?? defaults() }, setStatus)
+  }, [config.planning, selected?.id])
+  useEffect(() => {
+    const close = () => setMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [])
+
+  const planning = config.planning ?? defaults()
+  const assignmentIndex = useMemo(() => derivePlanningAssignmentIndex(planning.slotAssignments), [planning.slotAssignments])
+  const tactics = config.tactics ?? []
+  const tactic = tactics.find(item => item.id === config.selected_tactic_id) ?? tactics[0]
+  const pairs: Pair[] = useMemo(() => tactic ? tactic.ipAssignments.map(ip => ({ ip, oop: tactic.oopAssignments.find(oop => oop.playerId === ip.playerId) ?? ip })) : [], [tactic])
+  const slotDescriptors: TacticSlotDescriptor[] = useMemo(() => pairs.map(pair => ({ id: pair.ip.playerId, position: pair.ip.position })), [pairs])
+  const pairBySlot = useMemo(() => new Map(pairs.map(pair => [pair.ip.playerId, pair])), [pairs])
+  const roleOverrides = config.role_weight_overrides ?? EMPTY_ROLE_OVERRIDES
+  const latestByPlayer = useMemo(() => new Map(players.map(player => [player.id, player.player_snapshots[0]])), [players])
+  const latest = (player: Player) => latestByPlayer.get(player.id)
+
+  function roleScore(player: Player, slot: Assignment) {
+    const snapshot = latest(player)
+    const id = slot.roleId ?? slot.roleCode
+    const weights = roleOverrides[id] ?? tactic?.roles?.find(role => role.id === id)?.weights ?? roleDefaultWeights(id, slot.roleName)
+    return snapshot ? attributeScore(snapshot.player_attributes.map(attribute => ({ key: attribute.attribute_key, value: attribute.value, weight: weights[attribute.attribute_key] ?? 3 }))) : null
+  }
+
+  const referenceRatings = useMemo(() => new Map(pairs.map(pair => {
+    const ipId = pair.ip.roleId ?? pair.ip.roleCode
+    const oopId = pair.oop.roleId ?? pair.oop.roleCode
+    const ipWeights = roleOverrides[ipId] ?? tactic?.roles?.find(role => role.id === ipId)?.weights ?? roleDefaultWeights(ipId, pair.ip.roleName)
+    const oopWeights = roleOverrides[oopId] ?? tactic?.roles?.find(role => role.id === oopId)?.weights ?? roleDefaultWeights(oopId, pair.oop.roleName)
+    const ratings = (reference?.players ?? [])
+      .filter(player => canPlay([player.p], pair.ip.position))
+      .map(player => combinedPhaseScore(referenceScore(player, reference!.attributes, ipWeights), referenceScore(player, reference!.attributes, oopWeights)))
+      .filter((value): value is number => value !== null)
+      .sort((a, b) => a - b)
+    return [pair.ip.playerId, ratings]
+  })), [pairs, reference, roleOverrides, tactic])
+
+  const playerScores = useMemo(() => new Map(players.map(player => [player.id, new Map(pairs.map(pair => {
+    const value = combinedPhaseScore(roleScore(player, pair.ip), roleScore(player, pair.oop))
+    const rank = value === null ? null : percentile(value, referenceRatings.get(pair.ip.playerId) ?? [])
+    return [pair.ip.playerId, { value, rank }]
+  }))])), [players, pairs, referenceRatings, roleOverrides, tactic])
+  const pairRating = (player: Player, pair: Pair) => playerScores.get(player.id)?.get(pair.ip.playerId)?.value ?? null
+  const pairPercentile = (player: Player, pair: Pair) => playerScores.get(player.id)?.get(pair.ip.playerId)?.rank ?? null
+  function bestPair(player: Player) {
+    const positions = latest(player)?.positions ?? []
+    const natural = pairs.filter(pair => canPlay(positions, pair.ip.position))
+    const pool = natural.length ? natural : pairs
+    return pool.reduce<Pair | undefined>((best, pair) => !best || (pairRating(player, pair) ?? -1) > (pairRating(player, best) ?? -1) ? pair : best, undefined)
+  }
+  const roster = useMemo(() => players.map(player => {
+    const selectedPairs = positionFilters.map(id => pairBySlot.get(id)).filter((pair): pair is Pair => Boolean(pair))
+    const pair = selectedPairs.length
+      ? selectedPairs.reduce<Pair | undefined>((best, current) => !best || (pairRating(player, current) ?? -1) > (pairRating(player, best) ?? -1) ? current : best, undefined)
+      : bestPair(player)
+    const score = pair ? pairRating(player, pair) : null
+    const rank = pair ? pairPercentile(player, pair) : null
+    const positions = latest(player)?.positions ?? []
+    const compatible = selectedPairs.length ? selectedPairs.some(current => canPlay(positions, current.ip.position) || canPlay(positions, current.oop.position)) : true
+    return { player, score, rank, compatible }
+  }).filter(row => !assignmentIndex[row.player.id] && row.player.current_name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => Number(b.compatible) - Number(a.compatible) || (b.score ?? 0) - (a.score ?? 0) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')), [players, search, positionFilters, pairs, pairBySlot, playerScores, assignmentIndex, latestByPlayer])
+
+  const currentGroupIndex = Math.max(0, planning.groups.findIndex(group => group.id === selectedGroup))
+  const currentGroup = planning.groups[currentGroupIndex]
+  const isTransferGroup = Boolean(currentGroup && transferGroups.some(group => group.id === currentGroup.id))
+  const currentSets = useMemo(() => tactic && currentGroup && !isTransferGroup ? layoutsFor(planning, tactic.id, currentGroup.id, slotDescriptors) : [], [planning, tactic, currentGroup, isTransferGroup, slotDescriptors])
+  const activePlayer = players.find(player => player.id === dragging?.id)
+  const currentGroupPlayerIds = useMemo(() => new Set(Object.values(planning.slotAssignments[currentGroup?.id ?? ''] ?? {}).flat().filter(Boolean)), [planning.slotAssignments, currentGroup?.id])
+
+  function update(fn: (planning: Planning) => Planning) {
+    const previous = planning
+    const next = fn(previous)
+    if (next === previous) return
+    setUndoPlanning(previous)
+    setConfig(current => ({ ...current, planning: next }))
+  }
+  function undo() {
+    if (!undoPlanning) return
+    setConfig(current => ({ ...current, planning: undoPlanning }))
+    setUndoPlanning(null)
+  }
+  function changeGroup(direction: number) {
+    if (!planning.groups.length) return
+    const next = (currentGroupIndex + direction + planning.groups.length) % planning.groups.length
+    setSelectedGroup(planning.groups[next].id)
+    setExpandedSets(new Set())
+  }
+  function addGroup() {
+    if (!newGroup.trim()) return
+    update(value => ({ ...value, groups: [...value.groups, { id: crypto.randomUUID(), name: newGroup.trim() }] }))
+    setNewGroup('')
+  }
+  function renameGroup(id: string, name: string) { update(value => ({ ...value, groups: value.groups.map(group => group.id === id ? { ...group, name } : group) })) }
+  function removeGroup(id: string) {
+    if (!confirm('Excluir este elenco?')) return
+    update(value => {
+      const setLayouts = Object.fromEntries(Object.entries(value.setLayouts ?? {}).map(([tacticId, groups]) => [tacticId, Object.fromEntries(Object.entries(groups).filter(([groupId]) => groupId !== id))]))
+      return { ...value, groups: value.groups.filter(group => group.id !== id), slotAssignments: Object.fromEntries(Object.entries(value.slotAssignments).filter(([groupId]) => groupId !== id)), setLayouts }
+    })
+  }
+  function removePlayer(id: string) { update(value => removePlayerFromPlanning(value, id) as Planning) }
+  function clearPlanning() { update(value => ({ ...value, slotAssignments: {} })) }
+  function clearGroup(groupId: string) {
+    update(value => {
+      const removed = Object.values(value.slotAssignments[groupId] ?? {}).flat().some(Boolean)
+      if (!removed) return value
+      return { ...value, slotAssignments: { ...value.slotAssignments, [groupId]: {} } }
+    })
+  }
+  function placePlayer(groupId: string, setId: string, playerId: string, beforePlayerId?: string | null) { update(value => movePlayerToSet(value, groupId, setId, playerId, beforePlayerId) as Planning) }
+  function stopPlayerDrag() { setDragging(null) }
+  function toggleSet(setId: string) { setExpandedSets(current => { const next = new Set(current); if (next.has(setId)) next.delete(setId); else next.add(setId); return next }) }
+
+  function setPairs(set: PlanningSetLayout) { return set.slotIds.map(id => pairBySlot.get(id)).filter((pair): pair is Pair => Boolean(pair)) }
+  function setScore(player: Player, set: PlanningSetLayout) {
+    const candidates = setPairs(set).map(pair => ({ pair, value: pairRating(player, pair), rank: pairPercentile(player, pair) }))
+    return candidates.reduce<{ pair: Pair | null; value: number | null; rank: number | null }>((best, current) => best.pair === null || (current.value ?? -1) > (best.value ?? -1) ? current : best, { pair: null, value: null, rank: null })
+  }
+  function compatibleWithSet(player: Player, set: PlanningSetLayout) {
+    const positions = latest(player)?.positions ?? []
+    return setPairs(set).some(pair => canPlay(positions, pair.ip.position) || canPlay(positions, pair.oop.position))
+  }
+  function coveragePlayers(set: PlanningSetLayout) {
+    if (!currentGroup) return []
+    return players.filter(player => {
+      if (!currentGroupPlayerIds.has(player.id) || !compatibleWithSet(player, set)) return false
+      const primary = primarySetForPlayer(planning, currentGroup.id, currentSets, player.id)
+      return Boolean(primary && primary.id !== set.id)
+    })
+  }
+  function primaryLabel(playerId: string) { return currentGroup ? primarySetForPlayer(planning, currentGroup.id, currentSets, playerId)?.label ?? 'Outro conjunto' : 'Outro conjunto' }
+
+  function groupSet(setId: string) {
+    if (!tactic || !currentGroup) return
+    update(value => groupEquivalentSets(value, tactic.id, currentGroup.id, currentSets, setId, slotDescriptors, `set-${crypto.randomUUID()}`) as Planning)
+  }
+  function splitSet(setId: string) {
+    if (!tactic || !currentGroup) return
+    update(value => splitPlanningSet(value, tactic.id, currentGroup.id, currentSets, setId, slotDescriptors) as Planning)
+  }
+  function renameSet(setId: string, label: string) {
+    if (!tactic || !currentGroup) return
+    update(value => renamePlanningSet(value, tactic.id, currentGroup.id, currentSets, setId, label) as Planning)
+  }
+  function moveSet(setId: string, direction: -1 | 1) {
+    if (!tactic || !currentGroup) return
+    update(value => movePlanningSet(value, tactic.id, currentGroup.id, currentSets, setId, direction) as Planning)
+  }
+  function reorderSet(draggedId: string, beforeId: string) {
+    if (!tactic || !currentGroup) return
+    update(value => reorderPlanningSets(value, tactic.id, currentGroup.id, currentSets, draggedId, beforeId) as Planning)
+  }
+  function restoreSets() {
+    if (!tactic || !currentGroup) return
+    update(value => restoreDefaultPlanningSets(value, tactic.id, currentGroup.id, currentSets, slotDescriptors) as Planning)
+  }
+  function canGroup(set: PlanningSetLayout) {
+    const pair = pairBySlot.get(set.slotIds[0])
+    if (!pair || set.slotIds.length > 1) return false
+    const family = positionFamily(pair.ip.position)
+    return currentSets.filter(candidate => candidate.slotIds.some(id => positionFamily(pairBySlot.get(id)?.ip.position ?? '') === family)).length > 1
+  }
+
+  return <div className="screen-page planning-page planning-flex-page">
+    <div className="title-row"><h1>Planejamento</h1><div className="planning-header-actions"><span className="save-state">{status}</span>{(loading || isPending) && <span className="background-loading" role="status">Carregando em segundo plano…</span>}</div></div>
+
+    <section className="planning-matrix-toolbar planning-aligned-toolbar planning-flex-toolbar">
+      <select value={tactic?.id ?? ''} onChange={event => {
+        const id = event.target.value || null
+        setConfig(current => ({ ...current, selected_tactic_id: id }))
+        setExpandedSets(new Set())
+        if (selected) void patchModelConfig(selected.id, '2.9.0', { selected_tactic_id: id }).then(() => setStatus('Salvo automaticamente')).catch(error => setStatus(`Erro: ${error instanceof Error ? error.message : 'falha ao salvar'}`))
+      }}><option value="">Selecione uma tática</option>{tactics.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
+      {!isTransferGroup && tactic && <label className="coverage-toggle"><input type="checkbox" checked={showCoverages} onChange={event => setShowCoverages(event.target.checked)} /><span>Mostrar coberturas</span></label>}
+      <div className="squad-navigation-row">
+        <div className="squad-pagination"><button onClick={() => changeGroup(-1)} disabled={planning.groups.length < 2}>‹</button><strong>{currentGroup?.name ?? 'Nenhum elenco'}</strong><span>{planning.groups.length ? `${currentGroupIndex + 1} / ${planning.groups.length}` : '0 / 0'}</span><button onClick={() => changeGroup(1)} disabled={planning.groups.length < 2}>›</button></div>
+        <button className="ghost undo-planning-button" onClick={undo} disabled={!undoPlanning} title="Desfazer a última alteração do planejamento" aria-label="Desfazer a última alteração do planejamento">↶</button>
+        <button className="ghost clear-planning-button" onClick={clearPlanning} disabled={!Object.keys(assignmentIndex).length}>Limpar elencos</button>
+        {!isTransferGroup && tactic && <button className="ghost manage-sets-button" onClick={() => setManageSetsOpen(true)}>Gerenciar conjuntos</button>}
+        <button className="ghost manage-squads-button" onClick={() => setManageSquadsOpen(true)}>Gerenciar elencos</button>
+      </div>
+    </section>
+
+    <section className="planning-depth-layout planning-flex-layout">
+      <article className="planning-column roster-column">
+        <header><h2>Elenco</h2><span>{roster.length}</span></header>
+        <div className="roster-filters"><input placeholder="Buscar" value={search} onChange={event => setSearch(event.target.value)} /><PositionFilterDropdown pairs={pairs} selected={positionFilters} change={setPositionFilters} /></div>
+        <div className="planning-player-list">
+          {!players.length && (loading || isPending) && <div className="background-loader-panel" role="status">Carregando elenco… você pode trocar de aba enquanto isso.</div>}
+          {roster.map(({ player, score, rank, compatible }) => <RosterPlayerCard player={player} snapshot={latest(player)!} score={score} rank={rank} compatible={compatible} drag={() => setDragging({ type: 'player', id: player.id })} dragEnd={stopPlayerDrag} open={() => navigate(`/players/${player.id}`)} key={player.id} />)}
+        </div>
+      </article>
+
+      <div className="planning-flex-board">
+        {isTransferGroup && currentGroup ? <TransferGroupPanel group={currentGroup} playerIds={planning.slotAssignments[currentGroup.id]?.market ?? []} players={players} latest={latest} dragging={Boolean(activePlayer)} drop={() => { if (activePlayer) placePlayer(currentGroup.id, 'market', activePlayer.id); stopPlayerDrag() }} startDrag={id => setDragging({ type: 'player', id })} dragEnd={stopPlayerDrag} open={id => navigate(`/players/${id}`)} remove={removePlayer} clear={() => clearGroup(currentGroup.id)} />
+          : tactic && currentGroup ? <>
+            <header className="planning-flex-board-header"><div><span className="eyebrow">{tactic.name}</span><h2>{currentGroup.name}</h2><p>{currentGroupPlayerIds.size} jogador{currentGroupPlayerIds.size === 1 ? '' : 'es'} com alocação principal</p></div><button className="ghost clear-current-flex" onClick={() => clearGroup(currentGroup.id)} disabled={!currentGroupPlayerIds.size}>Limpar {currentGroup.name}</button></header>
+            <div className="planning-set-list">
+              {currentSets.map(set => <PlanningSetRow
+                key={set.id}
+                set={set}
+                pairs={setPairs(set)}
+                assignedIds={planning.slotAssignments[currentGroup.id]?.[set.id] ?? []}
+                players={players}
+                latest={latest}
+                expanded={expandedSets.has(set.id)}
+                showCoverages={showCoverages}
+                coverages={showCoverages ? coveragePlayers(set) : []}
+                primaryLabel={primaryLabel}
+                activePlayer={activePlayer}
+                draggingSetId={draggingSetId}
+                score={player => setScore(player, set)}
+                compatible={player => compatibleWithSet(player, set)}
+                toggle={() => toggleSet(set.id)}
+                startPlayerDrag={id => setDragging({ type: 'player', id })}
+                stopPlayerDrag={stopPlayerDrag}
+                dropPlayer={(beforePlayerId) => { if (activePlayer) placePlayer(currentGroup.id, set.id, activePlayer.id, beforePlayerId); stopPlayerDrag() }}
+                startSetDrag={() => setDraggingSetId(set.id)}
+                stopSetDrag={() => setDraggingSetId(null)}
+                dropSet={() => { if (draggingSetId) reorderSet(draggingSetId, set.id); setDraggingSetId(null) }}
+                open={id => navigate(`/players/${id}`)}
+                context={(event, playerId) => { event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, playerId }) }}
+              />)}
+            </div>
+          </> : <div className="empty planning-no-tactic"><h2>Nenhuma tática disponível</h2><p>Crie uma tática para organizar o elenco por posição e função.</p><button onClick={() => navigate('/tactics')}>Criar primeira tática</button></div>}
+      </div>
+    </section>
+
+    {manageSquadsOpen && <div className="settings-overlay" onClick={() => setManageSquadsOpen(false)}><section className="squad-manager" onClick={event => event.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={() => setManageSquadsOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map(group => { const fixed = transferGroups.some(item => item.id === group.id); return <div className={fixed ? 'fixed-planning-group' : ''} key={group.id}><input value={group.name} readOnly={fixed} onChange={event => renameGroup(group.id, event.target.value)} />{fixed ? <span>Grupo de mercado</span> : <button className="column-delete" onClick={() => removeGroup(group.id)}>Excluir</button>}</div> })}</div><footer><input placeholder="Novo elenco" value={newGroup} onChange={event => setNewGroup(event.target.value)} onKeyDown={event => event.key === 'Enter' && addGroup()} /><button onClick={addGroup}>+ Adicionar</button></footer></section></div>}
+
+    {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Gerenciar conjuntos</h2><p>Organização visual de {currentGroup.name}; a tática não é alterada.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => <div className="planning-set-manager-row" key={set.id}><span className="set-manager-order">{index + 1}</span><input value={set.label} onChange={event => renameSet(set.id, event.target.value)} /><small>{set.slotIds.length} posição{set.slotIds.length === 1 ? '' : 'ões'}</small><div><button className="ghost" onClick={() => moveSet(set.id, -1)} disabled={index === 0} aria-label="Mover conjunto para cima">↑</button><button className="ghost" onClick={() => moveSet(set.id, 1)} disabled={index === currentSets.length - 1} aria-label="Mover conjunto para baixo">↓</button>{set.slotIds.length > 1 ? <button className="ghost" onClick={() => splitSet(set.id)}>Separar</button> : canGroup(set) ? <button className="ghost" onClick={() => groupSet(set.id)}>Agrupar equivalentes</button> : null}</div></div>)}</div><footer><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
+
+    {menu && <div className="planning-context-menu" style={{ left: menu.x, top: menu.y }} onClick={event => event.stopPropagation()}><button onClick={() => { removePlayer(menu.playerId); setMenu(null) }}>Remover do elenco</button></div>}
+  </div>
+}
+
+function PlanningSetRow({ set, pairs, assignedIds, players, latest, expanded, showCoverages, coverages, primaryLabel, activePlayer, draggingSetId, score, compatible, toggle, startPlayerDrag, stopPlayerDrag, dropPlayer, startSetDrag, stopSetDrag, dropSet, open, context }: {
+  set: PlanningSetLayout
+  pairs: Pair[]
+  assignedIds: string[]
+  players: Player[]
+  latest: (player: Player) => Snapshot | undefined
+  expanded: boolean
+  showCoverages: boolean
+  coverages: Player[]
+  primaryLabel: (playerId: string) => string
+  activePlayer?: Player
+  draggingSetId: string | null
+  score: (player: Player) => { pair: Pair | null; value: number | null; rank: number | null }
+  compatible: (player: Player) => boolean
+  toggle: () => void
+  startPlayerDrag: (id: string) => void
+  stopPlayerDrag: () => void
+  dropPlayer: (beforePlayerId?: string | null) => void
+  startSetDrag: () => void
+  stopSetDrag: () => void
+  dropSet: () => void
+  open: (id: string) => void
+  context: (event: ReactMouseEvent, playerId: string) => void
+}) {
+  const members = assignedIds.map(id => players.find(player => player.id === id)).filter((player): player is Player => Boolean(player))
+  const grouped = set.slotIds.length > 1
+  const compactLimit = grouped ? 8 : 4
+  const visible = expanded ? members : members.slice(0, compactLimit)
+  const hidden = Math.max(0, members.length - visible.length)
+  const linePosition = pairs[0]?.ip.position ?? ''
+  const ipRoles = [...new Set(pairs.map(pair => pair.ip.roleCode))]
+  const oopRoles = [...new Set(pairs.map(pair => pair.oop.roleCode))]
+  const activeCompatible = Boolean(activePlayer && compatible(activePlayer))
+  return <article className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${draggingSetId === set.id ? 'is-line-dragging' : ''}`} onDragOver={event => { if (draggingSetId || activePlayer) event.preventDefault() }} onDrop={event => { event.preventDefault(); if (draggingSetId) dropSet(); else if (activePlayer) dropPlayer(null) }}>
+    <header className="planning-set-header">
+      <button className="planning-set-handle" draggable onDragStart={event => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; startSetDrag() }} onDragEnd={stopSetDrag} title="Arrastar para reordenar" aria-label={`Reordenar ${set.label}`}>↕</button>
+      <div><span className="planning-set-title"><strong>{set.label}</strong>{grouped && <b>{set.slotIds.length} POSIÇÕES</b>}</span><small><i>IP</i> {ipRoles.join(' / ') || '—'} <em>·</em> <i>OOP</i> {oopRoles.join(' / ') || '—'}</small></div>
+      <span className="planning-set-count">{members.length}</span>
+    </header>
+    <div className={`planning-set-cards ${activeCompatible ? 'is-compatible-drop' : activePlayer ? 'is-training-drop' : ''}`} onDragOver={event => { if (activePlayer) { event.preventDefault(); event.dataTransfer.dropEffect = 'move' } }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(null) }}>
+      {visible.map(player => {
+        const snapshot = latest(player)
+        const rating = score(player)
+        return snapshot ? <BoardPlayerCard key={player.id} player={player} snapshot={snapshot} score={rating.value} rank={rating.rank} drag={() => startPlayerDrag(player.id)} dragEnd={stopPlayerDrag} dropBefore={() => dropPlayer(player.id)} open={() => open(player.id)} context={event => context(event, player.id)} /> : null
+      })}
+      {!members.length && <div className="planning-set-empty"><b>Nenhum jogador planejado</b><span>Arraste jogadores aqui</span></div>}
+      {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={toggle}>+{hidden}</button>}
+      {expanded && members.length > compactLimit && <button className="planning-set-expand collapse" onClick={toggle}>−</button>}
+    </div>
+    {showCoverages && coverages.length > 0 && <div className="planning-set-coverages"><span>Cobertura</span><div>{coverages.map(player => { const snapshot = latest(player); const rating = score(player); return snapshot ? <CoverageCard key={player.id} player={player} snapshot={snapshot} score={rating.value} rank={rating.rank} source={primaryLabel(player.id)} drag={() => startPlayerDrag(player.id)} dragEnd={stopPlayerDrag} drop={() => dropPlayer(null)} open={() => open(player.id)} /> : null })}</div></div>}
+  </article>
+}
+
+function BoardPlayerCard({ player, snapshot, score, rank, drag, dragEnd, dropBefore, open, context }: { player: Player; snapshot: Snapshot; score: number | null; rank: number | null; drag: () => void; dragEnd: () => void; dropBefore: () => void; open: () => void; context: (event: ReactMouseEvent) => void }) {
+  return <article className="planning-set-player-card" draggable onDragStart={event => { event.stopPropagation(); drag() }} onDragEnd={dragEnd} onDragOver={event => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move' }} onDrop={event => { event.preventDefault(); event.stopPropagation(); dropBefore() }} onContextMenu={context}><button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{player.current_name}</button><small>{snapshot.age ?? '—'} anos</small><ScoreBadge value={score} rank={rank} showTitle={false} /></article>
+}
+
+function CoverageCard({ player, snapshot, score, rank, source, drag, dragEnd, drop, open }: { player: Player; snapshot: Snapshot; score: number | null; rank: number | null; source: string; drag: () => void; dragEnd: () => void; drop: () => void; open: () => void }) {
+  return <article className="planning-coverage-card" draggable onDragStart={drag} onDragEnd={dragEnd} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); drop() }}><div><button className="player-name" onClick={open}>{player.current_name}</button><small>{snapshot.age ?? '—'} anos · Principal: {source}</small></div><span>Cobertura</span><ScoreBadge value={score} rank={rank} showTitle={false} /></article>
+}
+
+function RosterPlayerCard({ player, snapshot, score, rank, compatible, drag, dragEnd, open }: { player: Player; snapshot: Snapshot; score: number | null; rank: number | null; compatible: boolean; drag: () => void; dragEnd: () => void; open: () => void }) {
+  return <div className={`planning-player roster-player-card ${!compatible ? 'incompatible' : ''}`} draggable onDragStart={drag} onDragEnd={dragEnd}><PlayerPeek player={player} snapshot={snapshot} /><div className="roster-player-main"><button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{player.current_name}</button><span>{snapshot.positions.join(', ') || 'Sem posição informada'}</span><small>{snapshot.age ?? '—'} anos · {snapshot.height ? `${snapshot.height} cm` : 'Altura —'} · {footLabel(snapshot.preferred_foot)}</small></div><ScoreBadge value={score} rank={rank} /></div>
+}
+
+function TransferGroupPanel({ group, playerIds, players, latest, dragging, drop, startDrag, dragEnd, open, remove, clear }: { group: Group; playerIds: string[]; players: Player[]; latest: (player: Player) => Snapshot | undefined; dragging: boolean; drop: () => void; startDrag: (id: string) => void; dragEnd: () => void; open: (id: string) => void; remove: (id: string) => void; clear: () => void }) {
+  const members = playerIds.map(id => players.find(player => player.id === id)).filter((player): player is Player => Boolean(player))
+  return <section className={`transfer-group-panel ${dragging ? 'is-receiving' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); drop() }}><header><div><span>Grupo de mercado</span><h2>{group.name}</h2></div><div className="transfer-group-actions"><strong>{members.length} jogador{members.length === 1 ? '' : 'es'}</strong><button className="clear-current-group" onClick={clear} disabled={!members.length} title={`Limpar somente ${group.name}`} aria-label={`Limpar somente ${group.name}`}><TrashIcon /></button></div></header><div className="transfer-player-grid">{members.map(player => { const snapshot = latest(player); return snapshot ? <article className="transfer-player-card" draggable onDragStart={() => startDrag(player.id)} onDragEnd={dragEnd} key={player.id}><PlayerPeek player={player} snapshot={snapshot} /><div className="transfer-player-info"><button className="player-name" onClick={() => open(player.id)}>{player.current_name}</button><span>{snapshot.positions.join(', ') || 'Sem posição'}</span><small>{snapshot.age ?? '—'} anos · {snapshot.club ?? 'Sem clube'}</small></div><button className="transfer-remove" onClick={() => remove(player.id)} title={`Remover ${player.current_name} de ${group.name}`} aria-label={`Remover ${player.current_name} de ${group.name}`}>×</button></article> : null })}{!members.length && <div className="transfer-empty"><b>Arraste jogadores para {group.name.toLowerCase()}</b><span>Este grupo não utiliza posições ou funções da tática.</span></div>}</div>{dragging && <div className="transfer-drop-hint">Solte para adicionar a {group.name}</div>}</section>
+}
+
+function PositionFilterDropdown({ pairs, selected, change }: { pairs: Pair[]; selected: string[]; change: (ids: string[]) => void }) {
+  const label = !selected.length ? 'Todas as posições' : selected.length === 1 ? '1 posição selecionada' : `${selected.length} posições selecionadas`
+  return <details className="position-multi-filter"><summary>{label}<span>⌄</span></summary><div className="position-multi-menu"><header><b>Posições da tática</b>{selected.length > 0 && <button type="button" onClick={() => change([])}>Limpar</button>}</header>{pairs.map(pair => { const checked = selected.includes(pair.ip.playerId); return <label className={`planning-line-${planningLine(pair.ip.position)}`} key={pair.ip.playerId}><input type="checkbox" checked={checked} onChange={event => change(event.target.checked ? [...selected, pair.ip.playerId] : selected.filter(id => id !== pair.ip.playerId))} /><span><b>{pair.ip.position}</b> {pair.ip.roleCode}</span><i>→</i><span><b>{pair.oop.position}</b> {pair.oop.roleCode}</span></label> })}</div></details>
+}
+
+function TrashIcon() { return <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6" /></svg> }
+function planningLine(position: string) { const value = position.toUpperCase().replaceAll(' ', ''); if (value.startsWith('GK')) return 'gk'; if (value.startsWith('ST')) return 'st'; if (value.startsWith('AM')) return 'am'; if (value.startsWith('M')) return 'm'; if (value.startsWith('DM') || value.startsWith('WB')) return 'dm'; return 'd' }
+const footLabel = (foot: string | null) => foot ? `Pé ${foot}` : 'Pé —'
