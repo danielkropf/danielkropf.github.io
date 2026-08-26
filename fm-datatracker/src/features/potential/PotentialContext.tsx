@@ -7,6 +7,7 @@ type PotentialContextValue = {
   setShowPotential: (value: boolean) => void
   available: boolean
   loading: boolean
+  experimental: boolean
   detail: string
   reference: ProjectionReference | null
 }
@@ -33,7 +34,8 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { let active = true; void loadProjectionReference().then(state => { if (active) setReferenceState(state) }); return () => { active = false } }, [])
 
-  const available = referenceState.status === 'ready'
+  const available = referenceState.status === 'ready' || referenceState.status === 'experimental'
+  const experimental = referenceState.status === 'experimental'
   const setShowPotential = (value: boolean) => {
     if (value && !available) return
     setShowPotentialState(value)
@@ -45,9 +47,10 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
     setShowPotential,
     available,
     loading: referenceState.status === 'loading',
+    experimental,
     detail: referenceState.detail,
     reference: referenceState.reference,
-  }), [available, showPotential, ownerKey, referenceState])
+  }), [available, experimental, showPotential, ownerKey, referenceState])
 
   return <PotentialContext.Provider value={value}>{children}</PotentialContext.Provider>
 }

@@ -50,18 +50,22 @@ export function ScoreWithProjection({
   const input = potential.showPotential && snapshot ? projectionInputForSnapshot({ snapshot, currentScore, scoreType, scoreKey, eligible, reference: potential.reference }) : null
   const projection: ProjectionResult | null = input ? projectScore(input) : null
   useEffect(() => {
-    if (!projection || !input || !selected?.id || !playerId || !snapshot?.id) return
+    if (!projection || !input || !selected?.id || !playerId || !snapshot?.id || potential.experimental) return
     scheduleProjectionPersistence(projectionRecordFromResult({ saveId: selected.id, playerId, snapshotId: snapshot.id, scoreType, scoreKey: input.scoreKey, currentScore, result: projection }))
-  }, [projection?.status, projection?.projectedScore, projection?.trajectoryQuantile, projection?.referenceVersion, input?.scoreKey, selected?.id, playerId, snapshot?.id, scoreType, currentScore])
+  }, [projection?.status, projection?.projectedScore, projection?.trajectoryQuantile, projection?.referenceVersion, input?.scoreKey, selected?.id, playerId, snapshot?.id, scoreType, currentScore, potential.experimental])
   const projectionTooltip = projection?.status === 'ok'
-    ? projectionTitle ?? (scoreType === 'general' ? 'Projeção média no pico\nEstimativa do DataTracker; não é o CP do Football Manager.' : 'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.')
+    ? potential.experimental
+      ? (scoreType === 'general'
+        ? 'Projeção experimental no pico\nReferência alpha1 para teste do fluxo; ainda não validada para precisão. O CP do Football Manager não é exibido.'
+        : 'Projeção experimental nesta função no pico\nA alpha1 reutiliza o delta genérico apenas para teste visual; ainda não validada para precisão.')
+      : projectionTitle ?? (scoreType === 'general' ? 'Projeção média no pico\nEstimativa do DataTracker; não é o CP do Football Manager.' : 'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.')
     : projection ? unavailableLabel(projection) : ''
 
   return <span className={`score-with-projection score-projection-${variant} ${opacityState === 'coverage' ? 'is-coverage' : ''} ${className}`.trim()}>
     <span className="score-current" title={currentTitle}><ScoreBadge value={currentScore} rank={currentRank} className="score-badge-compact" showTitle={false} /></span>
     {potential.showPotential && <>
       <span className="score-projection-separator" aria-hidden="true">›</span>
-      <span className={`score-projected ${projection?.status === 'ok' ? 'is-available' : 'is-unavailable'}`} title={projectionTooltip}>
+      <span className={`score-projected ${projection?.status === 'ok' ? 'is-available' : 'is-unavailable'} ${potential.experimental ? 'is-experimental' : ''}`} title={projectionTooltip}>
         <span className="score-projection-arrow" aria-hidden="true">↗</span>
         {projection?.status === 'ok' ? <ScoreBadge value={projection.projectedScore} rank={null} className="score-badge-compact projected-score-badge" showTitle={false} /> : <span className="projected-score-empty">—</span>}
       </span>

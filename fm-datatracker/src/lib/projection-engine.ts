@@ -24,6 +24,7 @@ export type ProjectionInput = {
 }
 
 export type ProjectionResult = {
+  referenceMode: 'calibrated' | 'experimental-alpha1' | null
   projectedScore: number | null
   status: ProjectionStatus
   modelVersion: string
@@ -115,7 +116,22 @@ function peakAgeFor(input: ProjectionInput) {
 }
 
 function empty(input: ProjectionInput, status: ProjectionStatus, exactAge: number | null = null, peakAge: number | null = null): ProjectionResult {
-  return { projectedScore: null, status, modelVersion: '1.0', referenceVersion: input.reference?.referenceVersion ?? null, exactAge, peakAge, cpPercentile: null, effectiveSample: null, mdi: null, personalityShift: 0, historyShift: 0, trajectoryQuantile: null, personalitySource: input.personalitySource ?? 'neutral' }
+  return { projectedScore: null, status, modelVersion: '1.0', referenceVersion: input.reference?.referenceVersion ?? null, referenceMode: input.reference?.mode ?? null, exactAge, peakAge, cpPercentile: null, effectiveSample: null, mdi: null, personalityShift: 0, historyShift: 0, trajectoryQuantile: null, personalitySource: input.personalitySource ?? 'neutral' }
+}
+
+function interpolateAnchoredGrowth(anchors: number[], values: number[], quantile: number) {
+  if (anchors.length !== values.length || anchors.length < 2) return null
+  const q = clamp(quantile, anchors[0], anchors[anchors.length - 1])
+  if (q <= anchors[0]) return values[0]
+  for (let index = 1; index < anchors.length; index += 1) {
+    if (q > anchors[index]) continue
+    const leftQ = anchors[index - 1], rightQ = anchors[index]
+    const leftValue = values[index - 1], rightValue = values[index]
+    if (![leftQ, rightQ, leftValue, rightValue].every(Number.isFinite)) return null
+    const ratio = rightQ === leftQ ? 0 : (q - leftQ) / (rightQ - leftQ)
+    return leftValue + (rightValue - leftValue) * ratio
+  }
+  return values[values.length - 1]
 }
 
 export function projectScore(input: ProjectionInput): ProjectionResult {
@@ -128,10 +144,21 @@ export function projectScore(input: ProjectionInput): ProjectionResult {
   const peakAge = peakAgeFor(input)
   if (exactAge >= peakAge) return empty(input, 'peak_reached', exactAge, peakAge)
 
-  const cohort = input.reference.cohorts.find(item => item.scoreType === input.scoreType && item.scoreKey === input.scoreKey)
-  if (!cohort?.observations.length) return empty(input, 'missing_reference', exactAge, peakAge)
-  const cpContext = contextualCpPercentile(cohort.observations, exactAge, input.currentScore, input.cp)
-  if (!cpContext) return empty(input, 'missing_reference', exactAge, peakAge)
+  const experimental = input.reference.mode === 'experimental-alpha1' ? input.reference.experimental : null
+  let cpSignal: number
+  let cpPercentile: number | null = null
+  let effectiveSampleValue: number | null = null
+  if (experimental?.cpAdapter === 'absolute_scale_standin') {
+    cpSignal = clamp((input.cp - 1) / 199, 0, 1)
+  } else {
+    const cohort = input.reference.cohorts.find(item => item.scoreType === input.scoreType && item.scoreKey === input.scoreKey)
+    if (!cohort?.observations.length) return empty(input, 'missing_reference', exactAge, peakAge)
+    const cpContext = contextualCpPercentile(cohort.observations, exactAge, input.currentScore, input.cp)
+    if (!cpContext) return empty(input, 'missing_reference', exactAge, peakAge)
+    cpSignal = cpContext.percentile
+    cpPercentile = cpContext.percentile
+    effectiveSampleValue = cpContext.effectiveSample
+  }
 
   const pro = validTrait(input.professionalism) ?? 10
   const amb = validTrait(input.ambition) ?? 10
@@ -139,7 +166,7 @@ export function projectScore(input: ProjectionInput): ProjectionResult {
   const mdi = mentalDevelopmentIndex(pro, amb, det)
   const pShift = personalityShift(mdi)
   const hShift = historyShift(input.historyPercentile)
-  const qBase = Q_LOW + (Q_HIGH - Q_LOW) * cpContext.percentile
+  const qBase = Q_LOW + (Q_HIGH - Q_LOW) * cpSignal
   const quantile = clamp(qBase + pShift + hShift, Q_LOW, Q_HIGH)
 
   let projection = input.currentScore
@@ -148,9 +175,14 @@ export function projectScore(input: ProjectionInput): ProjectionResult {
   const firstFactor = fractional < 1e-9 ? 1 : 1 - fractional
   for (let ageStart = firstAge; ageStart < Math.ceil(peakAge); ageStart += 1) {
     if (ageStart >= peakAge) break
-    const bucket = input.reference.growth.find(item => item.scoreType === input.scoreType && item.scoreKey === input.scoreKey && item.ageStart === ageStart)
-    if (!bucket?.deltas.length) return empty(input, 'missing_reference', exactAge, peakAge)
-    const growth = weightedQuantile(bucket.deltas, quantile, bucket.weights)
+    let growth: number | null
+    if (experimental) {
+      const curve = experimental.curvesByIntegerAge[ageStart]
+      growth = curve ? interpolateAnchoredGrowth(curve.anchors, curve.values, quantile) : null
+    } else {
+      const bucket = input.reference.growth.find(item => item.scoreType === input.scoreType && item.scoreKey === input.scoreKey && item.ageStart === ageStart)
+      growth = bucket?.deltas.length ? weightedQuantile(bucket.deltas, quantile, bucket.weights) : null
+    }
     if (growth == null) return empty(input, 'missing_reference', exactAge, peakAge)
     const intervalEnd = Math.min(ageStart + 1, peakAge)
     const factor = ageStart === firstAge ? Math.min(firstFactor, intervalEnd - exactAge) : intervalEnd - ageStart
@@ -163,10 +195,11 @@ export function projectScore(input: ProjectionInput): ProjectionResult {
     status: 'ok',
     modelVersion: '1.0',
     referenceVersion: input.reference.referenceVersion,
+    referenceMode: input.reference.mode,
     exactAge,
     peakAge,
-    cpPercentile: cpContext.percentile,
-    effectiveSample: cpContext.effectiveSample,
+    cpPercentile,
+    effectiveSample: effectiveSampleValue,
     mdi,
     personalityShift: pShift,
     historyShift: hShift,

@@ -1,0 +1,489 @@
+{
+  "id": "projection_reference_fm26_alpha1",
+  "version": "alpha1",
+  "game": "Football Manager 26",
+  "purpose": "UI/pipeline test reference only",
+  "production_ready": false,
+  "accuracy_validated": false,
+  "score_scope": "generic_general_delta_proxy",
+  "function_projection_mode": "reuse_generic_delta_for_ui_test_only",
+  "source": {
+    "primary": "NumanciaFM26_Banco_Mestre_NovoSave_v021.xlsx / Comparativo_Meia_2032_33",
+    "period": "2032-07-01 to 2033-01-01",
+    "interval_days": 184.0,
+    "observations_are_complete_sheet": false,
+    "note": "The reference uses only rows recovered from the available indexed snippets. It must be replaced by a full extraction/recalculation before accuracy claims."
+  },
+  "quantile_model": {
+    "anchors": [
+      0.167,
+      0.25,
+      0.5,
+      0.75,
+      0.833
+    ],
+    "allowed_q_min": 0.167,
+    "allowed_q_max": 0.833,
+    "interpolation": "linear_between_anchors",
+    "age_smoothing": {
+      "method": "age_quantile_shrunk_toward_age_plus_minus_1_window",
+      "lambda_formula": "n / (n + 8)"
+    }
+  },
+  "score_delta_proxy": {
+    "source_measure": "simple_sum_of_attribute_changes_over_6_months",
+    "annualization_factor": 1.985013587,
+    "divisor": 36.0,
+    "formula": "annual_score_delta_proxy = smoothed_6m_attribute_delta * (365.2425/184) / 36",
+    "rationale": "36 is used as a transparent approximation of the number of outfield attributes: a net +36 attribute points ~= +1.00 in a simple 1-20 average. This is NOT the final DataTracker weighted-score calibration."
+  },
+  "cp_adapter_alpha": {
+    "mode": "absolute_scale_standin_not_contextual_percentile",
+    "formula": "cp_index = clamp((CP - 1) / 199, 0, 1)",
+    "warning": "This is only a temporary stand-in because the historical Numancia reference does not contain validated raw CP paired with DataTracker scores. Replace with contextual weighted CP percentile when a calibrated corpus exists."
+  },
+  "personality_model": {
+    "professionalism_weight": 0.6,
+    "ambition_weight": 0.2,
+    "determination_weight": 0.2,
+    "neutral_values": {
+      "professionalism": 10,
+      "ambition": 10,
+      "determination": 10
+    },
+    "shift_coefficient": 0.3,
+    "shift_min": -0.15,
+    "shift_max": 0.15,
+    "ambition_determination_saturation": {
+      "if_x_le_10": "0.75 * (x - 1) / 9",
+      "if_x_gt_10": "0.75 + 0.25 * (x - 10) / 10"
+    }
+  },
+  "peak_age": {
+    "outfield": 26,
+    "goalkeeper": 28
+  },
+  "curves_by_integer_age": {
+    "14": {
+      "q": {
+        "0.167": -0.111452,
+        "0.25": 0.0,
+        "0.5": 0.242451,
+        "0.75": 0.563231,
+        "0.833": 0.612766
+      },
+      "quality": "extrapolated_early_from_age16",
+      "factor": 1.15,
+      "sample_n_partial": 0
+    },
+    "15": {
+      "q": {
+        "0.167": -0.106607,
+        "0.25": 0.0,
+        "0.5": 0.23191,
+        "0.75": 0.538743,
+        "0.833": 0.586124
+      },
+      "quality": "extrapolated_early_from_age16",
+      "factor": 1.1,
+      "sample_n_partial": 0
+    },
+    "16": {
+      "q": {
+        "0.167": -0.096915,
+        "0.25": 0.0,
+        "0.5": 0.210827,
+        "0.75": 0.489766,
+        "0.833": 0.53284
+      },
+      "quality": "partial_observed_smoothed",
+      "sample_n_partial": 9
+    },
+    "17": {
+      "q": {
+        "0.167": 0.027691,
+        "0.25": 0.187474,
+        "0.5": 0.424572,
+        "0.75": 0.623074,
+        "0.833": 0.747722
+      },
+      "quality": "partial_observed_smoothed",
+      "sample_n_partial": 12
+    },
+    "18": {
+      "q": {
+        "0.167": -0.041828,
+        "0.25": 0.029191,
+        "0.5": 0.275696,
+        "0.75": 0.340566,
+        "0.833": 0.430605
+      },
+      "quality": "partial_observed_smoothed",
+      "sample_n_partial": 9
+    },
+    "19": {
+      "q": {
+        "0.167": -0.149813,
+        "0.25": -0.110279,
+        "0.5": -0.015316,
+        "0.75": 0.145506,
+        "0.833": 0.214063
+      },
+      "quality": "partial_observed_smoothed",
+      "sample_n_partial": 10
+    },
+    "20": {
+      "q": {
+        "0.167": -0.232254,
+        "0.25": -0.153602,
+        "0.5": -0.023631,
+        "0.75": 0.126033,
+        "0.833": 0.259863
+      },
+      "quality": "partial_observed_smoothed",
+      "sample_n_partial": 6
+    },
+    "21": {
+      "q": {
+        "0.167": -0.224665,
+        "0.25": -0.158525,
+        "0.5": 0.0,
+        "0.75": 0.062032,
+        "0.833": 0.233873
+      },
+      "quality": "partial_observed_smoothed",
+      "sample_n_partial": 8
+    },
+    "22": {
+      "q": {
+        "0.167": -0.29707,
+        "0.25": -0.210532,
+        "0.5": -0.030076,
+        "0.75": 0.012532,
+        "0.833": 0.093005
+      },
+      "quality": "partial_observed_smoothed",
+      "sample_n_partial": 3
+    },
+    "23": {
+      "q": {
+        "0.167": -0.214486,
+        "0.25": -0.151783,
+        "0.5": -0.014436,
+        "0.75": 0.025866,
+        "0.833": 0.119482
+      },
+      "quality": "extrapolated_late_from_age21_22",
+      "factor": 0.8,
+      "sample_n_partial": 0
+    },
+    "24": {
+      "q": {
+        "0.167": -0.160865,
+        "0.25": -0.113838,
+        "0.5": -0.010827,
+        "0.75": 0.019399,
+        "0.833": 0.089611
+      },
+      "quality": "extrapolated_late_from_age21_22",
+      "factor": 0.6,
+      "sample_n_partial": 0
+    },
+    "25": {
+      "q": {
+        "0.167": -0.107243,
+        "0.25": -0.075892,
+        "0.5": -0.007218,
+        "0.75": 0.012933,
+        "0.833": 0.059741
+      },
+      "quality": "extrapolated_late_from_age21_22",
+      "factor": 0.4,
+      "sample_n_partial": 0
+    },
+    "26": {
+      "q": {
+        "0.167": -0.067027,
+        "0.25": -0.047432,
+        "0.5": -0.004511,
+        "0.75": 0.008083,
+        "0.833": 0.037338
+      },
+      "quality": "extrapolated_late_from_age21_22",
+      "factor": 0.25,
+      "sample_n_partial": 0
+    },
+    "27": {
+      "q": {
+        "0.167": -0.026811,
+        "0.25": -0.018973,
+        "0.5": -0.001805,
+        "0.75": 0.003233,
+        "0.833": 0.014935
+      },
+      "quality": "extrapolated_late_from_age21_22",
+      "factor": 0.1,
+      "sample_n_partial": 0
+    }
+  },
+  "raw_partial_observations": {
+    "16": [
+      {
+        "player": "Ali Samassékou",
+        "attribute_delta_6m": 8
+      },
+      {
+        "player": "Chema",
+        "attribute_delta_6m": 7
+      },
+      {
+        "player": "Jaime Torres",
+        "attribute_delta_6m": 7
+      },
+      {
+        "player": "Pablo Domínguez",
+        "attribute_delta_6m": 7
+      },
+      {
+        "player": "Papa Faye",
+        "attribute_delta_6m": 1
+      },
+      {
+        "player": "Aday Huerta",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Diego Correa",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "David Dopico",
+        "attribute_delta_6m": -5
+      },
+      {
+        "player": "Juan Mora",
+        "attribute_delta_6m": -14
+      }
+    ],
+    "17": [
+      {
+        "player": "Nelson Ugochukwu",
+        "attribute_delta_6m": 17
+      },
+      {
+        "player": "Nicolás",
+        "attribute_delta_6m": 16
+      },
+      {
+        "player": "Nguyen Khanh Duy",
+        "attribute_delta_6m": 15
+      },
+      {
+        "player": "Rubén Fuentes",
+        "attribute_delta_6m": 13
+      },
+      {
+        "player": "David Gómez",
+        "attribute_delta_6m": 12
+      },
+      {
+        "player": "Javier",
+        "attribute_delta_6m": 11
+      },
+      {
+        "player": "Daniel Guedes",
+        "attribute_delta_6m": 8
+      },
+      {
+        "player": "Raúl Coch",
+        "attribute_delta_6m": 8
+      },
+      {
+        "player": "Alberto",
+        "attribute_delta_6m": 7
+      },
+      {
+        "player": "Youssef Tadili",
+        "attribute_delta_6m": 1
+      },
+      {
+        "player": "Carlos Jerez",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Álvaro Corral",
+        "attribute_delta_6m": -2
+      }
+    ],
+    "18": [
+      {
+        "player": "Armando Macías",
+        "attribute_delta_6m": 6
+      },
+      {
+        "player": "Adolfo Castedo",
+        "attribute_delta_6m": 5
+      },
+      {
+        "player": "Giorgos Karastergios",
+        "attribute_delta_6m": 5
+      },
+      {
+        "player": "Ignacio Laínez",
+        "attribute_delta_6m": 5
+      },
+      {
+        "player": "Jorge Medrano",
+        "attribute_delta_6m": 5
+      },
+      {
+        "player": "Jesús",
+        "attribute_delta_6m": 1
+      },
+      {
+        "player": "Pedro",
+        "attribute_delta_6m": 1
+      },
+      {
+        "player": "Rodrigo Pons",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Oliver Maya",
+        "attribute_delta_6m": -4
+      }
+    ],
+    "19": [
+      {
+        "player": "Juan Carlos Espínola",
+        "attribute_delta_6m": 6
+      },
+      {
+        "player": "Habib Sanyang",
+        "attribute_delta_6m": 5
+      },
+      {
+        "player": "Fernando Polo",
+        "attribute_delta_6m": 1
+      },
+      {
+        "player": "Diego Santiago",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Juan Alcázar",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Nacho Barbeito",
+        "attribute_delta_6m": -1
+      },
+      {
+        "player": "Augusto",
+        "attribute_delta_6m": -2
+      },
+      {
+        "player": "Carlos Cortés",
+        "attribute_delta_6m": -2
+      },
+      {
+        "player": "Fran Espinosa",
+        "attribute_delta_6m": -3
+      },
+      {
+        "player": "Christian Vallejo",
+        "attribute_delta_6m": -4
+      }
+    ],
+    "20": [
+      {
+        "player": "Luis Guilherme",
+        "attribute_delta_6m": 6
+      },
+      {
+        "player": "Bubacarr Sawo",
+        "attribute_delta_6m": 4
+      },
+      {
+        "player": "Antonio Flores",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Agustín Iglesias",
+        "attribute_delta_6m": -2
+      },
+      {
+        "player": "Angel",
+        "attribute_delta_6m": -4
+      },
+      {
+        "player": "Iván Méndez",
+        "attribute_delta_6m": -7
+      }
+    ],
+    "21": [
+      {
+        "player": "Marian Legănuţ",
+        "attribute_delta_6m": 8
+      },
+      {
+        "player": "Rubén Blanco",
+        "attribute_delta_6m": 5
+      },
+      {
+        "player": "Antoni Hinojosa",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Pau",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Pelayo",
+        "attribute_delta_6m": 0
+      },
+      {
+        "player": "Alberto Agirrezabala",
+        "attribute_delta_6m": -1
+      },
+      {
+        "player": "Daniel",
+        "attribute_delta_6m": -4
+      },
+      {
+        "player": "David",
+        "attribute_delta_6m": -6
+      }
+    ],
+    "22": [
+      {
+        "player": "Josivaldo",
+        "attribute_delta_6m": 1
+      },
+      {
+        "player": "Edu Murcia",
+        "attribute_delta_6m": -2
+      },
+      {
+        "player": "Antonio Riera",
+        "attribute_delta_6m": -10
+      }
+    ]
+  },
+  "guards": {
+    "projection_cap": 20.0,
+    "pre_peak_floor_at_current_score": true,
+    "outfield_peak_reached_at_age": 26,
+    "goalkeeper_peak_reached_at_age": 28,
+    "missing_cp": "unavailable",
+    "missing_reference": "unavailable"
+  },
+  "replacement_requirements": [
+    "Recalculate historical DataTracker general score for every full snapshot.",
+    "Recalculate historical per-function score for every full snapshot.",
+    "Pair validated raw CP with each historical player/snapshot.",
+    "Use exact date of birth and exact save date.",
+    "Use complete, multi-save development transitions rather than this partial Numancia subset.",
+    "Backtest out-of-sample and version the calibrated reference."
+  ]
+}

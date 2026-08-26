@@ -5,7 +5,7 @@ import type { ProjectionReference } from './projection-reference'
 function reference(): ProjectionReference {
   const observations = Array.from({ length: 300 }, (_, index) => ({ age: 18 + (index % 20) / 20, score: 11 + (index % 40) / 20, cp: 100 + index % 101 }))
   const growth = Array.from({ length: 8 }, (_, offset) => ({ scoreType: 'general' as const, scoreKey: 'OUTFIELD', ageStart: 18 + offset, deltas: Array.from({ length: 300 }, (_, index) => 0.05 + (index % 100) / 100) }))
-  return { referenceVersion: 'fm26-v1', projectionModelVersion: '1.0', calibrated: true, sample: { uniquePlayers: 10000, transitions: 50000 }, cohorts: [{ scoreType: 'general', scoreKey: 'OUTFIELD', observations }], growth }
+  return { referenceVersion: 'fm26-v1', projectionModelVersion: '1.0', mode: 'calibrated', calibrated: true, sample: { uniquePlayers: 10000, transitions: 50000 }, cohorts: [{ scoreType: 'general', scoreKey: 'OUTFIELD', observations }], growth }
 }
 
 describe('Projection Model v1.0', () => {
@@ -74,5 +74,37 @@ describe('Projection Model v1.0', () => {
   it('é determinístico para a mesma entrada e versão', () => {
     const input = { currentScore: 13.2, cp: 155, birthDate: '2008-03-10', snapshotDate: '2026-08-26', professionalism: 14, ambition: 12, determination: 16, scoreType: 'general' as const, scoreKey: 'OUTFIELD', reference: reference() }
     expect(projectScore(input)).toEqual(projectScore(input))
+  })
+})
+
+
+function alphaReference(): ProjectionReference {
+  const curvesByIntegerAge = Object.fromEntries(Array.from({ length: 14 }, (_, index) => {
+    const age = 14 + index
+    return [age, { anchors: [0.167, 0.25, 0.5, 0.75, 0.833], values: [-0.1, 0, 0.2, 0.5, 0.65].map(value => value * Math.max(0.1, (28 - age) / 12)) }]
+  }))
+  return {
+    referenceVersion: 'alpha1', projectionModelVersion: '1.0', mode: 'experimental-alpha1', calibrated: false, cohorts: [], growth: [],
+    peakAges: { 'general:OUTFIELD': 26, 'general:GK': 28 },
+    experimental: { sourceId: 'projection_reference_fm26_alpha1', cpAdapter: 'absolute_scale_standin', functionProjectionMode: 'reuse_generic_delta_for_ui_test_only', curvesByIntegerAge, persistResults: false, observedRows: 57 },
+  }
+}
+
+describe('Projection Model alpha1 experimental', () => {
+  it('usa o CP apenas como adaptador absoluto temporário e não o rotula como percentil contextual', () => {
+    const low = projectScore({ currentScore: 12, cp: 80, birthDate: '2008-01-01', snapshotDate: '2026-08-26', professionalism: 10, ambition: 10, determination: 10, scoreType: 'general', scoreKey: 'OUTFIELD', reference: alphaReference() })
+    const high = projectScore({ currentScore: 12, cp: 180, birthDate: '2008-01-01', snapshotDate: '2026-08-26', professionalism: 10, ambition: 10, determination: 10, scoreType: 'general', scoreKey: 'OUTFIELD', reference: alphaReference() })
+    expect(low.status).toBe('ok')
+    expect(high.status).toBe('ok')
+    expect(low.cpPercentile).toBeNull()
+    expect(high.cpPercentile).toBeNull()
+    expect(high.projectedScore!).toBeGreaterThanOrEqual(low.projectedScore!)
+  })
+
+  it('reutiliza a curva genérica para uma nota funcional apenas no modo experimental', () => {
+    const result = projectScore({ currentScore: 13.4, cp: 160, birthDate: '2008-01-01', snapshotDate: '2026-08-26', professionalism: 14, ambition: 12, determination: 13, scoreType: 'function', scoreKey: 'IP:D(C):CD', reference: alphaReference() })
+    expect(result.status).toBe('ok')
+    expect(result.referenceMode).toBe('experimental-alpha1')
+    expect(result.projectedScore!).toBeGreaterThanOrEqual(13.4)
   })
 })
