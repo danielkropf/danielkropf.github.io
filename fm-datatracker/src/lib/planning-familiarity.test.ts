@@ -24,10 +24,16 @@ describe('planning familiarity by tactical phase', () => {
     expect(planningFamiliarity({ positions: [] }, pairs)).toBe('unknown')
   })
   it('describes the actual IP/OOP positional evidence in the tooltip', () => {
-    const snapshot = { positions: ['D(C)'], normalized_data: { positional_ratings: { DC: 18, WBL: 8 } } }
-    const text = planningFamiliarityTooltip(snapshot, [{ ip: { position: 'D(C)' }, oop: { position: 'WB(L)' } }])
+    const current = { positions: ['D(C)'], normalized_data: { positional_ratings: { DC: 18, WBL: 8 } } }
+    const text = planningFamiliarityTooltip(current, [{ ip: { position: 'D(C)' }, oop: { position: 'WB(L)' } }])
     expect(text).toContain('IP — D(C): 18/20')
     expect(text).toContain('OOP — WB(L): 8/20')
   })
-
+  it('condenses identical IP/OOP positions into one familiarity line', () => {
+    const current = { positions: ['D(R)'], normalized_data: { positional_ratings: { DR: 18 } } }
+    const text = planningFamiliarityTooltip(current, [{ ip: { position: 'D(R)' }, oop: { position: 'D(R)' } }])
+    expect(text).toContain('D(R): 18/20')
+    expect(text).not.toContain('IP —')
+    expect(text).not.toContain('OOP —')
+  })
 })

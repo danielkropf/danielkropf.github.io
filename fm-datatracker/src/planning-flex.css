@@ -66,3 +66,57 @@
 @media(max-width:900px){.planning-flex-toolbar{display:flex;flex-wrap:wrap}.tactic-custom-select{flex:1 1 260px;width:auto}.planning-flex-actions{flex:1 1 100%}.planning-set-manager{max-height:none}.grouped-set-fields{grid-template-columns:1fr}}
 @media(max-width:620px){.planning-title-row{align-items:flex-start}.planning-title-row .save-state-control{min-width:0}.manage-sets-button,.manage-squads-button{width:auto;min-width:0}.planning-set-row{grid-template-columns:1fr}.planning-phase-line span{white-space:normal}.planning-squad-manager-footer{grid-template-columns:1fr}.dt-position-menu{left:0!important;right:auto!important;width:min(340px,92vw)}}
 .planning-card-row-break{flex:0 0 100%;width:100%;height:0;margin:0;padding:0}.planning-set-row.is-grouped:not(.is-expanded) .planning-set-cards{row-gap:var(--dt-related-gap)}
+
+/* v0.25.4 — revised detailed planning corrections */
+.planning-flex-page{
+  --planning-row-pad-y:var(--dt-space-1);
+  --planning-card-height:var(--dt-player-card-height);
+}
+.planning-flex-toolbar{align-items:center}
+.planning-flex-actions{align-items:center}
+.planning-flex-actions>.dt-control,.planning-group-selector,.coverage-toggle,.tactic-custom-select .dt-select-trigger{height:var(--dt-control-height);min-height:var(--dt-control-height)}
+.planning-player.roster-player-card{padding:var(--dt-card-padding);min-height:58px}
+.roster-score-wrap{margin-right:0;align-self:center}
+.roster-score-wrap>.overall-score{max-width:100%;margin:0}
+.planning-set-row{padding-block:var(--planning-row-pad-y);min-height:calc(var(--planning-card-height) + (var(--planning-row-pad-y) * 2))}
+.planning-set-cards{gap:var(--dt-card-gap);min-height:var(--planning-card-height)}
+.planning-set-player-card{
+  height:var(--planning-card-height);
+  min-height:var(--planning-card-height);
+  padding:var(--dt-card-padding);
+  grid-template-columns:minmax(0,1fr) 48px;
+  gap:1px var(--dt-space-2);
+}
+.planning-score-wrap{box-sizing:border-box;width:48px;min-width:48px;max-width:48px;margin:0;overflow:hidden}
+.planning-score-wrap>.overall-score{box-sizing:border-box;width:48px;max-width:48px;height:29px;margin:0}
+.planning-score-wrap>.overall-score b{font-size:.84rem}
+.planning-player-drop-placeholder{height:var(--planning-card-height);min-height:var(--planning-card-height)}
+.planning-set-row.is-grouped:not(.is-expanded){
+  min-height:calc((var(--planning-card-height) * 2) + var(--dt-card-gap) + (var(--planning-row-pad-y) * 2));
+}
+.planning-set-row.is-grouped:not(.is-expanded) .planning-set-cards{
+  height:calc((var(--planning-card-height) * 2) + var(--dt-card-gap));
+  min-height:calc((var(--planning-card-height) * 2) + var(--dt-card-gap));
+  max-height:none;
+  align-content:flex-start;
+  row-gap:var(--dt-card-gap);
+}
+.planning-card-row-break{flex-basis:100%!important}
+.planning-set-expand{flex:0 0 40px;width:40px;min-width:40px;height:34px;padding:0}
+.planning-set-collapse{flex:0 0 32px;width:32px;min-width:32px;height:32px;padding:0}
+.planning-set-empty{min-height:var(--planning-card-height)}
+.planning-set-row.is-player-drop-target .planning-set-cards{outline:1px dashed #b9f35b77;outline-offset:2px}
+.planning-player-drop-placeholder{border-width:1px;animation:none}
+.planning-player-drop-placeholder span{pointer-events:none}
+.planning-set-manager{width:min(960px,calc(100vw - 24px));max-height:none;overflow:visible}
+.planning-set-manager-list{max-height:none!important;overflow:visible!important;gap:var(--dt-space-1)}
+.planning-set-manager-row{min-height:34px;padding:5px var(--dt-card-padding-x)}
+.planning-set-manager-row.is-grouped-manager-row{min-height:78px;padding-block:6px}
+.grouped-set-fields{gap:var(--dt-space-2)!important}
+.adjacent-group-button{margin:-16px 0 -15px}
+.planning-squad-manager-row{min-height:40px;padding:5px var(--dt-card-padding-x)}
+.planning-squad-manager-row input{height:29px;min-height:29px}
+.planning-clear-current:disabled,.coverage-toggle.is-disabled,.dt-select.is-disabled{filter:saturate(.55)}
+
+@media(max-width:700px){:root{--dt-player-card-min-width:148px}.planning-set-player-card{grid-template-columns:minmax(0,1fr) 46px}.planning-score-wrap,.planning-score-wrap>.overall-score{width:46px;min-width:46px;max-width:46px}}
+@media(max-width:520px){:root{--dt-player-card-min-width:132px}.planning-set-player-card{grid-template-columns:minmax(0,1fr) 44px}.planning-score-wrap,.planning-score-wrap>.overall-score{width:44px;min-width:44px;max-width:44px}}

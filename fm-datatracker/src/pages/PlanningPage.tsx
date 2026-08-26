@@ -15,7 +15,7 @@ import { useSaves } from '../features/saves/SaveContext'
 import { PlayerPeek } from '../components/PlayerPeek'
 import { loadModelConfig, patchModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
 import { describeDbError } from '../lib/db-error'
-import { calculatePlanningCardLayout } from '../lib/planning-layout'
+import { calculatePlanningCardLayout, resolvePlanningInsertionBefore } from '../lib/planning-layout'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
 import {
   canGroupAdjacentPlanningSets,
@@ -310,9 +310,9 @@ export function PlanningPage() {
     <div className="title-row planning-title-row"><div><h1>Planejamento</h1>{(loading || isPending) && <span className="background-loading" role="status">Carregando em segundo plano…</span>}</div><SaveState status={status} detail={saveDetail} onRetry={status.startsWith('⚠') ? () => void retrySave() : undefined} /></div>
 
     <section className="planning-matrix-toolbar planning-aligned-toolbar planning-flex-toolbar">
-      <CustomSelect className="tactic-custom-select" ariaLabel="Tática selecionada" value={tactic?.id ?? ''} options={tactics.map(item => ({ value: item.id, label: item.name }))} placeholder={tactics.length ? 'Tática' : 'Nenhuma tática criada'} disabled={!tactics.length || isTransferGroup} onChange={id => { setConfig(current => ({ ...current, selected_tactic_id: id })); setExpandedSets(new Set()); setFocusedSetId(null); void persistPatch({ selected_tactic_id: id }) }} />
+      <CustomSelect className="tactic-custom-select" ariaLabel="Tática selecionada" value={tactic?.id ?? ''} options={tactics.map(item => ({ value: item.id, label: item.name }))} placeholder={tactics.length ? 'Tática' : 'Nenhuma tática criada'} disabled={!tactics.length || isTransferGroup} disabledReason={isTransferGroup ? 'Táticas não se aplicam a grupos de mercado' : !tactics.length ? 'Nenhuma tática criada' : undefined} onChange={id => { setConfig(current => ({ ...current, selected_tactic_id: id })); setExpandedSets(new Set()); setFocusedSetId(null); void persistPatch({ selected_tactic_id: id }) }} />
       <div className="squad-pagination planning-group-selector"><button onClick={() => changeGroup(-1)} disabled={planning.groups.length < 2}>‹</button><strong>{currentGroup?.name ?? 'Nenhum elenco'}</strong><span>{planning.groups.length ? `${currentGroupIndex + 1} de ${planning.groups.length}` : '0 de 0'}</span><button onClick={() => changeGroup(1)} disabled={planning.groups.length < 2}>›</button></div>
-      <label className={`coverage-toggle ${isTransferGroup || !tactic ? 'is-disabled' : ''}`}><input type="checkbox" checked={showCoverages} disabled={isTransferGroup || !tactic} onChange={event => setShowCoverages(event.target.checked)} /><span>Mostrar coberturas</span></label>
+      <label className={`coverage-toggle ${isTransferGroup || !tactic ? 'is-disabled' : ''}`} title={isTransferGroup ? 'Coberturas não se aplicam a grupos de mercado' : !tactic ? 'Crie uma tática para visualizar coberturas' : undefined}><input type="checkbox" checked={showCoverages} disabled={isTransferGroup || !tactic} onChange={event => setShowCoverages(event.target.checked)} /><span>Mostrar coberturas</span></label>
       <div className="planning-flex-actions">
         <button className="ghost undo-planning-button dt-control" onClick={undo} disabled={!undoPlanning} title="Desfazer última alteração" aria-label="Desfazer última alteração">↶</button>
         <button className="ghost manage-sets-button dt-control" disabled={isTransferGroup || !tactic} onClick={() => setManageSetsOpen(true)}>Organizar posições</button>
@@ -403,29 +403,15 @@ function useCompactCapacity(grouped: boolean, optionCount: number) {
   return { ref, capacity, columns }
 }
 
-function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY: number, draggingId: string | undefined) {
-  const cards = [...container.querySelectorAll<HTMLElement>('[data-planning-player-id]')].filter(card => card.dataset.planningPlayerId !== draggingId && card.offsetParent !== null)
-  if (!cards.length) return null
-  const rows: Array<{ top: number; bottom: number; cards: HTMLElement[] }> = []
-  for (const card of cards) {
-    const rect = card.getBoundingClientRect()
-    let row = rows.find(item => Math.abs(item.top - rect.top) < 8)
-    if (!row) { row = { top: rect.top, bottom: rect.bottom, cards: [] }; rows.push(row) }
-    row.bottom = Math.max(row.bottom, rect.bottom); row.cards.push(card)
-  }
-  rows.sort((a, b) => a.top - b.top)
-  const rowIndex = rows.reduce((best, row, index) => {
-    const center = (row.top + row.bottom) / 2
-    const bestCenter = (rows[best].top + rows[best].bottom) / 2
-    return Math.abs(clientY - center) < Math.abs(clientY - bestCenter) ? index : best
-  }, 0)
-  const row = rows[rowIndex]
-  row.cards.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
-  for (const card of row.cards) {
-    const rect = card.getBoundingClientRect()
-    if (clientX < rect.left + rect.width / 2) return card.dataset.planningPlayerId ?? null
-  }
-  return rows[rowIndex + 1]?.cards[0]?.dataset.planningPlayerId ?? null
+function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY: number, draggingId: string | undefined, currentBeforeId: string | null | undefined) {
+  const cards = [...container.querySelectorAll<HTMLElement>('[data-planning-player-id]')]
+    .filter(card => card.dataset.planningPlayerId !== draggingId && card.offsetParent !== null)
+    .map(card => {
+      const rect = card.getBoundingClientRect()
+      return { id: card.dataset.planningPlayerId ?? '', left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+    })
+    .filter(card => Boolean(card.id))
+  return resolvePlanningInsertionBefore(cards, clientX, clientY, currentBeforeId)
 }
 
 
@@ -491,7 +477,7 @@ function PlanningSetRow({ set, displayLabel, pairs, assignedIds, players, latest
       <div className="planning-set-position"><div className="planning-position-heading"><span className="planning-position-label">{displayLabel}</span>{grouped && <b>{set.slotIds.length} POS.</b>}</div><small className="planning-phase-line"><i>IP</i><span>{ipDescriptions.join(" / ") || "—"}</span></small><small className="planning-phase-line"><em>OOP</em><span>{oopDescriptions.join(" / ") || "—"}</span></small>{members.length > 0 && <small className="planning-set-depth">{members.length} jogador{members.length === 1 ? "" : "es"}{grouped ? ` · ${set.slotIds.length} posições` : ""}</small>}</div>
     </div>
 
-    <div ref={cardsRef} className={`planning-set-cards ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id)) }}>
+    <div ref={cardsRef} className={`planning-set-cards ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }}>
       {visible.map((option, index) => {
         const player = option.player
         const snapshot = latest(player)
@@ -567,4 +553,12 @@ function ManagerDropPlaceholder({ label }: { label: string }) { return <div clas
 
 
 function planningLine(position: string) { const value = position.toUpperCase().replaceAll(' ', ''); if (value.startsWith('GK')) return 'gk'; if (value.startsWith('ST')) return 'st'; if (value.startsWith('AM')) return 'am'; if (value.startsWith('M')) return 'm'; if (value.startsWith('DM') || value.startsWith('WB')) return 'dm'; return 'd' }
-const footLabel = (foot: string | null) => foot ? `Pé ${foot}` : 'Pé —'
+const footLabel = (foot: string | null) => {
+  if (!foot) return ''
+  const normalized = foot.trim().toLowerCase()
+  const label = normalized === 'right' || normalized === 'direito' || normalized === 'direita' ? 'direito'
+    : normalized === 'left' || normalized === 'esquerdo' || normalized === 'esquerda' ? 'esquerdo'
+      : normalized === 'both' || normalized === 'ambos' ? 'ambos'
+        : foot
+  return `Pé ${label}`
+}

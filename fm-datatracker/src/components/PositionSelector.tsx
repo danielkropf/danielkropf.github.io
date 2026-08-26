@@ -29,35 +29,42 @@ export function PositionSelector({ selected, onChange, availablePositions, class
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const available = useMemo(() => {
     if (!availablePositions) return allPositions
     const wanted = new Set(availablePositions.map(normalize))
     return allPositions.filter(position => wanted.has(normalize(position)))
   }, [availablePositions])
-  const selectedSet = useMemo(() => selected === null ? new Set(available) : new Set(selected.map(canonicalPosition)), [selected, available])
+  const selectedSet = useMemo(() => selected === null ? new Set(available) : new Set(selected.map(canonicalPosition).filter(position => available.includes(position))), [selected, available])
   const allChecked = available.length > 0 && available.every(position => selectedSet.has(position))
   const noneChecked = selected !== null && selectedSet.size === 0
   const summary = selected === null || allChecked ? label : noneChecked ? 'Nenhuma posição' : selectedSet.size === 1 ? [...selectedSet][0].replaceAll(' ', '') : `${selectedSet.size} posições`
 
+  function close(returnFocus = false) {
+    setOpen(false)
+    if (returnFocus) queueMicrotask(() => triggerRef.current?.focus())
+  }
+
   useEffect(() => {
     if (!open) return
-    const pointer = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    const pointer = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as Node)) close(false) }
+    const focus = (event: FocusEvent) => { if (!rootRef.current?.contains(event.target as Node)) close(false) }
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); close(true) } }
     window.addEventListener('pointerdown', pointer)
+    window.addEventListener('focusin', focus)
     window.addEventListener('keydown', key)
-    return () => { window.removeEventListener('pointerdown', pointer); window.removeEventListener('keydown', key) }
+    return () => { window.removeEventListener('pointerdown', pointer); window.removeEventListener('focusin', focus); window.removeEventListener('keydown', key) }
   }, [open])
 
   function togglePosition(position: string, checked: boolean) {
     const base = selected === null ? [...available] : [...selectedSet]
     const next = checked ? [...new Set([...base, position])] : base.filter(item => item !== position)
-    if (available.length && available.every(item => next.includes(item))) onChange(null)
-    else onChange(next)
+    onChange(available.length > 0 && available.every(item => next.includes(item)) ? null : next)
   }
 
-  return <div className={`dt-position-selector ${open ? 'is-open' : ''} ${className}`.trim()} ref={rootRef} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
-    <button type="button" className="dt-position-trigger dt-control" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(current => !current)}><span>{summary}</span><b aria-hidden="true">⌄</b></button>
-    {open && <div className="dt-position-menu">
+  return <div className={`dt-position-selector ${open ? 'is-open' : ''} ${className}`.trim()} ref={rootRef}>
+    <button ref={triggerRef} type="button" className="dt-position-trigger dt-control" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(current => !current)}><span>{summary}</span><b aria-hidden="true">⌄</b></button>
+    {open && <div className="dt-position-menu" role="group" aria-label="Filtrar posições">
       <label className="dt-position-master"><input type="checkbox" checked={allChecked} onChange={event => onChange(event.target.checked ? null : [])} /><span>Todas as posições</span></label>
       {GLOBAL_POSITION_GROUPS.map(group => <section className={`dt-position-group ${group.className}`} key={group.label}><h4>{group.label}</h4><div>{group.slots.map((item, index) => item ? <label className={!available.includes(item.value) ? 'is-unavailable' : ''} key={item.value}><input type="checkbox" disabled={!available.includes(item.value)} checked={available.includes(item.value) && selectedSet.has(item.value)} onChange={event => togglePosition(item.value, event.target.checked)} /><span>{item.label}</span></label> : <span className="dt-position-spacer" key={`${group.label}-${index}`} />)}</div></section>)}
     </div>}

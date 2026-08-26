@@ -17,3 +17,29 @@
 .dt-select{position:relative;min-width:0}.dt-select-trigger{display:flex;width:100%;align-items:center;justify-content:space-between;gap:var(--dt-space-3);border:1px solid #36513f;background:#101d16;color:#dce7df;cursor:pointer}.dt-select-trigger>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-weight:750}.dt-select-trigger>b{color:#b9f35b}.dt-select.is-open .dt-select-trigger{border-color:#b9f35b;border-radius:var(--dt-control-radius) var(--dt-control-radius) 0 0}.dt-select.is-disabled{opacity:.6}.dt-select-menu{position:absolute;z-index:500;top:calc(100% - 1px);left:0;right:0;max-height:min(340px,60vh);overflow:auto;padding:var(--dt-space-1);border:1px solid #b9f35b;border-radius:0 0 var(--dt-control-radius) var(--dt-control-radius);background:#0d1912;box-shadow:0 16px 34px #000c}.dt-select-menu button{display:block;width:100%;min-height:32px;padding:var(--dt-space-2) var(--dt-space-3);border:0;border-radius:4px;background:transparent;color:#d9e5dd;text-align:left}.dt-select-menu button:hover,.dt-select-menu button:focus-visible,.dt-select-menu button.is-selected{background:#1c3525;color:#b9f35b}.dt-select-menu button.is-selected{font-weight:800}
 .dt-position-selector{position:relative;min-width:0}.dt-position-trigger{display:flex;width:100%;align-items:center;justify-content:space-between;gap:var(--dt-space-3);border:1px solid #36513f;background:#101d16;color:#dce7df;cursor:pointer}.dt-position-trigger>b{color:#b9f35b}.dt-position-selector.is-open .dt-position-trigger{border-color:#b9f35b;border-radius:var(--dt-control-radius) var(--dt-control-radius) 0 0}.dt-position-menu{position:absolute;z-index:520;top:calc(100% - 1px);right:0;width:min(360px,92vw);padding:var(--dt-space-2);border:1px solid #b9f35b;border-radius:var(--dt-control-radius) 0 var(--dt-control-radius) var(--dt-control-radius);background:#0d1912;box-shadow:0 18px 40px #000c}.dt-position-menu input{width:15px;height:15px;margin:0;accent-color:#b9f35b}.dt-position-master{display:flex;align-items:center;gap:var(--dt-space-2);padding:var(--dt-space-2) var(--dt-space-3);border:1px solid #3b5745;border-radius:5px;background:#13231a;color:#e7efe9;font-size:.66rem;font-weight:800;cursor:pointer}.dt-position-group{--row-color:var(--line-color,#31533f);margin-top:var(--dt-space-2)}.dt-position-group h4{margin:0 0 var(--dt-space-1);color:#789686;font-size:.48rem;letter-spacing:.08em}.dt-position-group>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--dt-space-1)}.dt-position-group label,.dt-position-spacer{min-height:31px}.dt-position-group label{display:flex;align-items:center;gap:var(--dt-space-2);padding:var(--dt-space-1) var(--dt-space-2);border:1px solid color-mix(in srgb,var(--row-color),transparent 48%);border-radius:5px;background:color-mix(in srgb,var(--row-color) 22%,#101d16);color:#eaf2ec;font-size:.61rem;cursor:pointer}.dt-position-group label:hover{background:color-mix(in srgb,var(--row-color) 34%,#101d16)}.dt-position-group label.is-unavailable{opacity:.3;cursor:default}.dt-position-group label span{white-space:nowrap}
 .dt-card{box-sizing:border-box;padding:var(--dt-card-padding)}
+
+/* v0.25.4 — explicit reusable spacing contract */
+:root{
+  --dt-card-padding-x:8px;
+  --dt-card-padding-y:6px;
+  --dt-control-padding-x:10px;
+  --dt-panel-padding:12px;
+  --dt-row-gap:6px;
+  --dt-card-gap:6px;
+  --dt-player-card-min-width:164px;
+  --dt-player-card-ideal-width:220px;
+  --dt-player-card-height:40px;
+  --dt-card-padding:var(--dt-card-padding-y) var(--dt-card-padding-x);
+}
+.dt-control{padding-inline:var(--dt-control-padding-x)}
+.dt-card{padding:var(--dt-card-padding)}
+.overall-score{box-sizing:border-box;max-width:100%}
+.dt-select-menu button.is-active{background:#172d1f;color:#dff4e6;outline:1px solid #4c7658}
+.dt-select.is-disabled .dt-select-trigger,.dt-position-selector [disabled]{cursor:not-allowed}
+.dt-position-menu{width:min(332px,92vw);padding:var(--dt-space-2)}
+.dt-position-master{min-height:34px;font-size:.7rem}
+.dt-position-group{margin-top:var(--dt-space-1)}
+.dt-position-group h4{margin-bottom:3px;font-size:.51rem}
+.dt-position-group>div{gap:3px}
+.dt-position-group label,.dt-position-spacer{min-height:33px}
+.dt-position-group label{padding:4px 6px;font-size:.65rem}

@@ -102,6 +102,13 @@ export function planningFamiliarityDetails(snapshot: FamiliaritySnapshot | undef
 export function planningFamiliarityTooltip(snapshot: FamiliaritySnapshot | undefined, pairs: PositionPair[]) {
   const details = planningFamiliarityDetails(snapshot, pairs)
   if (!details.length) return 'Familiaridade neste slot\nDados insuficientes'
+
+  const uniquePositions = [...new Set(details.map(detail => detail.position.replaceAll(' ', '')))]
+  if (uniquePositions.length === 1) {
+    const labels = [...new Set(details.map(detail => detail.label))]
+    if (labels.length === 1) return `Familiaridade neste slot\n\n${uniquePositions[0]}: ${labels[0]}`
+  }
+
   const lines = details.map(detail => `${detail.phase.toUpperCase()} — ${detail.position.replaceAll(' ', '')}: ${detail.label}`)
   return `Familiaridade neste slot\n\n${lines.join('\n')}`
 }
