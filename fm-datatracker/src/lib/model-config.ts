@@ -58,6 +58,16 @@ export function invalidateModelConfig(saveId: string, name = 'Model Lab') {
   modelConfigLoads.delete(key)
 }
 
+/** Removes every local Model Lab resource for a deleted save, including a queued autosave. */
+export function discardModelConfigState(saveId: string, name = 'Model Lab') {
+  const key = cacheKey(saveId, name)
+  const pending = pendingPatches.get(key)
+  if (pending?.timer) clearTimeout(pending.timer)
+  pendingPatches.delete(key)
+  modelConfigCache.delete(key)
+  modelConfigLoads.delete(key)
+}
+
 export async function patchModelConfig(saveId: string, version: string, patch: ModelConfigPatch, name = 'Model Lab') {
   if (!supabase) throw new Error('Banco Mestre não configurado.')
   const key = cacheKey(saveId, name)

@@ -4,9 +4,12 @@ import { invalidateSaveData } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
 import { ImportPanel } from '../features/imports/ImportPanel'
 import { canonicalFieldKey, displayFmPositions, normalizedDate, normalizedFoot, normalizedText, positionsMatch } from '../lib/fm-comparison'
+import { deleteFmImportSafe, stampLatestImportVersion } from '../lib/import-management'
+import { importVersionState, normalizeAppVersion } from '../lib/import-version'
 import type { ImportRecord } from '../types/domain'
 
 type ImportsPageProps = { mode?: 'import' | 'history' }
+type VersionedImportRecord = ImportRecord & { source_schema?: Record<string, unknown> | null }
 
 type RawSnapshot = {
   id: string
@@ -23,6 +26,16 @@ const sourceLabel = (filename: string) => {
 }
 const normalizedKey = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 const printable = (value: unknown) => value === null || value === undefined || value === '' ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value)
+const importAppVersion = (item: VersionedImportRecord) => normalizeAppVersion(item.source_schema?.app_version)
+
+function ImportVersion({ item }: { item: VersionedImportRecord }) {
+  const version = importAppVersion(item)
+  const state = importVersionState(version, __APP_VERSION__)
+  if (state === 'unknown') return <span title="Este import não registrou a versão do DataTracker. Ele pode ter sido criado antes do versionamento de imports e pode não conter campos adicionados posteriormente.">⚠ não registrada</span>
+  if (state === 'older') return <span title={`Import feito na v${version}. A versão atual é v${__APP_VERSION__}; dados adicionados em versões posteriores podem estar ausentes.`}>⚠ v{version}</span>
+  if (state === 'newer') return <span title={`Este import foi criado na v${version}, mais nova que a versão atualmente aberta (v${__APP_VERSION__}).`}>v{version}</span>
+  return <span title="Import realizado na versão atual do DataTracker.">v{version}</span>
+}
 
 function flatten(value: unknown, prefix = '', output: Record<string, unknown> = {}): Record<string, unknown> {
   if (value === null || value === undefined || typeof value !== 'object' || Array.isArray(value)) { if (prefix) output[prefix] = value; return output }
@@ -34,16 +47,10 @@ function flatten(value: unknown, prefix = '', output: Record<string, unknown> = 
 
 function fmValueForCsv(field: string, fm: Record<string, unknown>, normalized: Record<string, unknown>) {
   const key = canonicalFieldKey(field)
-  // Structured values are deliberately resolved before flattening. Flattening
-  // turns the FM positions map into independent leaves, which previously made
-  // a real FM position look like a CSV-only field in the inspector.
   if (key === 'position') return displayFmPositions(normalized.positional_ratings ?? fm.positions)
   if (key === 'preferred_foot') return normalized.preferred_foot
   if (key === 'left_foot') return (normalized.feet as Record<string, unknown> | undefined)?.left
   if (key === 'right_foot') return (normalized.feet as Record<string, unknown> | undefined)?.right
-  // The save currently exposes a numeric hidden-personality vector, not the
-  // user-facing Personality label exported by FM. Do not claim it is the same
-  // field until that label has a confirmed offline mapping.
   if (key === 'personality') return undefined
   const aliases: Record<string, string[]> = {
     unique_id: ['uid'], player: ['display_name'], player_name: ['display_name'], date_of_birth: ['birth_date'], dob: ['birth_date'],
@@ -110,29 +117,43 @@ function RawImportInspector({ item, rows, onClose }: { item: ImportRecord; rows:
 
 export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
   const { selected } = useSaves()
-  const [items, setItems] = useState<ImportRecord[]>([])
+  const [items, setItems] = useState<VersionedImportRecord[]>([])
   const [message, setMessage] = useState('')
-  const [rawItem, setRawItem] = useState<ImportRecord | null>(null)
+  const [rawItem, setRawItem] = useState<VersionedImportRecord | null>(null)
   const [rawRows, setRawRows] = useState<RawSnapshot[]>([])
   const [loadingRaw, setLoadingRaw] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const compatibilityWarnings = useMemo(() => items.filter(item => {
+    const state = importVersionState(importAppVersion(item), __APP_VERSION__)
+    return state === 'older' || state === 'unknown'
+  }).length, [items])
+
   async function load() {
     if (!supabase || !selected) return
-    const { data } = await supabase.from('imports').select('*').eq('save_id', selected.id).order('created_at', { ascending: false })
-    setItems((data ?? []) as ImportRecord[])
+    const { data, error } = await supabase.from('imports').select('*').eq('save_id', selected.id).order('created_at', { ascending: false })
+    if (error) { setMessage(`Não foi possível carregar o histórico: ${error.message}`); return }
+    setItems((data ?? []) as VersionedImportRecord[])
   }
   useEffect(() => { if (mode === 'history') void load() }, [mode, selected?.id])
 
-  async function remove(item: ImportRecord) {
-    if (!supabase || !selected) return
-    setMessage('')
-    const { error } = await supabase.rpc('delete_fm_import', { p_save_id: selected.id, p_import_id: item.id })
-    if (error) { setMessage(`Não foi possível excluir a importação: ${error.message}`); return }
-    invalidateSaveData(selected.id)
-    await load()
-    setMessage('Importação excluída.')
+  async function remove(item: VersionedImportRecord) {
+    if (!selected || deletingId) return
+    if (!window.confirm(`Excluir permanentemente a importação “${item.original_filename}” de ${item.snapshot_date}? Os snapshots e estatísticas criados por ela também serão removidos.`)) return
+    setMessage(''); setDeletingId(item.id)
+    try {
+      await deleteFmImportSafe(selected.id, item.id)
+      invalidateSaveData(selected.id)
+      if (rawItem?.id === item.id) { setRawItem(null); setRawRows([]) }
+      await load()
+      setMessage('Importação excluída.')
+    } catch (error) {
+      setMessage(`Não foi possível excluir a importação: ${error instanceof Error ? error.message : 'falha desconhecida'}`)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
-  async function openRaw(item: ImportRecord) {
+  async function openRaw(item: VersionedImportRecord) {
     if (!supabase) return
     setRawItem(item); setRawRows([]); setLoadingRaw(true)
     const { data, error } = await supabase.from('player_snapshots').select('id,raw_data,normalized_data,players(fm_player_id,current_name)').eq('import_id', item.id)
@@ -141,15 +162,27 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
     setRawRows((data ?? []) as RawSnapshot[])
   }
 
+  async function imported() {
+    if (!selected) return
+    invalidateSaveData(selected.id)
+    try {
+      await stampLatestImportVersion(selected.id, __APP_VERSION__)
+      setMessage('')
+    } catch (error) {
+      setMessage(`Importação concluída, mas não foi possível registrar a versão do DataTracker: ${error instanceof Error ? error.message : 'falha desconhecida'}`)
+    }
+  }
+
   if (mode === 'history') return <section className="settings-import-history">
     <span className="eyebrow">GERENCIAMENTO</span><h2>Importações anteriores</h2>
     <p>Consulte os arquivos já confirmados neste save. Para adicionar uma nova fotografia, use <strong>Novo import</strong> no menu lateral.</p>
-    <div className="table-wrap"><table><thead><tr><th>Data</th><th>Arquivo</th><th>Fonte</th><th>Linhas</th><th>Status</th><th aria-label="Ações" /></tr></thead><tbody>{items.map(item => <tr key={item.id} className="import-history-row" onClick={() => void openRaw(item)} tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRaw(item) } }}><td>{item.snapshot_date}</td><td>{item.original_filename}</td><td>{sourceLabel(item.original_filename)}</td><td>{item.row_count}</td><td><span className="status">{item.status}</span></td><td><button className="ghost import-delete" onClick={event => { event.stopPropagation(); void remove(item) }} title={`Excluir ${item.original_filename}`} aria-label={`Excluir ${item.original_filename}`}>🗑</button></td></tr>)}</tbody></table></div>
+    {compatibilityWarnings > 0 && <p className="warning">{compatibilityWarnings} {compatibilityWarnings === 1 ? 'import foi feito em uma versão anterior ou não possui versão registrada' : 'imports foram feitos em versões anteriores ou não possuem versão registrada'}. Eles continuam válidos, mas podem não conter dados que só passaram a ser extraídos em versões mais novas. Reimporte o snapshot quando precisar desses campos.</p>}
+    <div className="table-wrap"><table><thead><tr><th>Data</th><th>Arquivo</th><th>Fonte</th><th>Versão</th><th>Linhas</th><th>Status</th><th aria-label="Ações" /></tr></thead><tbody>{items.map(item => <tr key={item.id} className="import-history-row" onClick={() => void openRaw(item)} tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRaw(item) } }}><td>{item.snapshot_date}</td><td>{item.original_filename}</td><td>{sourceLabel(item.original_filename)}</td><td><ImportVersion item={item} /></td><td>{item.row_count}</td><td><span className="status">{item.status}</span></td><td><button className="ghost import-delete" disabled={deletingId !== null} onClick={event => { event.stopPropagation(); void remove(item) }} title={`Excluir ${item.original_filename}`} aria-label={`Excluir ${item.original_filename}`}>{deletingId === item.id ? '…' : '🗑'}</button></td></tr>)}</tbody></table></div>
     {message && <p className={message.startsWith('Não foi') ? 'warning' : 'notice'}>{message}</p>}
     {!items.length && <p>Nenhum import confirmado.</p>}
     {rawItem && <RawImportInspector item={rawItem} rows={rawRows} onClose={() => setRawItem(null)} />}
     {rawItem && loadingRaw && <div className="settings-overlay raw-import-overlay"><div className="raw-import-loading">Carregando dados brutos…</div></div>}
   </section>
 
-  return <div className="screen-page imports-page"><ImportPanel onImported={() => { if (selected) invalidateSaveData(selected.id) }} /></div>
+  return <div className="screen-page imports-page"><ImportPanel onImported={() => void imported()} />{message && <p className={message.startsWith('Importação concluída, mas') ? 'warning' : 'notice'}>{message}</p>}</div>
 }
