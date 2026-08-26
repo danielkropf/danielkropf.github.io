@@ -549,3 +549,41 @@
   min-width:0;
   max-width:100%;
 }
+
+/* v0.25.7b — tactic selector and Elenco Geral share one exact width source */
+.planning-flex-page{
+  --planning-roster-width:330px;
+}
+.planning-flex-layout>.roster-column{
+  box-sizing:border-box;
+  width:var(--planning-roster-width)!important;
+  min-width:var(--planning-roster-width)!important;
+  max-width:var(--planning-roster-width)!important;
+}
+.tactic-custom-select{
+  box-sizing:border-box;
+  flex:0 0 var(--planning-roster-width)!important;
+  width:var(--planning-roster-width)!important;
+  min-width:var(--planning-roster-width)!important;
+  max-width:var(--planning-roster-width)!important;
+}
+@media(max-width:1360px){
+  .planning-flex-page{--planning-roster-width:285px}
+}
+@media(max-width:1180px){
+  .planning-flex-page{--planning-roster-width:260px}
+}
+@media(max-width:900px){
+  .planning-flex-page{--planning-roster-width:100%}
+  .planning-flex-layout>.roster-column{
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+  }
+  .tactic-custom-select{
+    flex:1 1 100%!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+  }
+}
