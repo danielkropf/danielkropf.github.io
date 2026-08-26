@@ -7,7 +7,7 @@ import{ScoreBadge}from'../components/ScoreBadge'
 import{roleDefaultWeights,usesLegacyRoleDefaults}from'../lib/roleWeights'
 import{PITCH_NODES,positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{useSaves}from'../features/saves/SaveContext'
-import{patchModelConfig}from'../lib/model-config'
+import{loadModelConfig,patchModelConfig,scheduleModelConfigPatch}from'../lib/model-config'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Assignment={playerId:string;nodeId:string;position:string;roleId:string;roleCode:string;roleName:string}
@@ -101,13 +101,12 @@ export function TacticsPage(){
     loaded.current=false
     if(!supabase||!selected)return
     setStatus('Carregando…')
-    void supabase.from('scoring_models').select('config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data,error})=>{
-      if(error){setStatus(`Erro ao carregar: ${error.message}`);return}
-      if(data){const c=data.config as Partial<Config>;setConfig({...fresh(),...c,tactics:(c.tactics??[]).map(t=>normalizeTactic(t))})}
-      else setConfig(fresh())
+    void loadModelConfig(selected.id).then(data=>{
+      const c=data as Partial<Config>
+      setConfig({...fresh(),...c,tactics:(c.tactics??[]).map(t=>normalizeTactic(t))})
       loaded.current=true
       setStatus('Salvo automaticamente')
-    })
+    }).catch(error=>setStatus(`Erro ao carregar: ${error instanceof Error?error.message:'falha ao carregar'}`))
   },[selected?.id])
 
   useEffect(()=>{
@@ -122,18 +121,11 @@ export function TacticsPage(){
 
   useEffect(()=>{
     if(!loaded.current||!selected||!supabase)return
-    setStatus('Salvando…')
-    const timer=setTimeout(async()=>{
-      try{
-        await patchModelConfig(selected.id,'2.9.0',{
-          tactics:config.tactics,
-          selected_tactic_id:config.selected_tactic_id,
-          selected_role_id:config.selected_role_id,
-        })
-        setStatus('Salvo automaticamente')
-      }catch(error){setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`)}
-    },450)
-    return()=>clearTimeout(timer)
+    scheduleModelConfigPatch(selected.id,'2.9.0',{
+      tactics:config.tactics,
+      selected_tactic_id:config.selected_tactic_id,
+      selected_role_id:config.selected_role_id,
+    },setStatus)
   },[config.tactics,config.selected_tactic_id,config.selected_role_id,selected?.id])
 
   const tactic=config.tactics.find(t=>t.id===config.selected_tactic_id)
@@ -147,13 +139,13 @@ export function TacticsPage(){
     if(!clean)return
     const id=crypto.randomUUID()
     const created=normalizeTactic({id,name:clean,roles:[],ipAssignments:assignmentsFor(ipFormation,'IP'),oopAssignments:assignmentsFor(oopFormation,'OOP')})
-    setConfig(c=>({...c,tactics:[...c.tactics,created],selected_tactic_id:id,selected_role_id:null}))
+    setConfig(c=>{const next={...c,tactics:[...c.tactics,created],selected_tactic_id:id,selected_role_id:null};void patchModelConfig(selected!.id,'2.9.0',{tactics:next.tactics,selected_tactic_id:id,selected_role_id:null}).then(()=>setStatus('Salvo automaticamente')).catch(error=>setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`));return next})
     setName('');setCreateOpen(false)
   }
 
   function remove(){
     if(!tactic||!confirm(`Excluir a tática “${tactic.name}”?`))return
-    setConfig(c=>({...c,tactics:c.tactics.filter(t=>t.id!==tactic.id),selected_tactic_id:null,selected_role_id:null}))
+    setConfig(c=>{const next={...c,tactics:c.tactics.filter(t=>t.id!==tactic.id),selected_tactic_id:null,selected_role_id:null};void patchModelConfig(selected!.id,'2.9.0',{tactics:next.tactics,selected_tactic_id:null,selected_role_id:null}).then(()=>setStatus('Salvo automaticamente')).catch(error=>setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`));return next})
   }
 
   function updatePhase(targetPhase:TacticPhase,transform:(items:Assignment[])=>Assignment[]){
@@ -259,7 +251,7 @@ export function TacticsPage(){
 
   return <div className="tactics-page">
     <div className="title-row"><div><span className="eyebrow">ESTRUTURA DO TIME · FM26</span><h1>Táticas</h1><p>Configure separadamente as posições e funções com e sem a bola.</p></div><span className="save-state">{status}</span></div>
-    <div className="tactic-topbar"><div className="tactic-toolbar"><select aria-label="Tática selecionada" value={tactic?.id??''} onChange={e=>setConfig(c=>({...c,selected_tactic_id:e.target.value||null,selected_role_id:null}))}><option value="">Selecione uma tática</option>{config.tactics.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button onClick={()=>setCreateOpen(true)}>+ Adicionar</button><button className="danger-button" disabled={!tactic} onClick={remove}>Excluir</button></div><div className="tactic-tabs"><button className={sideTab==='structure'?'active':''} onClick={()=>setSideTab('structure')}>Estrutura</button><button className={sideTab==='players'?'active':''} onClick={()=>setSideTab('players')}>Jogadores</button></div></div>
+    <div className="tactic-topbar"><div className="tactic-toolbar"><select aria-label="Tática selecionada" value={tactic?.id??''} onChange={e=>{const id=e.target.value||null;setConfig(c=>({...c,selected_tactic_id:id,selected_role_id:null}));if(selected)void patchModelConfig(selected.id,'2.9.0',{selected_tactic_id:id,selected_role_id:null}).catch(error=>setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`))}}><option value="">Selecione uma tática</option>{config.tactics.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button onClick={()=>setCreateOpen(true)}>+ Adicionar</button><button className="danger-button" disabled={!tactic} onClick={remove}>Excluir</button></div><div className="tactic-tabs"><button className={sideTab==='structure'?'active':''} onClick={()=>setSideTab('structure')}>Estrutura</button><button className={sideTab==='players'?'active':''} onClick={()=>setSideTab('players')}>Jogadores</button></div></div>
     <div className="tactic-workspace">
       <section className={`football-pitch ${!tactic?'pitch-empty':''}`} onDragOver={e=>e.preventDefault()} onDrop={drop}>
         <div className="phase-switch field-phase-switch" aria-label="Fase da tática"><button className={phase==='IP'?'active':''} onClick={()=>setPhase('IP')}>IP</button><button className={phase==='OOP'?'active':''} onClick={()=>setPhase('OOP')}>OOP</button></div>

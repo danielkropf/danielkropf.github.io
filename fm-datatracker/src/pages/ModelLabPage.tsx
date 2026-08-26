@@ -4,7 +4,7 @@ import{ATTRIBUTE_CATALOG,DEFAULT_ATTRIBUTE_WEIGHTS,type AttributeCategory}from'.
 import{positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{roleDefaultWeights}from'../lib/roleWeights'
 import{useSaves}from'../features/saves/SaveContext'
-import{patchModelConfig}from'../lib/model-config'
+import{loadModelConfig,scheduleModelConfigPatch}from'../lib/model-config'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Tactic={id:string;name:string;roles:Role[];[key:string]:unknown}
@@ -40,27 +40,19 @@ export function ModelLabPage(){
     loaded.current=false
     if(!supabase||!selected)return
     setStatus('Carregando…')
-    void supabase.from('scoring_models').select('config').eq('save_id',selected.id).eq('name','Model Lab').order('created_at').limit(1).maybeSingle().then(({data,error})=>{
-      if(error){setStatus(`Erro ao carregar: ${error.message}`);return}
-      if(data){const c=data.config as Partial<Config>;setConfig({...fresh(),...c,general_weights:{...generalDefaults(),...(c.general_weights??{})},role_weight_overrides:c.role_weight_overrides??{}})}
-      else setConfig(fresh())
+    void loadModelConfig(selected.id).then(data=>{
+      const c=data as Partial<Config>
+      setConfig({...fresh(),...c,general_weights:{...generalDefaults(),...(c.general_weights??{})},role_weight_overrides:c.role_weight_overrides??{}})
       loaded.current=true;setStatus('Salvo automaticamente')
-    })
+    }).catch(error=>setStatus(`Erro ao carregar: ${error instanceof Error?error.message:'falha ao carregar'}`))
   },[selected?.id])
 
   useEffect(()=>{
     if(!loaded.current||!selected||!supabase)return
-    setStatus('Salvando…')
-    const timer=setTimeout(async()=>{
-      try{
-        await patchModelConfig(selected.id,'2.9.0',{
-          general_weights:config.general_weights,
-          role_weight_overrides:config.role_weight_overrides,
-        })
-        setStatus('Salvo automaticamente')
-      }catch(error){setStatus(`Erro: ${error instanceof Error?error.message:'falha ao salvar'}`)}
-    },450)
-    return()=>clearTimeout(timer)
+    scheduleModelConfigPatch(selected.id,'2.9.0',{
+      general_weights:config.general_weights,
+      role_weight_overrides:config.role_weight_overrides,
+    },setStatus)
   },[config.general_weights,config.role_weight_overrides,selected?.id])
 
   function changeWeight(key:string,value:number){
