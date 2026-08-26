@@ -9,6 +9,7 @@ export type FlexiblePlanning = {
 }
 
 const compactPosition = (position: string) => position.toUpperCase().replace(/[^A-Z]/g, '')
+const positionIdentity = (position: string) => position.toUpperCase().replace(/\s+/g, '')
 
 /** Positional family used only for the user's optional visual grouping. */
 export function positionFamily(position: string): string {
@@ -29,6 +30,38 @@ export function defaultSetLabel(position: string, count = 1): string {
     return labels[family] ?? `${position} · ${count} posições`
   }
   return position
+}
+
+
+export function planningSetDisplayLabel(set: PlanningSetLayout, sets: PlanningSetLayout[], slots: TacticSlotDescriptor[]): string {
+  if (set.slotIds.length > 1) return set.label
+  const slotById = new Map(slots.map(slot => [slot.id, slot]))
+  const position = slotById.get(set.slotIds[0])?.position
+  if (!position) return set.label
+  const base = defaultSetLabel(position)
+  const stored = set.label.trim()
+  if (stored && stored !== base) return stored
+  const identity = positionIdentity(position)
+  const peers = sets.filter(candidate => {
+    if (candidate.slotIds.length !== 1) return false
+    const candidatePosition = slotById.get(candidate.slotIds[0])?.position
+    return Boolean(candidatePosition && positionIdentity(candidatePosition) === identity)
+  })
+  if (peers.length < 2) return stored || base
+  const index = peers.findIndex(candidate => candidate.id === set.id)
+  return `${base} ${Math.max(0, index) + 1}`
+}
+
+export function reorderPlanningGroups(planning: FlexiblePlanning, draggedId: string, beforeId: string | null): FlexiblePlanning {
+  if (draggedId === beforeId) return planning
+  const dragged = planning.groups.find(group => group.id === draggedId)
+  if (!dragged) return planning
+  const rest = planning.groups.filter(group => group.id !== draggedId)
+  const insertion = beforeId === null ? rest.length : rest.findIndex(group => group.id === beforeId)
+  if (beforeId !== null && insertion < 0) return planning
+  rest.splice(insertion, 0, dragged)
+  if (rest.every((group, index) => group.id === planning.groups[index]?.id)) return planning
+  return { ...planning, groups: rest }
 }
 
 export function defaultPlanningSets(slots: TacticSlotDescriptor[]): PlanningSetLayout[] {

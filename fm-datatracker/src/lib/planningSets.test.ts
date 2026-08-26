@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultPlanningSets, groupEquivalentSets, layoutsFor, movePlayerToSet, positionFamily, primarySetForPlayer, reorderPlanningSets, restoreDefaultPlanningSets, splitPlanningSet, type FlexiblePlanning } from './planningSets'
+import { defaultPlanningSets, groupEquivalentSets, layoutsFor, movePlayerToSet, planningSetDisplayLabel, positionFamily, primarySetForPlayer, renamePlanningSet, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, splitPlanningSet, type FlexiblePlanning } from './planningSets'
 
 const slots = [
   { id: 'dc-l', position: 'DCL' },
@@ -47,4 +47,29 @@ describe('flexible planning sets', () => {
     expect(layoutsFor(planning, 't1', 'principal', slots).map(set => set.id)).toEqual(['dc-l', 'dc-r', 'mc'])
     expect(Object.values(planning.slotAssignments.principal).flat().sort()).toEqual(['a', 'b', 'c', 'd'])
   })
+
+  it('numbers identical ungrouped positions until the user gives them a custom label', () => {
+    const repeated = [
+      { id: 'mc-1', position: 'M(C)' },
+      { id: 'mc-2', position: 'M(C)' },
+      { id: 'st', position: 'ST(C)' },
+    ]
+    const sets = defaultPlanningSets(repeated)
+    expect(planningSetDisplayLabel(sets[0], sets, repeated)).toBe('M(C) 1')
+    expect(planningSetDisplayLabel(sets[1], sets, repeated)).toBe('M(C) 2')
+    const renamed = renamePlanningSet({ groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: {} }, 't1', 'principal', sets, 'mc-1', 'MC esquerdo')
+    const renamedSets = layoutsFor(renamed, 't1', 'principal', repeated)
+    expect(planningSetDisplayLabel(renamedSets[0], renamedSets, repeated)).toBe('MC esquerdo')
+  })
+
+  it('reorders squads without touching their assignments', () => {
+    const planning: FlexiblePlanning = {
+      groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }],
+      slotAssignments: { principal: { dc: ['a'] }, b: { dc: ['b'] } },
+    }
+    const reordered = reorderPlanningGroups(planning, 'base', 'principal')
+    expect(reordered.groups.map(group => group.id)).toEqual(['base', 'principal', 'b'])
+    expect(reordered.slotAssignments).toEqual(planning.slotAssignments)
+  })
+
 })

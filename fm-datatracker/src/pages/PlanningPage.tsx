@@ -17,12 +17,13 @@ import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
 import {
   groupEquivalentSets,
   layoutsFor,
-  movePlanningSet,
   movePlayerToSet,
+  planningSetDisplayLabel,
   positionFamily,
   primarySetForPlayer,
   removePlayerFromPlanning,
   renamePlanningSet,
+  reorderPlanningGroups,
   reorderPlanningSets,
   restoreDefaultPlanningSets,
   splitPlanningSet,
@@ -79,6 +80,10 @@ export function PlanningPage() {
   const [draggingSetId, setDraggingSetId] = useState<string | null>(null)
   const [playerDropPreview, setPlayerDropPreview] = useState<PlayerDropPreview | null>(null)
   const [setDropPreview, setSetDropPreview] = useState<SetDropPreview | null>(null)
+  const [managerSetDragging, setManagerSetDragging] = useState<string | null>(null)
+  const [managerSetPreview, setManagerSetPreview] = useState<string | null | undefined>(undefined)
+  const [managerGroupDragging, setManagerGroupDragging] = useState<string | null>(null)
+  const [managerGroupPreview, setManagerGroupPreview] = useState<string | null | undefined>(undefined)
   const [selectedGroup, setSelectedGroup] = useState('principal')
   const [focusedSetId, setFocusedSetId] = useState<string | null>(null)
   const [manageSquadsOpen, setManageSquadsOpen] = useState(false)
@@ -102,6 +107,10 @@ export function PlanningPage() {
     setFocusedSetId(null)
     setPlayerDropPreview(null)
     setSetDropPreview(null)
+    setManagerSetDragging(null)
+    setManagerSetPreview(undefined)
+    setManagerGroupDragging(null)
+    setManagerGroupPreview(undefined)
     if (!supabase || !selected) return () => { active = false }
     setLoading(true)
     saveStatus('Carregando…')
@@ -157,6 +166,18 @@ export function PlanningPage() {
   const isTransferGroup = Boolean(currentGroup && transferGroups.some(group => group.id === currentGroup.id))
   const currentSets = useMemo(() => tactic && currentGroup && !isTransferGroup ? layoutsFor(planning, tactic.id, currentGroup.id, slotDescriptors) : [], [planning, tactic, currentGroup, isTransferGroup, slotDescriptors])
   const focusedSet = currentSets.find(set => set.id === focusedSetId) ?? null
+  const displaySetLabel = (set: PlanningSetLayout) => planningSetDisplayLabel(set, currentSets, slotDescriptors)
+  const equivalentFamilies = useMemo(() => {
+    const groups = new Map<string, PlanningSetLayout[]>()
+    for (const set of currentSets) {
+      if (set.slotIds.length !== 1) continue
+      const pair = pairBySlot.get(set.slotIds[0])
+      if (!pair) continue
+      const family = positionFamily(pair.ip.position)
+      groups.set(family, [...(groups.get(family) ?? []), set])
+    }
+    return [...groups.entries()].filter(([, sets]) => sets.length > 1)
+  }, [currentSets, pairBySlot])
 
   useEffect(() => {
     if (focusedSetId && !currentSets.some(set => set.id === focusedSetId)) setFocusedSetId(null)
@@ -222,16 +243,26 @@ export function PlanningPage() {
   function addGroup() { if (!newGroup.trim()) return; update(value => ({ ...value, groups: [...value.groups, { id: crypto.randomUUID(), name: newGroup.trim() }] })); setNewGroup('') }
   function renameGroup(id: string, name: string) { update(value => ({ ...value, groups: value.groups.map(group => group.id === id ? { ...group, name } : group) })) }
   function removeGroup(id: string) {
-    if (!confirm('Excluir este elenco?')) return
+    const group = planning.groups.find(item => item.id === id)
+    const allocated = Object.values(planning.slotAssignments[id] ?? {}).flat().filter(Boolean).length
+    const message = allocated > 0
+      ? `Excluir “${group?.name ?? 'este elenco'}” e remover ${allocated} alocação${allocated === 1 ? '' : 'ões'}? Os jogadores voltarão para a lista disponível.`
+      : `Excluir o elenco “${group?.name ?? 'selecionado'}”?`
+    if (!confirm(message)) return
+    if (selectedGroup === id) setSelectedGroup(planning.groups.find(item => item.id !== id)?.id ?? '')
     update(value => {
       const setLayouts = Object.fromEntries(Object.entries(value.setLayouts ?? {}).map(([tacticId, groups]) => [tacticId, Object.fromEntries(Object.entries(groups).filter(([groupId]) => groupId !== id))]))
       return { ...value, groups: value.groups.filter(group => group.id !== id), slotAssignments: Object.fromEntries(Object.entries(value.slotAssignments).filter(([groupId]) => groupId !== id)), setLayouts }
     })
   }
   function removePlayer(id: string) { update(value => removePlayerFromPlanning(value, id) as Planning) }
-  function clearPlanning() { if (confirm('Limpar todos os elencos do Planejamento?')) update(value => ({ ...value, slotAssignments: {} })) }
+  function clearPlanning() {
+    if (!confirm('Remover todas as alocações de todos os elencos deste planejamento? Esta ação afeta Principal, Time B, Base, Empréstimo, Venda e demais grupos.')) return
+    if (!confirm('Confirme novamente: limpar TODOS os elencos? Os jogadores voltarão para a lista disponível.')) return
+    update(value => ({ ...value, slotAssignments: {} }))
+  }
   function clearGroup(groupId: string) { update(value => { const removed = Object.values(value.slotAssignments[groupId] ?? {}).flat().some(Boolean); return removed ? { ...value, slotAssignments: { ...value.slotAssignments, [groupId]: {} } } : value }) }
-  function clearCurrentGroup() { if (currentGroup && confirm(`Limpar ${currentGroup.name}?`)) clearGroup(currentGroup.id) }
+  function clearCurrentGroup() { if (currentGroup && confirm(`Remover todas as alocações de “${currentGroup.name}”? Os jogadores voltarão para a lista disponível.`)) clearGroup(currentGroup.id) }
   function placePlayer(groupId: string, setId: string, playerId: string, beforePlayerId?: string | null) { update(value => movePlayerToSet(value, groupId, setId, playerId, beforePlayerId) as Planning) }
   function stopPlayerDrag() { setDragging(null); setPlayerDropPreview(null) }
   function stopSetDrag() { setDraggingSetId(null); setSetDropPreview(null) }
@@ -250,15 +281,14 @@ export function PlanningPage() {
       return Boolean(primary && primary.id !== set.id)
     })
   }
-  function primaryLabel(playerId: string) { return currentGroup ? primarySetForPlayer(planning, currentGroup.id, currentSets, playerId)?.label ?? 'Outro conjunto' : 'Outro conjunto' }
+  function primaryLabel(playerId: string) { const set = currentGroup ? primarySetForPlayer(planning, currentGroup.id, currentSets, playerId) : null; return set ? displaySetLabel(set) : 'Outro conjunto' }
 
   function groupSet(setId: string) { if (tactic && currentGroup) update(value => groupEquivalentSets(value, tactic.id, currentGroup.id, currentSets, setId, slotDescriptors, `set-${crypto.randomUUID()}`) as Planning) }
   function splitSet(setId: string) { if (tactic && currentGroup) update(value => splitPlanningSet(value, tactic.id, currentGroup.id, currentSets, setId, slotDescriptors) as Planning) }
   function renameSet(setId: string, label: string) { if (tactic && currentGroup) update(value => renamePlanningSet(value, tactic.id, currentGroup.id, currentSets, setId, label) as Planning) }
-  function moveSet(setId: string, direction: -1 | 1) { if (tactic && currentGroup) update(value => movePlanningSet(value, tactic.id, currentGroup.id, currentSets, setId, direction) as Planning) }
   function reorderSet(draggedId: string, beforeId: string | null) { if (tactic && currentGroup) update(value => reorderPlanningSets(value, tactic.id, currentGroup.id, currentSets, draggedId, beforeId) as Planning) }
+  function reorderGroup(draggedId: string, beforeId: string | null) { update(value => reorderPlanningGroups(value, draggedId, beforeId) as Planning) }
   function restoreSets() { if (tactic && currentGroup) update(value => restoreDefaultPlanningSets(value, tactic.id, currentGroup.id, currentSets, slotDescriptors) as Planning) }
-  function canGroup(set: PlanningSetLayout) { const pair = pairBySlot.get(set.slotIds[0]); if (!pair || set.slotIds.length > 1) return false; const family = positionFamily(pair.ip.position); return currentSets.filter(candidate => candidate.slotIds.some(id => positionFamily(pairBySlot.get(id)?.ip.position ?? '') === family)).length > 1 }
 
   async function persistPatch(patch: Record<string, unknown>) {
     if (!selected) return
@@ -283,15 +313,15 @@ export function PlanningPage() {
     <div className="title-row"><h1>Planejamento</h1>{(loading || isPending) && <span className="background-loading" role="status">Carregando em segundo plano…</span>}</div>
 
     <section className="planning-matrix-toolbar planning-aligned-toolbar planning-flex-toolbar">
-      <select aria-label="Tática selecionada" value={tactic?.id ?? ''} onChange={event => { const id = event.target.value || null; setConfig(current => ({ ...current, selected_tactic_id: id })); setExpandedSets(new Set()); setFocusedSetId(null); void persistPatch({ selected_tactic_id: id }) }}><option value="">Selecione uma tática</option>{tactics.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
-      <div className="squad-pagination planning-group-selector"><button onClick={() => changeGroup(-1)} disabled={planning.groups.length < 2}>‹</button><strong>{currentGroup?.name ?? 'Nenhum elenco'}</strong><span>{planning.groups.length ? `${currentGroupIndex + 1}/${planning.groups.length}` : '0/0'}</span><button onClick={() => changeGroup(1)} disabled={planning.groups.length < 2}>›</button></div>
+      <TacticDropdown tactics={tactics} selectedId={tactic?.id ?? ''} change={id => { const selectedId = id || null; setConfig(current => ({ ...current, selected_tactic_id: selectedId })); setExpandedSets(new Set()); setFocusedSetId(null); void persistPatch({ selected_tactic_id: selectedId }) }} />
+      <div className="squad-pagination planning-group-selector"><button onClick={() => changeGroup(-1)} disabled={planning.groups.length < 2}>‹</button><strong>{currentGroup?.name ?? 'Nenhum elenco'}</strong><span>{planning.groups.length ? `${currentGroupIndex + 1} de ${planning.groups.length}` : '0 de 0'}</span><button onClick={() => changeGroup(1)} disabled={planning.groups.length < 2}>›</button></div>
       {!isTransferGroup && tactic && <label className="coverage-toggle"><input type="checkbox" checked={showCoverages} onChange={event => setShowCoverages(event.target.checked)} /><span>Mostrar coberturas</span></label>}
       <div className="planning-flex-actions">
         <SaveState status={status} detail={saveDetail} onRetry={status.startsWith('⚠') ? () => void retrySave() : undefined} />
         <button className="ghost undo-planning-button" onClick={undo} disabled={!undoPlanning} title="Desfazer a última alteração" aria-label="Desfazer a última alteração">↶</button>
         {!isTransferGroup && tactic && <button className="ghost manage-sets-button" onClick={() => setManageSetsOpen(true)}>Organizar posições</button>}
         <button className="ghost manage-squads-button" onClick={() => setManageSquadsOpen(true)}>Gerenciar elencos</button>
-        <details className="planning-more-actions"><summary aria-label="Mais ações" title="Mais ações">⋯</summary><div><button type="button" disabled={!currentGroupPlayerIds.size} onClick={clearCurrentGroup}>Limpar {currentGroup?.name ?? 'elenco'}</button><button type="button" className="danger-button" disabled={!Object.keys(assignmentIndex).length} onClick={clearPlanning}>Limpar todos os elencos</button></div></details>
+        <details className="planning-more-actions"><summary aria-label="Mais ações" title="Mais ações">⋯</summary><div><button type="button" className="clear-current-button" disabled={!currentGroupPlayerIds.size} onClick={clearCurrentGroup}>Limpar {currentGroup?.name ?? 'elenco'}</button><button type="button" className="danger-button" disabled={!Object.keys(assignmentIndex).length} onClick={clearPlanning}>Limpar todos os elencos</button></div></details>
       </div>
     </section>
 
@@ -299,9 +329,10 @@ export function PlanningPage() {
       <article className="planning-column roster-column">
         <header><h2>{focusedSet ? `Elenco · ${focusedSet.label}` : 'Elenco'}</h2><span>{roster.length}</span></header>
         <div className="roster-filters"><input placeholder="Buscar" value={search} onChange={event => setSearch(event.target.value)} /><PositionFilterDropdown pairs={pairs} selected={positionFilters} change={ids => { setPositionFilters(ids); if (ids.length) setFocusedSetId(null) }} /></div>
+        {contextualPairs.length > 0 && <div className="roster-context-note">Prioridade: nota específica da função</div>}
         <div className="planning-player-list">
           {!players.length && (loading || isPending) && <div className="background-loader-panel" role="status">Carregando elenco… você pode trocar de aba enquanto isso.</div>}
-          {roster.map(({ player, score, rank, compatible }) => <RosterPlayerCard player={player} snapshot={latest(player)!} score={score} rank={rank} compatible={compatible} drag={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', player.id); setDragging({ type: 'player', id: player.id }) }} dragEnd={stopPlayerDrag} open={() => navigate(`/players/${player.id}`)} key={player.id} />)}
+          {roster.map(({ player, score, rank, compatible }) => <RosterPlayerCard player={player} snapshot={latest(player)!} score={score} rank={rank} compatible={compatible} contextual={contextualPairs.length > 0} drag={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', player.id); setDragging({ type: 'player', id: player.id }) }} dragEnd={stopPlayerDrag} open={() => navigate(`/players/${player.id}`)} key={player.id} />)}
         </div>
       </article>
 
@@ -312,6 +343,7 @@ export function PlanningPage() {
               {draggingSetId && setDropPreview?.beforeSetId === set.id && draggingSetId !== set.id && <SetDropPlaceholder drop={() => commitSetDrop(set.id)} />}
               <PlanningSetRow
                 set={set}
+                displayLabel={displaySetLabel(set)}
                 pairs={setPairs(set)}
                 assignedIds={planning.slotAssignments[currentGroup.id]?.[set.id] ?? []}
                 players={players}
@@ -346,9 +378,9 @@ export function PlanningPage() {
       </div>
     </section>
 
-    {manageSquadsOpen && <div className="settings-overlay" onClick={() => setManageSquadsOpen(false)}><section className="squad-manager" onClick={event => event.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={() => setManageSquadsOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map(group => { const fixed = transferGroups.some(item => item.id === group.id); return <div className={fixed ? 'fixed-planning-group' : ''} key={group.id}><input value={group.name} readOnly={fixed} onChange={event => renameGroup(group.id, event.target.value)} />{fixed ? <span>Grupo de mercado</span> : <button className="column-delete" onClick={() => removeGroup(group.id)}>Excluir</button>}</div> })}</div><footer><input placeholder="Novo elenco" value={newGroup} onChange={event => setNewGroup(event.target.value)} onKeyDown={event => event.key === 'Enter' && addGroup()} /><button onClick={addGroup}>+ Adicionar</button></footer></section></div>}
+    {manageSquadsOpen && <div className="settings-overlay" onClick={() => setManageSquadsOpen(false)}><section className="squad-manager planning-squad-manager" onClick={event => event.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={() => setManageSquadsOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map((group, index) => { const fixed = transferGroups.some(item => item.id === group.id); const previewBefore = managerGroupPreview === group.id && managerGroupDragging !== group.id; return <Fragment key={group.id}>{previewBefore && <ManagerDropPlaceholder label="Mover elenco para cá" /> }<div className={`planning-squad-manager-row ${fixed ? 'fixed-planning-group' : ''} ${managerGroupDragging === group.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerGroupPreview(event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null) }} onDrop={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderGroup(managerGroupDragging, event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null); setManagerGroupDragging(null); setManagerGroupPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', group.id); setManagerGroupDragging(group.id); setManagerGroupPreview(group.id) }} onDragEnd={() => { setManagerGroupDragging(null); setManagerGroupPreview(undefined) }} title={`Arrastar ${group.name}`} aria-label={`Reordenar ${group.name}`}>⠿</button><input value={group.name} readOnly={fixed} onChange={event => renameGroup(group.id, event.target.value)} />{fixed ? <span>Grupo de mercado</span> : <button className="column-delete" onClick={() => removeGroup(group.id)}>Excluir</button>}</div></Fragment> })}{managerGroupDragging && managerGroupPreview === null && <ManagerDropPlaceholder label="Mover elenco para o final" />}</div><footer><input placeholder="Novo elenco" value={newGroup} onChange={event => setNewGroup(event.target.value)} onKeyDown={event => event.key === 'Enter' && addGroup()} /><button onClick={addGroup}>+ Adicionar</button></footer></section></div>}
 
-    {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Organizar posições</h2><p>Organização visual de {currentGroup.name}; a tática não é alterada.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => <div className="planning-set-manager-row" key={set.id}><span className="set-manager-order">{index + 1}</span><input value={set.label} onChange={event => renameSet(set.id, event.target.value)} /><small>{set.slotIds.length} posição{set.slotIds.length === 1 ? '' : 'ões'}</small><div><button className="ghost" onClick={() => moveSet(set.id, -1)} disabled={index === 0} aria-label="Mover conjunto para cima">↑</button><button className="ghost" onClick={() => moveSet(set.id, 1)} disabled={index === currentSets.length - 1} aria-label="Mover conjunto para baixo">↓</button>{set.slotIds.length > 1 ? <button className="ghost" onClick={() => splitSet(set.id)}>Separar</button> : canGroup(set) ? <button className="ghost" onClick={() => groupSet(set.id)}>Agrupar equivalentes</button> : null}</div></div>)}</div><footer><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
+    {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Organizar posições</h2><p>Organização visual de {currentGroup.name}; a tática não é alterada.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => { const effectiveLabel = displaySetLabel(set); const previewBefore = managerSetPreview === set.id && managerSetDragging !== set.id; return <Fragment key={set.id}>{previewBefore && <ManagerDropPlaceholder label="Mover posição para cá" />}<div className={`planning-set-manager-row ${managerSetDragging === set.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerSetPreview(event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null) }} onDrop={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderSet(managerSetDragging, event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null); setManagerSetDragging(null); setManagerSetPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', set.id); setManagerSetDragging(set.id); setManagerSetPreview(set.id) }} onDragEnd={() => { setManagerSetDragging(null); setManagerSetPreview(undefined) }} title={`Arrastar ${effectiveLabel}`} aria-label={`Reordenar ${effectiveLabel}`}>⠿</button><span className="set-manager-order">{index + 1}</span><input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /><small>{set.slotIds.length} posição{set.slotIds.length === 1 ? '' : 'ões'}{set.slotIds.length > 1 ? ` · ${(planning.slotAssignments[currentGroup.id]?.[set.id] ?? []).length} jogadores` : ''}</small><div>{set.slotIds.length > 1 && <button className="ghost" onClick={() => splitSet(set.id)}>Desagrupar</button>}</div></div></Fragment> })}{managerSetDragging && managerSetPreview === null && <ManagerDropPlaceholder label="Mover posição para o final" />}{equivalentFamilies.map(([family, sets]) => <div className="equivalent-set-action" key={family}><div><b>{sets.map(displaySetLabel).join(' + ')}</b><span>{sets.length} posições equivalentes</span></div><button className="ghost" onClick={() => groupSet(sets[0].id)}>Agrupar estas posições</button></div>)}</div><footer><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
 
     {menu && <div className="planning-context-menu" style={{ left: menu.x, top: menu.y }} onClick={event => event.stopPropagation()}><button onClick={() => { removePlayer(menu.playerId); setMenu(null) }}>Remover do elenco</button></div>}
   </div>
@@ -356,20 +388,21 @@ export function PlanningPage() {
 
 function useCompactCapacity(grouped: boolean, optionCount: number) {
   const ref = useRef<HTMLDivElement | null>(null)
-  const [capacity, setCapacity] = useState(grouped ? 8 : 4)
+  const [capacity, setCapacity] = useState(grouped ? 10 : 5)
   useEffect(() => {
     const node = ref.current
     if (!node || typeof ResizeObserver === 'undefined') return
     const update = () => {
       const width = node.clientWidth
-      const minCard = 118
+      const cardWidth = Number.parseFloat(getComputedStyle(node).getPropertyValue('--planning-card-width')) || 184
       const gap = 6
+      const expandWidth = 44
       const rows = grouped ? 2 : 1
-      const withoutButton = Math.max(1, Math.floor((width + gap) / (minCard + gap)))
-      const rawCapacity = withoutButton * rows
-      const needsExpand = optionCount > rawCapacity
-      const withButton = Math.max(1, Math.floor((Math.max(0, width - 46) + gap) / (minCard + gap)))
-      setCapacity(Math.max(1, (needsExpand ? withButton : withoutButton) * rows))
+      const columns = Math.max(1, Math.floor((width + gap) / (cardWidth + gap)))
+      const rawCapacity = columns * rows
+      if (optionCount <= rawCapacity) { setCapacity(rawCapacity); return }
+      const lastRowColumns = Math.max(1, Math.floor((Math.max(0, width - expandWidth) + gap) / (cardWidth + gap)))
+      setCapacity(Math.max(1, columns * (rows - 1) + lastRowColumns))
     }
     update()
     const observer = new ResizeObserver(update)
@@ -379,8 +412,9 @@ function useCompactCapacity(grouped: boolean, optionCount: number) {
   return { ref, capacity }
 }
 
-function PlanningSetRow({ set, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, primaryLabel, activePlayer, draggingSetId, playerDropPreview, nextSetId, score, familiarity, toggle, focus, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, startSetDrag, stopSetDrag, previewSet, dropSet, open, context }: {
+function PlanningSetRow({ set, displayLabel, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, primaryLabel, activePlayer, draggingSetId, playerDropPreview, nextSetId, score, familiarity, toggle, focus, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, startSetDrag, stopSetDrag, previewSet, dropSet, open, context }: {
   set: PlanningSetLayout
+  displayLabel: string
   pairs: Pair[]
   assignedIds: string[]
   players: Player[]
@@ -427,7 +461,7 @@ function PlanningSetRow({ set, pairs, assignedIds, players, latest, expanded, fo
     return event.clientY < rect.top + rect.height / 2 ? set.id : nextSetId
   }
 
-  return <article className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${focused ? 'is-focused' : ''} ${draggingSetId === set.id ? 'is-line-dragging' : ''}`} onDragOver={event => {
+  return <article className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${focused ? 'is-focused' : ''} ${draggingSetId === set.id ? 'is-line-dragging' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`} onDragOver={event => {
     if (draggingSetId) { event.preventDefault(); previewSet(lineDropTarget(event)); return }
     if (activePlayer) { event.preventDefault(); previewPlayer(null) }
   }} onDrop={event => {
@@ -436,8 +470,8 @@ function PlanningSetRow({ set, pairs, assignedIds, players, latest, expanded, fo
     else if (activePlayer) dropPlayer(preview ?? null)
   }}>
     <div className="planning-set-meta" onClick={focus}>
-      <button className="planning-set-handle" draggable onClick={event => event.stopPropagation()} onDragStart={event => { event.stopPropagation(); startSetDrag(event) }} onDragEnd={stopSetDrag} title="Arrastar para reordenar" aria-label={`Reordenar ${set.label}`}>⠿</button>
-      <div className="planning-set-position"><span className="planning-position-label">{set.label}</span>{grouped && <b>{set.slotIds.length} POS.</b>}<small><i>IP:</i>{ipRoles.join('/') || '—'} <em>OOP:</em>{oopRoles.join('/') || '—'}</small>{members.length > 0 && <small className="planning-set-depth">{members.length} jogador{members.length === 1 ? '' : 'es'}{grouped ? ` · ${set.slotIds.length} posições` : ''}</small>}</div>
+      <button className="planning-set-handle" draggable onClick={event => event.stopPropagation()} onDragStart={event => { event.stopPropagation(); startSetDrag(event) }} onDragEnd={stopSetDrag} title="Arrastar para reordenar" aria-label={`Reordenar ${displayLabel}`}>⠿</button>
+      <div className="planning-set-position"><span className="planning-position-label">{displayLabel}</span>{grouped && <b>{set.slotIds.length} POS.</b>}<small><i>IP:</i>{ipRoles.join('/') || '—'} <em>OOP:</em>{oopRoles.join('/') || '—'}</small>{members.length > 0 && <small className="planning-set-depth">{members.length} jogador{members.length === 1 ? '' : 'es'}{grouped ? ` · ${set.slotIds.length} posições` : ''}</small>}</div>
     </div>
 
     <div ref={cardsRef} className={`planning-set-cards ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (activePlayer) { event.preventDefault(); event.stopPropagation(); previewPlayer(null); event.dataTransfer.dropEffect = 'move' } }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? null) }}>
@@ -469,9 +503,9 @@ function PlanningSetRow({ set, pairs, assignedIds, players, latest, expanded, fo
         </Fragment>
       })}
       {preview === null && activePlayer && <PlayerDropPlaceholder />}
-      {!options.length && <div className="planning-set-empty">Arraste jogadores aqui</div>}
+      {!options.length && <div className="planning-set-empty">{activePlayer ? 'SOLTE PARA ADICIONAR' : 'Arraste jogadores aqui'}</div>}
       {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggle() }}>+{hidden}</button>}
-      {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggle() }} title="Recolher" aria-label={`Recolher ${set.label}`}>−</button>}
+      {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggle() }} title="Recolher" aria-label={`Recolher ${displayLabel}`}>−</button>}
     </div>
   </article>
 }
@@ -500,13 +534,13 @@ function BoardPlayerCard({ player, snapshot, score, rank, coverage, source, fami
   const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, familiarityLabel ? `${familiarityLabel}: os dados disponíveis não indicam familiaridade suficiente nesta fase da tática.` : null].filter(Boolean).join('\n')
   return <article className={`planning-set-player-card ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onDragOver={event => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; preview(event) }} onDrop={event => { event.preventDefault(); event.stopPropagation(); drop(event) }} onContextMenu={context}>
     <button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
-    <ScoreBadge value={score} rank={rank} showTitle={false} />
-    <div className="planning-card-meta"><small>{snapshot.age ?? '—'} anos</small><span className="planning-card-badges">{coverage && <b className="coverage-badge">Cobertura</b>}{familiarityLabel && <b className="out-position-badge">{familiarityLabel}</b>}</span></div>
+    <span className="planning-score-wrap" title={coverage ? 'Nota nesta função — opção de cobertura' : 'Nota nesta função'}><ScoreBadge value={score} rank={rank} showTitle={false} /></span>
+    <div className="planning-card-meta"><small>{snapshot.age ?? '—'} anos</small><span className="planning-card-badges">{coverage && <b className="coverage-badge">Cobertura</b>}{familiarityLabel && <b className="out-position-badge">{familiarityLabel.includes('IP/OOP') ? 'Fora pos. IP/OOP' : familiarityLabel.includes('IP') ? 'Fora pos. IP' : familiarityLabel.includes('OOP') ? 'Fora pos. OOP' : 'Fora pos.'}</b>}</span></div>
   </article>
 }
 
-function RosterPlayerCard({ player, snapshot, score, rank, compatible, drag, dragEnd, open }: { player: Player; snapshot: Snapshot; score: number | null; rank: number | null; compatible: boolean; drag: (event: DragEvent<HTMLDivElement>) => void; dragEnd: () => void; open: () => void }) {
-  return <div className={`planning-player roster-player-card ${!compatible ? 'incompatible' : ''}`} draggable onDragStart={drag} onDragEnd={dragEnd}><PlayerPeek player={player} snapshot={snapshot} /><div className="roster-player-main"><button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{player.current_name}</button><span>{snapshot.positions.join(', ') || 'Sem posição informada'}</span><small>{snapshot.age ?? '—'} anos · {snapshot.height ? `${snapshot.height} cm` : 'Altura —'} · {footLabel(snapshot.preferred_foot)}</small></div><ScoreBadge value={score} rank={rank} /></div>
+function RosterPlayerCard({ player, snapshot, score, rank, compatible, contextual, drag, dragEnd, open }: { player: Player; snapshot: Snapshot; score: number | null; rank: number | null; compatible: boolean; contextual: boolean; drag: (event: DragEvent<HTMLDivElement>) => void; dragEnd: () => void; open: () => void }) {
+  return <div className={`planning-player roster-player-card ${!compatible ? 'incompatible' : ''}`} draggable onDragStart={drag} onDragEnd={dragEnd}><PlayerPeek player={player} snapshot={snapshot} /><div className="roster-player-main"><button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{player.current_name}</button><span>{snapshot.positions.join(', ') || 'Sem posição informada'}</span><small>{snapshot.age ?? '—'} anos · {snapshot.height ? `${snapshot.height} cm` : 'Altura —'} · {footLabel(snapshot.preferred_foot)}</small></div><span className="planning-score-wrap roster-score-wrap" title={contextual ? 'Nota nesta função' : 'Nota geral'}><ScoreBadge value={score} rank={rank} showTitle={false} /></span></div>
 }
 
 function TransferGroupPanel({ group, playerIds, players, latest, dragging, drop, startDrag, dragEnd, open, remove }: { group: Group; playerIds: string[]; players: Player[]; latest: (player: Player) => Snapshot | undefined; dragging: boolean; drop: () => void; startDrag: (id: string) => void; dragEnd: () => void; open: (id: string) => void; remove: (id: string) => void }) {
@@ -514,10 +548,18 @@ function TransferGroupPanel({ group, playerIds, players, latest, dragging, drop,
   return <section className={`transfer-group-panel planning-free-group ${dragging ? 'is-receiving' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); drop() }}><div className="transfer-group-summary"><span>Área livre de mercado</span><strong>{members.length} jogador{members.length === 1 ? '' : 'es'}</strong></div><div className="transfer-player-grid">{members.map(player => { const snapshot = latest(player); return snapshot ? <article className="transfer-player-card" draggable onDragStart={() => startDrag(player.id)} onDragEnd={dragEnd} key={player.id}><PlayerPeek player={player} snapshot={snapshot} /><div className="transfer-player-info"><button className="player-name" onClick={() => open(player.id)}>{player.current_name}</button><span>{snapshot.positions.join(', ') || 'Sem posição'}</span><small>{snapshot.age ?? '—'} anos · {snapshot.club ?? 'Sem clube'}</small></div><button className="transfer-remove" onClick={() => remove(player.id)} title={`Remover ${player.current_name} de ${group.name}`} aria-label={`Remover ${player.current_name} de ${group.name}`}>×</button></article> : null })}{!members.length && <div className="transfer-empty"><b>Arraste jogadores para {group.name.toLowerCase()}</b><span>Este grupo não utiliza posições ou funções da tática.</span></div>}</div>{dragging && <div className="transfer-drop-hint">Solte para adicionar a {group.name}</div>}</section>
 }
 
+function TacticDropdown({ tactics, selectedId, change }: { tactics: Tactic[]; selectedId: string; change: (id: string) => void }) {
+  const selected = tactics.find(tactic => tactic.id === selectedId)
+  return <details className="planning-custom-select tactic-custom-select"><summary aria-label="Tática selecionada"><span>{selected?.name ?? 'Selecione uma tática'}</span><b>⌄</b></summary><div className="planning-custom-select-menu"><button type="button" className={!selectedId ? 'is-selected' : ''} onClick={event => { change(''); event.currentTarget.closest('details')?.removeAttribute('open') }}>Selecione uma tática</button>{tactics.map(tactic => <button type="button" className={tactic.id === selectedId ? 'is-selected' : ''} onClick={event => { change(tactic.id); event.currentTarget.closest('details')?.removeAttribute('open') }} key={tactic.id}>{tactic.name}</button>)}</div></details>
+}
+
+function ManagerDropPlaceholder({ label }: { label: string }) { return <div className="manager-drop-placeholder" aria-hidden="true">{label}</div> }
+
 function PositionFilterDropdown({ pairs, selected, change }: { pairs: Pair[]; selected: string[]; change: (ids: string[]) => void }) {
   const label = !selected.length ? 'Todas as posições' : selected.length === 1 ? '1 posição selecionada' : `${selected.length} posições selecionadas`
-  return <details className="position-multi-filter"><summary>{label}<span>⌄</span></summary><div className="position-multi-menu"><header><b>Posições da tática</b>{selected.length > 0 && <button type="button" onClick={() => change([])}>Limpar</button>}</header>{pairs.map(pair => { const checked = selected.includes(pair.ip.playerId); return <label className={`planning-line-${planningLine(pair.ip.position)}`} key={pair.ip.playerId}><input type="checkbox" checked={checked} onChange={event => change(event.target.checked ? [...selected, pair.ip.playerId] : selected.filter(id => id !== pair.ip.playerId))} /><span><b>{pair.ip.position}</b> {pair.ip.roleCode}</span><i>→</i><span><b>{pair.oop.position}</b> {pair.oop.roleCode}</span></label> })}</div></details>
+  return <details className="position-multi-filter"><summary>{label}<span>⌄</span></summary><div className="position-multi-menu"><header><b>Posições da tática</b><div><button type="button" onClick={() => change(pairs.map(pair => pair.ip.playerId))}>Selecionar todas</button><button type="button" onClick={() => change([])} disabled={!selected.length}>Limpar seleção</button></div></header>{pairs.map(pair => { const checked = selected.includes(pair.ip.playerId); return <label className={`planning-line-${planningLine(pair.ip.position)}`} key={pair.ip.playerId}><input type="checkbox" checked={checked} onChange={event => change(event.target.checked ? [...selected, pair.ip.playerId] : selected.filter(id => id !== pair.ip.playerId))} /><span className="position-filter-phase"><b>{pair.ip.position}</b><small><i>IP:</i> {pair.ip.roleCode} <em>→</em> <i>OOP:</i> {pair.oop.roleCode}</small></span></label> })}</div></details>
 }
+
 
 function planningLine(position: string) { const value = position.toUpperCase().replaceAll(' ', ''); if (value.startsWith('GK')) return 'gk'; if (value.startsWith('ST')) return 'st'; if (value.startsWith('AM')) return 'am'; if (value.startsWith('M')) return 'm'; if (value.startsWith('DM') || value.startsWith('WB')) return 'dm'; return 'd' }
 const footLabel = (foot: string | null) => foot ? `Pé ${foot}` : 'Pé —'
