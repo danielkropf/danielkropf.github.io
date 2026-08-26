@@ -67,3 +67,76 @@
   margin-block:0;
   align-self:center;
 }
+
+
+/* v0.25.7 — selector triggers use the same contained visual language as the save/tactic selector */
+.dt-position-trigger{
+  box-sizing:border-box;
+  width:100%;
+  height:var(--dt-control-height);
+  min-height:var(--dt-control-height);
+  padding:0!important;
+  overflow:hidden;
+  justify-content:flex-start;
+  gap:0;
+  border:1px solid #36513f;
+  border-radius:var(--dt-control-radius);
+  background:#101d16;
+  color:#e8efe9;
+  box-shadow:none;
+}
+.dt-position-trigger:hover{
+  border-color:#6b8d76;
+  background:#14251b;
+}
+.dt-position-selector.is-open .dt-position-trigger{
+  border-color:#b9f35b;
+  border-radius:var(--dt-control-radius) var(--dt-control-radius) 0 0;
+  box-shadow:0 0 0 2px #b9f35b1c;
+}
+.dt-position-trigger>span{
+  flex:1 1 auto;
+  display:flex;
+  align-items:center;
+  min-width:0;
+  max-width:none;
+  height:100%;
+  padding:0 12px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#e8efe9;
+  font-size:.74rem;
+  font-weight:700;
+  text-align:left;
+}
+.dt-position-trigger>b{
+  position:relative;
+  flex:0 0 36px;
+  align-self:stretch;
+  display:block;
+  width:36px;
+  height:100%;
+  margin:0;
+  border-left:1px solid #2b4134;
+  background:#14251b;
+  color:transparent;
+  font-size:0;
+  line-height:0;
+}
+.dt-position-trigger>b::before{
+  content:'';
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:0;
+  height:0;
+  border-left:4px solid transparent;
+  border-right:4px solid transparent;
+  border-top:5px solid #b9f35b;
+  transform:translate(-50%,-50%);
+  transform-origin:50% 50%;
+}
+.dt-position-selector.is-open .dt-position-trigger>b::before{
+  transform:translate(-50%,-50%) rotate(180deg);
+}

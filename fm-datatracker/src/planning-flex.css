@@ -471,3 +471,81 @@
   .planning-score-wrap,.planning-score-wrap>.overall-score{width:44px;min-width:44px;max-width:44px}
   .planning-set-player-card{grid-template-columns:minmax(0,1fr) 44px}
 }
+
+
+/* v0.25.7 — exact vertical centering and contained toolbar navigation */
+.tactic-custom-select .dt-select-trigger>b{
+  position:relative;
+  display:block;
+  align-self:stretch;
+  height:100%;
+  line-height:0;
+}
+.tactic-custom-select .dt-select-trigger>b::before{
+  position:absolute;
+  left:50%;
+  top:50%;
+  margin:0;
+  transform:translate(-50%,-50%);
+  transform-origin:50% 50%;
+}
+.tactic-custom-select.is-open .dt-select-trigger>b::before{
+  transform:translate(-50%,-50%) rotate(180deg);
+}
+
+/* The squad selector is one contained control: arrows occupy the full internal height exactly. */
+.planning-group-selector{
+  box-sizing:border-box;
+  display:grid!important;
+  grid-template-columns:38px minmax(0,1fr) auto 38px;
+  align-items:stretch;
+  height:var(--planning-toolbar-control-height)!important;
+  min-height:var(--planning-toolbar-control-height)!important;
+  padding:0!important;
+  overflow:hidden;
+  border:1px solid #36513f;
+  border-radius:6px;
+  background:#101d16;
+}
+.planning-group-selector>button{
+  box-sizing:border-box;
+  display:grid;
+  place-items:center;
+  width:38px;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  margin:0;
+  padding:0!important;
+  border:0;
+  border-radius:0;
+  background:#14251b;
+  color:#b9f35b;
+  font-size:1rem;
+  font-weight:800;
+  line-height:1;
+  box-shadow:none;
+}
+.planning-group-selector>button:first-child{border-right:1px solid #2b4134}
+.planning-group-selector>button:last-child{border-left:1px solid #2b4134}
+.planning-group-selector>button:hover:not(:disabled){background:#1b3022;color:#d1ff86}
+.planning-group-selector>button:disabled{opacity:.35;background:#111d16;color:#6d8074}
+.planning-group-selector>strong,
+.planning-group-selector>span{
+  align-self:center;
+  margin:0;
+  padding-block:0;
+  line-height:1;
+}
+.planning-group-selector>strong{padding-left:10px}
+.planning-group-selector>span{padding:0 8px 0 5px}
+
+/* Position filter should never leak text outside its trigger on the planning sidebar. */
+.planning-page .roster-filters>.dt-position-selector{
+  min-width:0;
+  overflow:visible;
+}
+.planning-page .roster-filters .dt-position-trigger{
+  min-width:0;
+  max-width:100%;
+}
