@@ -4,7 +4,9 @@ import{ATTRIBUTE_CATALOG,DEFAULT_ATTRIBUTE_WEIGHTS,type AttributeCategory}from'.
 import{positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{roleDefaultWeights}from'../lib/roleWeights'
 import{useSaves}from'../features/saves/SaveContext'
-import{loadModelConfig,scheduleModelConfigPatch}from'../lib/model-config'
+import{SaveState}from'../components/SaveState'
+import{loadModelConfig,retryModelConfigPatch,scheduleModelConfigPatch}from'../lib/model-config'
+import{describeDbError}from'../lib/db-error'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Tactic={id:string;name:string;roles:Role[];[key:string]:unknown}
@@ -23,7 +25,10 @@ export function ModelLabPage(){
   const[position,setPosition]=useState('GK')
   const[roleCode,setRoleCode]=useState('GK')
   const[status,setStatus]=useState('Carregando…')
+  const[saveDetail,setSaveDetail]=useState('')
   const loaded=useRef(false)
+  function saveStatus(next:string,detail?:string){setStatus(next);setSaveDetail(detail??'')}
+  async function retrySave(){if(!selected)return;try{const result=await retryModelConfigPatch(selected.id,saveStatus);if(!result)scheduleModelConfigPatch(selected.id,'2.9.0',{general_weights:config.general_weights,role_weight_overrides:config.role_weight_overrides},saveStatus,undefined,0)}catch{/* shared layer updates status */}}
 
   const roleOptions=rolesFor(position,phase)
   const selectedRole=roleOptions.find(([code])=>code===roleCode)??roleOptions[0]
@@ -39,12 +44,12 @@ export function ModelLabPage(){
   useEffect(()=>{
     loaded.current=false
     if(!supabase||!selected)return
-    setStatus('Carregando…')
+    saveStatus('Carregando…')
     void loadModelConfig(selected.id).then(data=>{
       const c=data as Partial<Config>
       setConfig({...fresh(),...c,general_weights:{...generalDefaults(),...(c.general_weights??{})},role_weight_overrides:c.role_weight_overrides??{}})
-      loaded.current=true;setStatus('Salvo automaticamente')
-    }).catch(error=>setStatus(`Erro ao carregar: ${error instanceof Error?error.message:'falha ao carregar'}`))
+      loaded.current=true;saveStatus('✓ Salvo')
+    }).catch(error=>saveStatus('⚠ Não foi possível carregar',describeDbError(error).full))
   },[selected?.id])
 
   useEffect(()=>{
@@ -52,7 +57,7 @@ export function ModelLabPage(){
     scheduleModelConfigPatch(selected.id,'2.9.0',{
       general_weights:config.general_weights,
       role_weight_overrides:config.role_weight_overrides,
-    },setStatus)
+    },saveStatus)
   },[config.general_weights,config.role_weight_overrides,selected?.id])
 
   function changeWeight(key:string,value:number){
@@ -68,7 +73,7 @@ export function ModelLabPage(){
   }
 
   return <div className="screen-page scoring-page">
-    <div className="title-row"><div><h1>Pontuação & Funções</h1></div><span className="save-state">{status}</span></div>
+    <div className="title-row"><div><h1>Pontuação & Funções</h1></div><SaveState status={status} detail={saveDetail} onRetry={status.startsWith('⚠')?()=>void retrySave():undefined}/></div>
     <section className="card scoring-toolbar">
       <div className="scoring-mode"><button className={mode==='general'?'active':''} onClick={()=>setMode('general')}>Pontuação geral</button><button className={mode==='role'?'active':''} onClick={()=>setMode('role')}>Por função</button></div>
       {mode==='role'&&<><div className="phase-compact"><button className={phase==='IP'?'active':''} onClick={()=>setPhase('IP')}>IP</button><button className={phase==='OOP'?'active':''} onClick={()=>setPhase('OOP')}>OOP</button></div><label>Posição<select value={position} onChange={e=>setPosition(e.target.value)}>{positions.map(([value,label])=><option value={value} key={value}>{label} · {value}</option>)}</select></label><label>Função<select value={selectedRole[0]} onChange={e=>setRoleCode(e.target.value)}>{roleOptions.map(([code,name])=><option value={code} key={code}>{code} · {name}</option>)}</select></label></>}

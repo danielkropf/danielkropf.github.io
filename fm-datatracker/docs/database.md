@@ -10,9 +10,46 @@ Execute migrations apenas em ordem crescente de nome:
 2. `202608150002_import_rpc.sql` — contratos e RPC transacional `import_fm_export`.
 3. `202608230001_fm_reader_samples.sql` — bucket privado `fm-reader-samples` e tabela de consentimento para amostras do leitor `.fm`.
 4. `202608230003_oracle_roster_import.sql` — revisão local/legada criada durante a investigação do Oracle.
-5. `202608250001_import_integrity.sql` — contrato público atual: identidade segura, atualização do elenco ativo, persistência das estatísticas `.fm`, campos normalizados e patch atômico do `Model Lab`.
+5. `202608250001_import_integrity.sql` — contrato público de identidade segura, atualização do elenco ativo, persistência das estatísticas `.fm`, campos normalizados, exclusão de imports e patch atômico do Model Lab.
+6. `202608260001_model_config_compatibility.sql` — restaura explicitamente `patch_scoring_model_config`, adiciona o marcador consultável de versão do schema e solicita recarga do PostgREST.
 
 Uma migration aplicada é histórico imutável. Para corrigir schema, índice, RLS ou RPC, crie uma migration nova e compatível; não edite uma já executada em outro ambiente.
+
+## Deploy do site não aplica migrations
+
+O workflow de GitHub Pages instala dependências, testa, compila e publica os arquivos estáticos. Ele **não executa migrations no Supabase**.
+
+Consequência: um frontend novo pode chegar ao GitHub Pages antes da função/RPC correspondente existir no banco online. Esse cenário foi identificado durante o diagnóstico da persistência de Táticas: a interface conseguia manter a tática em memória, mas a gravação falhava e o dado desaparecia após reload quando `patch_scoring_model_config` não estava disponível no schema exposto pelo PostgREST.
+
+A partir da v0.25.0:
+
+- o banco possui um marcador `datatracker_schema_info()` quando a migration desta versão é aplicada;
+- o cliente consulta esse marcador e consegue diagnosticar schema desatualizado ou ainda não versionado;
+- `model-config.ts` continua preferindo a RPC transacional `patch_scoring_model_config`;
+- somente quando a RPC está comprovadamente ausente do schema/cache, o cliente usa fallback direto em `scoring_models`, ainda protegido por RLS e serializado no navegador;
+- erros de permissão, validação ou outras falhas reais **não** acionam o fallback silenciosamente;
+- o fallback mantém o produto utilizável, mas não substitui a obrigação de aplicar as migrations no Supabase.
+
+Ao publicar uma versão que dependa de migration nova, aplicar a migration no ambiente alvo antes ou imediatamente junto do deploy e confirmar o marcador de schema.
+
+Consulta de verificação:
+
+```sql
+select public.datatracker_schema_info();
+```
+
+Para verificar especificamente a RPC do Model Lab:
+
+```sql
+select
+  n.nspname as schema_name,
+  p.proname as function_name,
+  pg_get_function_identity_arguments(p.oid) as arguments
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname = 'patch_scoring_model_config';
+```
 
 ## Modelo lógico
 
@@ -57,7 +94,15 @@ Depois de confirmar, invalidar o cache do save no cliente (`invalidateSaveData`)
 
 Táticas, Planejamento e Pontuação usam o mesmo registro de `scoring_models`, mas não podem salvar uma cópia inteira desatualizada desse JSON. A RPC `patch_scoring_model_config` serializa a gravação e faz merge apenas das chaves enviadas pela tela: Táticas atualiza `tactics/selected_tactic_id`, Planejamento atualiza `planning` e Pontuação atualiza `general_weights/role_weight_overrides`.
 
-Se ocorrer `Falha na persistência`, preservar o texto detalhado retornado pela RPC/cliente antes de tentar um workaround. Não transformar uma falha transacional em import parcialmente concluído.
+No cliente, todas as gravações do mesmo save/model também entram em uma fila única. Alterações de alta frequência continuam debounced, enquanto ações estruturais podem salvar imediatamente sem correr contra uma gravação anterior.
+
+Quando uma gravação falha, o patch que não foi persistido é preservado em memória para permitir **Tentar novamente**. O status visual padronizado é:
+
+- `Salvando…`
+- `✓ Salvo`
+- `⚠ Não foi possível salvar — Tentar novamente`
+
+Erros do Supabase/PostgREST não são necessariamente instâncias de `Error`. Use o normalizador comum de banco para preservar `message`, `code`, `details` e `hint`; o texto completo deve continuar disponível para diagnóstico.
 
 ## RLS e segurança
 
@@ -73,13 +118,15 @@ O bucket de amostras `.fm` é privado e exige consentimento explícito. A opçã
 
 ## Dados do leitor `.fm`
 
-Quando há `.fm`, o import mantém dados complementares em `raw_data`/`normalized_data`, inclusive candidatos de CA/PA, atributos ocultos e habilidades por posição. CA/PA não têm coluna de scoring e continuam apenas candidatos até que o mapeamento seja validado contra âncoras. Nunca migrar esses campos para lógica de nota sem uma decisão explícita e validação de runtime.
+Quando há `.fm`, o import mantém dados complementares em `raw_data`/`normalized_data`, inclusive candidatos de CA/PA, atributos ocultos, habilidades por posição e dados contratuais confirmados pelo leitor. CA/PA não têm coluna de scoring e continuam apenas candidatos até que o mapeamento seja validado contra âncoras. Nunca migrar esses campos para lógica de nota sem uma decisão explícita e validação de runtime.
 
 ## Procedimento seguro para mudanças
 
 1. Ler `docs/HANDOFF.md` e o código/RPC relacionado.
 2. Criar nova migration, se houver mudança de banco.
-3. Aplicar primeiro em ambiente de teste.
-4. Testar CSV, `.fm` e CSV + `.fm`; conferir duplicate hash, histórico e exclusão.
-5. Rodar `npm run typecheck`, `npm test` e `npm run build`.
-6. Documentar a migration e a regra de compatibilidade no handoff/changelog da versão.
+3. Atualizar a documentação assim que uma descoberta técnica for confirmada.
+4. Aplicar a migration em ambiente de teste e confirmar `datatracker_schema_info()` quando aplicável.
+5. Testar CSV, `.fm` e CSV + `.fm`; conferir duplicate hash, histórico e exclusão.
+6. Para Model Lab, testar criação/edição de tática, reload, navegação imediata para Planejamento e tentativa de salvar com RPC ausente.
+7. Rodar `npm run typecheck`, `npm test` e `npm run build`.
+8. Documentar a migration e a regra de compatibilidade no handoff/changelog da versão.

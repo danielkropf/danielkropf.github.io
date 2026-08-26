@@ -73,14 +73,15 @@ export function renamePlanningSet(planning: FlexiblePlanning, tacticId: string, 
   return withLayouts(planning, tacticId, groupId, next)
 }
 
-export function reorderPlanningSets(planning: FlexiblePlanning, tacticId: string, groupId: string, sets: PlanningSetLayout[], draggedId: string, beforeId: string): FlexiblePlanning {
+export function reorderPlanningSets(planning: FlexiblePlanning, tacticId: string, groupId: string, sets: PlanningSetLayout[], draggedId: string, beforeId: string | null): FlexiblePlanning {
   if (draggedId === beforeId) return planning
   const dragged = sets.find(set => set.id === draggedId)
-  const target = sets.findIndex(set => set.id === beforeId)
-  if (!dragged || target < 0) return planning
+  if (!dragged) return planning
   const rest = sets.filter(set => set.id !== draggedId)
-  const insertion = rest.findIndex(set => set.id === beforeId)
-  rest.splice(insertion < 0 ? rest.length : insertion, 0, dragged)
+  const insertion = beforeId === null ? rest.length : rest.findIndex(set => set.id === beforeId)
+  if (beforeId !== null && insertion < 0) return planning
+  rest.splice(insertion, 0, dragged)
+  if (rest.every((set, index) => set.id === sets[index]?.id)) return planning
   return withLayouts(planning, tacticId, groupId, rest)
 }
 
