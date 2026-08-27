@@ -123,34 +123,54 @@ export function validateExperimentalProjectionReference(value: unknown): Project
   }
 }
 
-async function fetchJson(path: string) {
-  const response = await fetch(`${import.meta.env.BASE_URL}${path}`, { cache: 'no-store' })
-  if (!response.ok) return null
-  return response.json() as Promise<unknown>
+type JsonCandidate =
+  | { status: 'ok'; value: unknown }
+  | { status: 'missing'; value: null }
+  | { status: 'invalid'; value: null }
+
+async function fetchJson(path: string): Promise<JsonCandidate> {
+  try {
+    const response = await fetch(`${import.meta.env.BASE_URL}${path}`, { cache: 'no-store', headers: { Accept: 'application/json' } })
+    if (!response.ok) return { status: 'missing', value: null }
+    const text = await response.text()
+    try {
+      return { status: 'ok', value: JSON.parse(text) as unknown }
+    } catch {
+      return { status: 'invalid', value: null }
+    }
+  } catch {
+    return { status: 'missing', value: null }
+  }
 }
 
 let cached: Promise<ProjectionReferenceState> | null = null
 export function loadProjectionReference(): Promise<ProjectionReferenceState> {
   if (cached) return cached
   cached = (async () => {
-    try {
-      const calibratedRaw = await fetchJson('reference/projection.fm26-v1.json')
-      if (calibratedRaw) {
-        const calibrated = validateProjectionReference(calibratedRaw)
-        if (calibrated) return { status: 'ready', reference: calibrated, detail: `Referência ${calibrated.referenceVersion} carregada.` } as const
-      }
-      const alphaRaw = await fetchJson('reference/projection.fm26-alpha1.json')
-      if (alphaRaw) {
-        const alpha = validateExperimentalProjectionReference(alphaRaw)
-        if (alpha) return { status: 'experimental', reference: alpha, detail: `Projeção experimental — referência alpha1 (${alpha.experimental?.observedRows ?? 0} observações parciais). Não validada para precisão.` } as const
-        return { status: 'invalid', reference: null, detail: 'Projeções indisponíveis: a referência experimental alpha1 é inválida.' } as const
-      }
-      return calibratedRaw
-        ? { status: 'invalid', reference: null, detail: 'Projeções indisponíveis: a referência FM26 não está calibrada ou não corresponde ao Projection Model v1.0.' } as const
-        : { status: 'missing', reference: null, detail: 'Projeções indisponíveis: referência de desenvolvimento não carregada.' } as const
-    } catch {
-      return { status: 'missing', reference: null, detail: 'Projeções indisponíveis: referência de desenvolvimento não carregada.' } as const
+    const calibratedCandidate = await fetchJson('reference/projection.fm26-v1.json')
+    let calibratedInvalid = calibratedCandidate.status === 'invalid'
+    if (calibratedCandidate.status === 'ok') {
+      const calibrated = validateProjectionReference(calibratedCandidate.value)
+      if (calibrated) return { status: 'ready', reference: calibrated, detail: `Referência ${calibrated.referenceVersion} carregada.` } as const
+      calibratedInvalid = true
     }
+
+    // A futura referência calibrada não pode bloquear a alpha. GitHub Pages pode
+    // responder HTML de fallback para um asset ausente; tratamos cada candidato
+    // de forma independente e seguimos normalmente para a referência seguinte.
+    const alphaCandidate = await fetchJson('reference/projection.fm26-alpha1.json')
+    if (alphaCandidate.status === 'ok') {
+      const alpha = validateExperimentalProjectionReference(alphaCandidate.value)
+      if (alpha) return { status: 'experimental', reference: alpha, detail: `Projeção experimental — referência alpha1 (${alpha.experimental?.observedRows ?? 0} observações parciais). Não validada para precisão.` } as const
+      return { status: 'invalid', reference: null, detail: 'Projeções indisponíveis: a referência experimental alpha1 é inválida.' } as const
+    }
+    if (alphaCandidate.status === 'invalid') {
+      return { status: 'invalid', reference: null, detail: 'Projeções indisponíveis: a referência experimental alpha1 não retornou JSON válido.' } as const
+    }
+    if (calibratedInvalid) {
+      return { status: 'invalid', reference: null, detail: 'Projeções indisponíveis: a referência FM26 definitiva é inválida e a alpha1 não foi encontrada.' } as const
+    }
+    return { status: 'missing', reference: null, detail: 'Projeções indisponíveis: referência de desenvolvimento não carregada.' } as const
   })()
   return cached
 }

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
-import { loadProjectionReference, type ProjectionReference, type ProjectionReferenceState } from '../../lib/projection-reference'
+import { loadProjectionReference, resetProjectionReferenceCache, type ProjectionReference, type ProjectionReferenceState } from '../../lib/projection-reference'
 
 type PotentialContextValue = {
   showPotential: boolean
@@ -32,7 +32,24 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [])
 
-  useEffect(() => { let active = true; void loadProjectionReference().then(state => { if (active) setReferenceState(state) }); return () => { active = false } }, [])
+  useEffect(() => {
+    let active = true
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let attempt = 0
+    const load = () => {
+      if (attempt > 0) resetProjectionReferenceCache()
+      void loadProjectionReference().then(state => {
+        if (!active) return
+        setReferenceState(state)
+        if ((state.status === 'missing' || state.status === 'invalid') && attempt < 2) {
+          attempt += 1
+          retryTimer = setTimeout(load, 1200 * attempt)
+        }
+      })
+    }
+    load()
+    return () => { active = false; if (retryTimer) clearTimeout(retryTimer) }
+  }, [])
 
   const available = referenceState.status === 'ready' || referenceState.status === 'experimental'
   const experimental = referenceState.status === 'experimental'
