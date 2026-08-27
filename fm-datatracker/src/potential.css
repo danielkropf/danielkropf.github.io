@@ -25,3 +25,72 @@
 @media(max-width:700px){.planning-score-wrap .score-current .overall-score{width:46px;min-width:46px;max-width:46px}}
 @media(max-width:520px){.planning-score-wrap .score-current .overall-score{width:44px;min-width:44px;max-width:44px}}
 aside .potential-toggle+nav{margin-top:1.25rem}
+
+/* v0.26.3 — Planning roster scores stay inside their own budget and projections
+   use the same horizontal language as the board cards. */
+.roster-score-wrap{
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:58px;
+  min-width:58px;
+  max-width:58px;
+  overflow:hidden;
+}
+.roster-score-wrap>.score-with-projection{
+  max-width:100%;
+  justify-content:center;
+}
+.roster-score-wrap .score-current,
+.roster-score-wrap .score-current .overall-score{
+  box-sizing:border-box;
+  width:52px;
+  min-width:52px;
+  max-width:52px;
+  height:28px;
+  min-height:28px;
+}
+.roster-score-wrap:has(.score-projected){
+  width:124px;
+  min-width:124px;
+  max-width:124px;
+  overflow:visible;
+}
+.roster-score-wrap:has(.score-projected)>.score-with-projection{
+  width:124px;
+  max-width:124px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:2px;
+  white-space:nowrap;
+}
+.roster-score-wrap:has(.score-projected) .score-current,
+.roster-score-wrap:has(.score-projected) .score-current .overall-score,
+.roster-score-wrap:has(.score-projected) .projected-score-badge{
+  width:50px;
+  min-width:50px;
+  max-width:50px;
+  height:28px;
+  min-height:28px;
+}
+.roster-score-wrap:has(.score-projected) .score-projected{
+  flex:0 0 auto;
+  min-width:0;
+  padding:1px 2px;
+}
+.roster-score-wrap:has(.score-projected) .score-projection-arrow{
+  font-size:.62rem;
+}
+.roster-score-wrap:has(.score-projected) .score-projection-separator{
+  flex:0 0 auto;
+  line-height:1;
+}
+@media(max-width:1180px){
+  .roster-score-wrap:has(.score-projected){width:116px;min-width:116px;max-width:116px}
+  .roster-score-wrap:has(.score-projected)>.score-with-projection{width:116px;max-width:116px}
+  .roster-score-wrap:has(.score-projected) .score-current,
+  .roster-score-wrap:has(.score-projected) .score-current .overall-score,
+  .roster-score-wrap:has(.score-projected) .projected-score-badge{width:46px;min-width:46px;max-width:46px}
+}

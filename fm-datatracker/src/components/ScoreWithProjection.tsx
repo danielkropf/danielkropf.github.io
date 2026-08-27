@@ -5,12 +5,14 @@ import { useSaves } from '../features/saves/SaveContext'
 import { projectScore, type ProjectionResult } from '../lib/projection-engine'
 import { projectionInputForSnapshot, type ProjectionSnapshot } from '../lib/projection-player'
 import { projectionRecordFromResult, scheduleProjectionPersistence } from '../lib/projection-storage'
+import { percentile } from '../lib/reference'
 import type { ProjectionScoreType } from '../lib/projection-reference'
 
 type Props = {
   playerId?: string
   currentScore: number | null
   currentRank?: number | null
+  rankPopulation?: number[]
   snapshot: ProjectionSnapshot | null | undefined
   scoreType?: ProjectionScoreType
   scoreKey?: string
@@ -35,6 +37,7 @@ export function ScoreWithProjection({
   playerId,
   currentScore,
   currentRank = null,
+  rankPopulation = [],
   snapshot,
   scoreType = 'general',
   scoreKey,
@@ -53,6 +56,10 @@ export function ScoreWithProjection({
     if (!projection || !input || !selected?.id || !playerId || !snapshot?.id || potential.experimental) return
     scheduleProjectionPersistence(projectionRecordFromResult({ saveId: selected.id, playerId, snapshotId: snapshot.id, scoreType, scoreKey: input.scoreKey, currentScore, result: projection }))
   }, [projection?.status, projection?.projectedScore, projection?.trajectoryQuantile, projection?.referenceVersion, input?.scoreKey, selected?.id, playerId, snapshot?.id, scoreType, currentScore, potential.experimental])
+  const projectedRank = projection?.status === 'ok'
+    ? (rankPopulation.length ? percentile(projection.projectedScore!, rankPopulation) : currentRank)
+    : null
+
   const projectionTooltip = projection?.status === 'ok'
     ? potential.experimental
       ? (scoreType === 'general'
@@ -67,7 +74,7 @@ export function ScoreWithProjection({
       <span className="score-projection-separator" aria-hidden="true">›</span>
       <span className={`score-projected ${projection?.status === 'ok' ? 'is-available' : 'is-unavailable'} ${potential.experimental ? 'is-experimental' : ''}`} title={projectionTooltip}>
         <span className="score-projection-arrow" aria-hidden="true">↗</span>
-        {projection?.status === 'ok' ? <ScoreBadge value={projection.projectedScore} rank={null} className="score-badge-compact projected-score-badge" showTitle={false} /> : <span className="projected-score-empty">—</span>}
+        {projection?.status === 'ok' ? <ScoreBadge value={projection.projectedScore} rank={projectedRank} className="score-badge-compact projected-score-badge" showTitle={false} /> : <span className="projected-score-empty">—</span>}
       </span>
     </>}
   </span>
