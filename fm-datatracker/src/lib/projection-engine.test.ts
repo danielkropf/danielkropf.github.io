@@ -1,110 +1,103 @@
 import { describe, expect, it } from 'vitest'
-import { contextualCpPercentile, exactAgeYears, mentalDevelopmentIndex, projectScore, Q_HIGH, Q_LOW, saturatedTrait, weightedQuantile } from './projection-engine'
-import type { ProjectionReference } from './projection-reference'
+import {
+  MDI_NEUTRAL,
+  Q_HIGH,
+  Q_LOW,
+  developmentPace,
+  historyShift,
+  mentalDevelopmentIndex,
+  personalityShift,
+  projectScore,
+  weightedQuantile,
+} from './projection-engine'
+import type { ProjectionFamily, ProjectionReference } from './projection-reference'
+import { PROJECTION_MODEL_VERSION, PROJECTION_REFERENCE_ID, PROJECTION_REFERENCE_VERSION, PROJECTION_SOURCE_SHA256, PROJECTION_STATUS } from './projection-reference'
 
-function reference(): ProjectionReference {
-  const observations = Array.from({ length: 300 }, (_, index) => ({ age: 18 + (index % 20) / 20, score: 11 + (index % 40) / 20, cp: 100 + index % 101 }))
-  const growth = Array.from({ length: 8 }, (_, offset) => ({ scoreType: 'general' as const, scoreKey: 'OUTFIELD', ageStart: 18 + offset, deltas: Array.from({ length: 300 }, (_, index) => 0.05 + (index % 100) / 100) }))
-  return { referenceVersion: 'fm26-v1', projectionModelVersion: '1.0', mode: 'calibrated', calibrated: true, sample: { uniquePlayers: 10000, transitions: 50000 }, cohorts: [{ scoreType: 'general', scoreKey: 'OUTFIELD', observations }], growth }
-}
-
-describe('Projection Model v1.0', () => {
-  it('calcula idade exata usando 365.2425 dias', () => {
-    const age = exactAgeYears('2008-01-01', '2026-10-01')
-    expect(age).not.toBeNull()
-    expect(age!).toBeGreaterThan(18.7)
-    expect(age!).toBeLessThan(18.8)
-  })
-
-  it('satura Ambition/Determination após 10', () => {
-    expect(saturatedTrait(1)).toBeCloseTo(0)
-    expect(saturatedTrait(10)).toBeCloseTo(0.75)
-    expect(saturatedTrait(20)).toBeCloseTo(1)
-    expect(saturatedTrait(15) - saturatedTrait(10)).toBeLessThan(saturatedTrait(10) - saturatedTrait(5))
-  })
-
-  it('mantém MDI entre zero e um', () => {
-    expect(mentalDevelopmentIndex(1, 1, 1)).toBeGreaterThanOrEqual(0)
-    expect(mentalDevelopmentIndex(20, 20, 20)).toBeLessThanOrEqual(1)
-  })
-
-  it('mantém percentil contextual entre zero e um', () => {
-    const result = contextualCpPercentile(reference().cohorts[0].observations, 18.6, 12.1, 165)
-    expect(result).not.toBeNull()
-    expect(result!.percentile).toBeGreaterThanOrEqual(0)
-    expect(result!.percentile).toBeLessThanOrEqual(1)
-    expect(result!.effectiveSample).toBeGreaterThan(0)
-  })
-
-  it('calcula quantil ponderado', () => {
-    expect(weightedQuantile([1, 2, 3, 4], 0.5)).toBe(2)
-    expect(weightedQuantile([1, 2, 3, 4], Q_LOW)).toBe(1)
-    expect(weightedQuantile([1, 2, 3, 4], Q_HIGH)).toBe(4)
-  })
-
-  it('nunca projeta abaixo da nota atual nem acima de 20', () => {
-    const result = projectScore({ currentScore: 14, cp: 170, birthDate: '2008-01-01', snapshotDate: '2026-10-01', professionalism: 18, ambition: 15, determination: 14, scoreType: 'general', scoreKey: 'OUTFIELD', reference: reference() })
-    expect(result.status).toBe('ok')
-    expect(result.projectedScore!).toBeGreaterThanOrEqual(14)
-    expect(result.projectedScore!).toBeLessThanOrEqual(20)
-    expect(result.trajectoryQuantile!).toBeGreaterThanOrEqual(Q_LOW)
-    expect(result.trajectoryQuantile!).toBeLessThanOrEqual(Q_HIGH)
-  })
-
-  it('reduz o primeiro intervalo pela idade fracionária', () => {
-    const base = reference()
-    const early = projectScore({ currentScore: 12, cp: 150, birthDate: '2008-01-01', snapshotDate: '2026-01-02', professionalism: 10, ambition: 10, determination: 10, scoreType: 'general', scoreKey: 'OUTFIELD', reference: base })
-    const late = projectScore({ currentScore: 12, cp: 150, birthDate: '2008-01-01', snapshotDate: '2026-10-01', professionalism: 10, ambition: 10, determination: 10, scoreType: 'general', scoreKey: 'OUTFIELD', reference: base })
-    expect(early.status).toBe('ok')
-    expect(late.status).toBe('ok')
-    expect(early.projectedScore!).toBeGreaterThanOrEqual(late.projectedScore!)
-  })
-
-  it('não inventa futuro quando o pico já foi atingido', () => {
-    const result = projectScore({ currentScore: 15, cp: 170, birthDate: '1998-01-01', snapshotDate: '2026-08-26', scoreType: 'general', scoreKey: 'OUTFIELD', reference: reference() })
-    expect(result.status).toBe('peak_reached')
-    expect(result.projectedScore).toBeNull()
-  })
-
-  it('falha fechado quando CP ou referência faltam', () => {
-    expect(projectScore({ currentScore: 12, cp: null, birthDate: '2008-01-01', snapshotDate: '2026-08-26', scoreType: 'general', scoreKey: 'OUTFIELD', reference: reference() }).status).toBe('missing_cp')
-    expect(projectScore({ currentScore: 12, cp: 160, birthDate: '2008-01-01', snapshotDate: '2026-08-26', scoreType: 'general', scoreKey: 'OUTFIELD', reference: null }).status).toBe('missing_reference')
-  })
-
-  it('é determinístico para a mesma entrada e versão', () => {
-    const input = { currentScore: 13.2, cp: 155, birthDate: '2008-03-10', snapshotDate: '2026-08-26', professionalism: 14, ambition: 12, determination: 16, scoreType: 'general' as const, scoreKey: 'OUTFIELD', reference: reference() }
-    expect(projectScore(input)).toEqual(projectScore(input))
-  })
-})
-
-
-function alphaReference(): ProjectionReference {
-  const curvesByIntegerAge = Object.fromEntries(Array.from({ length: 14 }, (_, index) => {
-    const age = 14 + index
-    return [age, { anchors: [0.167, 0.25, 0.5, 0.75, 0.833], values: [-0.1, 0, 0.2, 0.5, 0.65].map(value => value * Math.max(0.1, (28 - age) / 12)) }]
+function reference(family: ProjectionFamily = 'M', gain = 1): ProjectionReference {
+  const observations = Array.from({ length: 260 }, (_, index) => ({
+    age: 18 + (index % 8) * 0.1,
+    score: 12 + (index % 5) * 0.03,
+    headroom: index % 30,
+    intrinsicPeakGain: gain + (index % 4) * 0.05,
+    family,
+    saveUniverseId: 'bayern' as const,
   }))
   return {
-    referenceVersion: 'alpha1', projectionModelVersion: '1.0', mode: 'experimental-alpha1', calibrated: false, cohorts: [], growth: [],
-    peakAges: { 'general:OUTFIELD': 26, 'general:GK': 28 },
-    experimental: { sourceId: 'projection_reference_fm26_alpha1', cpAdapter: 'absolute_scale_standin', functionProjectionMode: 'reuse_generic_delta_for_ui_test_only', curvesByIntegerAge, persistResults: false, observedRows: 57 },
+    id: PROJECTION_REFERENCE_ID,
+    referenceVersion: PROJECTION_REFERENCE_VERSION,
+    projectionModelVersion: PROJECTION_MODEL_VERSION,
+    projectionStatus: PROJECTION_STATUS,
+    mode: 'provisional-longitudinal',
+    calibrated: false,
+    sourceSha256: PROJECTION_SOURCE_SHA256,
+    sample: { observations: observations.length, futureLinks: 0, byUniverse: { bayern: observations.length, numancia: 0 }, byFamily: { GK: 0, D: 0, WB: 0, DM: 0, M: family === 'M' ? observations.length : 0, AM: 0, ST: 0 } },
+    observations,
   }
 }
 
-describe('Projection Model alpha1 experimental', () => {
-  it('usa o CP apenas como adaptador absoluto temporário e não o rotula como percentil contextual', () => {
-    const low = projectScore({ currentScore: 12, cp: 80, birthDate: '2008-01-01', snapshotDate: '2026-08-26', professionalism: 10, ambition: 10, determination: 10, scoreType: 'general', scoreKey: 'OUTFIELD', reference: alphaReference() })
-    const high = projectScore({ currentScore: 12, cp: 180, birthDate: '2008-01-01', snapshotDate: '2026-08-26', professionalism: 10, ambition: 10, determination: 10, scoreType: 'general', scoreKey: 'OUTFIELD', reference: alphaReference() })
-    expect(low.status).toBe('ok')
-    expect(high.status).toBe('ok')
-    expect(low.cpPercentile).toBeNull()
-    expect(high.cpPercentile).toBeNull()
-    expect(high.projectedScore!).toBeGreaterThanOrEqual(low.projectedScore!)
+const baseInput = {
+  currentScore: 12,
+  birthDate: '2007-07-01',
+  snapshotDate: '2026-07-01',
+  ca: 120,
+  pa: 150,
+  professionalism: 12,
+  ambition: 12,
+  determination: 12,
+  personalitySource: 'exact' as const,
+  scoreType: 'general' as const,
+  scoreKey: 'CM',
+  family: 'M' as const,
+  eligible: true,
+}
+
+describe('Projection v2.1 longitudinal', () => {
+  it('projects directly from observed IntrinsicPeakGain and never below current score', () => {
+    const result = projectScore({ ...baseInput, reference: reference('M', 0.8) })
+    expect(result.status).toBe('ok')
+    expect(result.projectedScore).toBeGreaterThanOrEqual(12)
+    expect(result.expectedIntrinsicPeakGain).toBeGreaterThan(0)
+    expect(result.peakAge).toBeNull()
+    expect(result.historyShift).toBe(0)
   })
 
-  it('reutiliza a curva genérica para uma nota funcional apenas no modo experimental', () => {
-    const result = projectScore({ currentScore: 13.4, cp: 160, birthDate: '2008-01-01', snapshotDate: '2026-08-26', professionalism: 14, ambition: 12, determination: 13, scoreType: 'function', scoreKey: 'IP:D(C):CD', reference: alphaReference() })
+  it('does not force zero growth when CA equals PA / headroom is zero', () => {
+    const result = projectScore({ ...baseInput, ca: 140, pa: 140, reference: reference('M', 0.6) })
     expect(result.status).toBe('ok')
-    expect(result.referenceMode).toBe('experimental-alpha1')
-    expect(result.projectedScore!).toBeGreaterThanOrEqual(13.4)
+    expect(result.headroom).toBe(0)
+    expect(result.projectedScore).toBeGreaterThan(12)
+  })
+
+  it('has no hard peak-age cutoff', () => {
+    const result = projectScore({ ...baseInput, birthDate: '1990-07-01', reference: reference('M', 0.5) })
+    expect(result.status).toBe('ok')
+    expect(result.exactAge).toBeGreaterThan(35)
+    expect(result.projectedScore).toBeGreaterThan(12)
+  })
+
+  it('keeps function projections unavailable instead of reusing a generic delta', () => {
+    const result = projectScore({ ...baseInput, scoreType: 'function', scoreKey: 'IP:MC:CM', reference: reference('M', 0.5) })
+    expect(result.status).toBe('unsupported_score_type')
+    expect(result.projectedScore).toBeNull()
+  })
+
+  it('uses personality only as a bounded quantile shift', () => {
+    const mdi = mentalDevelopmentIndex(20, 20, 20)
+    expect(mdi).toBeGreaterThan(MDI_NEUTRAL)
+    expect(personalityShift(mdi)).toBeLessThanOrEqual(0.15)
+    expect(personalityShift(mdi)).toBeGreaterThan(0)
+    expect(historyShift(1)).toBe(0)
+  })
+
+  it('keeps weighted quantiles inside the approved q range', () => {
+    expect(weightedQuantile([0, 1, 2], Q_LOW, [1, 1, 1])).toBe(0)
+    expect(weightedQuantile([0, 1, 2], Q_HIGH, [1, 1, 1])).toBe(2)
+  })
+
+  it('keeps DevelopmentPace separate and requires at least 90 days', () => {
+    expect(developmentPace({ days: 89, currentCa: 110, previousCa: 100 })).toBeNull()
+    const pace = developmentPace({ days: 365.2425, currentCa: 110, previousCa: 100, currentVisibleBaseScore: 12, previousVisibleBaseScore: 11 })
+    expect(pace?.recentCaAnnualized).toBeCloseTo(10)
+    expect(pace?.recentVisibleBaseRate).toBeCloseTo(1)
   })
 })

@@ -1,5 +1,6 @@
 import type { ProjectionInput, PersonalitySource } from './projection-engine'
 import type { ProjectionReference, ProjectionScoreType } from './projection-reference'
+import { generalBasePositionScore } from './base-position-score'
 import { canPlayPosition } from './positions'
 
 type UnknownRecord = Record<string, unknown>
@@ -14,8 +15,24 @@ export type ProjectionSnapshot = {
 }
 
 const record = (value: unknown): UnknownRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {}
-const finite = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null
+const finite = (value: unknown) => {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
+  return Number.isFinite(parsed) ? parsed : null
+}
 const text = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : null
+const normalizedKey = (value: string) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+
+function deepFinite(sources: UnknownRecord[], keys: string[]) {
+  const wanted = new Set(keys.map(normalizedKey))
+  for (const source of sources) {
+    for (const [key, value] of Object.entries(source)) {
+      if (!wanted.has(normalizedKey(key))) continue
+      const result = finite(value)
+      if (result !== null) return result
+    }
+  }
+  return null
+}
 
 export function generalProjectionKey(positions: string[]) {
   return positions.some(position => position.toUpperCase().replaceAll(' ', '').startsWith('GK')) ? 'GK' : 'OUTFIELD'
@@ -30,14 +47,16 @@ export function snapshotProjectionFacts(snapshot: ProjectionSnapshot) {
   const hidden = record(normalized.fm_hidden)
   const personality = record(normalized.hidden_personality)
   const raw = record(snapshot.raw_data)
-  const cp = finite(hidden.potential_ability) ?? finite(normalized.potential_ability) ?? finite(normalized.pa_candidate)
-  const professionalism = finite(hidden.professionalism) ?? finite(personality.professionalism)
-  const ambition = finite(hidden.ambition) ?? finite(personality.ambition)
-  const determination = finite(snapshot.player_attributes.find(attribute => attribute.attribute_key === 'determination')?.value)
-  const birthDate = text(raw.birth_date) ?? text(raw.date_of_birth) ?? text(normalized.date_of_birth)
+  const sources = [hidden, normalized, raw]
+  const ca = deepFinite(sources, ['current_ability', 'ca', 'ca_candidate'])
+  const pa = deepFinite(sources, ['potential_ability', 'pa', 'pa_candidate'])
+  const professionalism = deepFinite([hidden, personality, normalized, raw], ['professionalism'])
+  const ambition = deepFinite([hidden, personality, normalized, raw], ['ambition'])
+  const determination = finite(snapshot.player_attributes.find(attribute => attribute.attribute_key === 'determination')?.value) ?? deepFinite([hidden, personality, normalized, raw], ['determination'])
+  const birthDate = text(raw.birth_date) ?? text(raw.date_of_birth) ?? text(normalized.birth_date) ?? text(normalized.date_of_birth)
   const exact = professionalism !== null && ambition !== null && determination !== null
   const personalitySource: PersonalitySource = exact ? 'exact' : 'neutral'
-  return { cp, professionalism, ambition, determination, birthDate, personalitySource }
+  return { ca, pa, professionalism, ambition, determination, birthDate, personalitySource }
 }
 
 export function projectionInputForSnapshot({ snapshot, currentScore, scoreType, scoreKey, eligible = true, reference }: {
@@ -49,15 +68,18 @@ export function projectionInputForSnapshot({ snapshot, currentScore, scoreType, 
   reference: ProjectionReference | null
 }): ProjectionInput {
   const facts = snapshotProjectionFacts(snapshot)
+  const p0 = scoreType === 'general' ? generalBasePositionScore(snapshot) : null
   return {
-    currentScore,
+    currentScore: scoreType === 'general' ? p0?.score ?? null : currentScore,
     scoreType,
-    scoreKey: scoreKey ?? generalProjectionKey(snapshot.positions),
-    eligible,
+    scoreKey: scoreType === 'general' ? p0?.scoreKey ?? scoreKey ?? generalProjectionKey(snapshot.positions) : scoreKey ?? '',
+    family: scoreType === 'general' ? p0?.family ?? null : null,
+    eligible: scoreType === 'general' ? eligible && Boolean(p0) : eligible,
     reference,
     snapshotDate: snapshot.snapshot_date,
     birthDate: facts.birthDate,
-    cp: facts.cp,
+    ca: facts.ca,
+    pa: facts.pa,
     professionalism: facts.professionalism,
     ambition: facts.ambition,
     determination: facts.determination,

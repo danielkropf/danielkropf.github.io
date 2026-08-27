@@ -1,49 +1,86 @@
-import type { ProjectionReference, ProjectionScoreType } from './projection-reference'
+import {
+  PROJECTION_MODEL_VERSION,
+  type ProjectionFamily,
+  type ProjectionObservation,
+  type ProjectionReference,
+  type ProjectionReferenceMode,
+  type ProjectionScoreType,
+} from './projection-reference'
 
 export const Q_LOW = 0.167
 export const Q_HIGH = 0.833
 export const MDI_NEUTRAL = 0.58421
+export const INITIAL_AGE_BANDWIDTH = 1.5
+export const INITIAL_SCORE_BANDWIDTH = 1.0
+export const BANDWIDTH_EXPANSION = 1.25
+export const TARGET_EFFECTIVE_SAMPLE = 200
 
-export type ProjectionStatus = 'ok' | 'missing_cp' | 'missing_score' | 'missing_reference' | 'missing_age' | 'peak_reached' | 'unsupported_position'
-export type PersonalitySource = 'exact' | 'inferred' | 'neutral'
+export type PersonalitySource = 'exact' | 'neutral'
+export type ProjectionStatus =
+  | 'ok'
+  | 'missing_score'
+  | 'missing_reference'
+  | 'missing_age'
+  | 'missing_ca'
+  | 'missing_pa'
+  | 'missing_family'
+  | 'unsupported_position'
+  | 'unsupported_score_type'
+  | 'insufficient_reference'
 
 export type ProjectionInput = {
   currentScore: number | null
-  cp: number | null
   birthDate: string | null
-  snapshotDate: string | null
+  snapshotDate: string
+  ca: number | null
+  pa: number | null
   professionalism?: number | null
   ambition?: number | null
   determination?: number | null
   personalitySource?: PersonalitySource
   scoreType: ProjectionScoreType
   scoreKey: string
+  family: ProjectionFamily | null
   eligible?: boolean
   reference: ProjectionReference | null
-  historyPercentile?: number | null
 }
 
 export type ProjectionResult = {
-  referenceMode: 'calibrated' | 'experimental-alpha1' | null
-  projectedScore: number | null
   status: ProjectionStatus
+  projectedScore: number | null
   modelVersion: string
   referenceVersion: string | null
+  referenceMode: ProjectionReferenceMode | null
   exactAge: number | null
-  peakAge: number | null
-  cpPercentile: number | null
-  effectiveSample: number | null
+  peakAge: null
+  cpPercentile: null
+  headroom: number | null
+  headroomPercentile: number | null
   mdi: number | null
   personalityShift: number
-  historyShift: number
+  historyShift: 0
+  baseQuantile: number | null
   trajectoryQuantile: number | null
+  expectedIntrinsicPeakGain: number | null
+  cohortCount: number
+  referenceEffectiveSample: number
+  referenceScope: string | null
+  referenceFallbackLevel: number | null
   personalitySource: PersonalitySource
 }
 
-const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
-const validTrait = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 20 ? value : null
+type WeightedObservation = { observation: ProjectionObservation; weight: number }
+type ContextualCohort = {
+  rows: WeightedObservation[]
+  effectiveSample: number
+  scope: string
+  fallbackLevel: number
+}
 
-export function exactAgeYears(birthDate: string | null, snapshotDate: string | null): number | null {
+const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
+const finite = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value)
+
+export function exactAgeYears(birthDate: string | null | undefined, snapshotDate: string | null | undefined) {
   if (!birthDate || !snapshotDate) return null
   const birth = new Date(`${birthDate}T00:00:00Z`).getTime()
   const snapshot = new Date(`${snapshotDate}T00:00:00Z`).getTime()
@@ -61,149 +98,202 @@ export function mentalDevelopmentIndex(professionalism: number, ambition: number
   return clamp(0.60 * p + 0.20 * saturatedTrait(ambition) + 0.20 * saturatedTrait(determination), 0, 1)
 }
 
-export function personalityShift(mdi: number) { return clamp(0.30 * (mdi - MDI_NEUTRAL), -0.15, 0.15) }
-export function historyShift(percentile: number | null | undefined) { return percentile == null ? 0 : clamp(0.20 * (clamp(percentile, 0, 1) - 0.5), -0.10, 0.10) }
-
-export function effectiveSample(weights: number[]) {
-  const sum = weights.reduce((total, value) => total + value, 0)
-  const squared = weights.reduce((total, value) => total + value * value, 0)
-  return squared > 0 ? sum * sum / squared : 0
+export function personalityShift(mdi: number) {
+  return clamp(0.30 * (mdi - MDI_NEUTRAL), -0.15, 0.15)
 }
 
-export function contextualCpPercentile(observations: Array<{ age: number; score: number; cp: number }>, age: number, score: number, cp: number) {
-  if (!observations.length) return null
-  let ageBandwidth = 1.5
-  let scoreBandwidth = 1.0
-  let weights: number[] = []
-  let nEff = 0
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    weights = observations.map(item => {
-      const d2 = ((item.age - age) / ageBandwidth) ** 2 + ((item.score - score) / scoreBandwidth) ** 2
-      return Math.exp(-0.5 * d2)
-    })
-    nEff = effectiveSample(weights)
-    if (nEff >= 200) break
-    ageBandwidth *= 1.25
-    scoreBandwidth *= 1.25
+/** History no longer shifts the peak quantile in Projection v2.1. Kept as a compatibility export. */
+export function historyShift(_percentile: number | null | undefined) { return 0 }
+
+export function effectiveSampleSize(weights: number[]) {
+  const total = weights.reduce((sum, value) => sum + value, 0)
+  const squares = weights.reduce((sum, value) => sum + value * value, 0)
+  return total > 0 && squares > 0 ? total * total / squares : 0
+}
+
+function gaussianWeight(observation: ProjectionObservation, age: number, score: number, ageBandwidth: number, scoreBandwidth: number) {
+  const da = (observation.age - age) / ageBandwidth
+  const ds = (observation.score - score) / scoreBandwidth
+  return Math.exp(-0.5 * (da * da + ds * ds))
+}
+
+function weightedRows(population: ProjectionObservation[], age: number, score: number, ageBandwidth: number, scoreBandwidth: number) {
+  return population.map(observation => ({ observation, weight: gaussianWeight(observation, age, score, ageBandwidth, scoreBandwidth) })).filter(row => row.weight > 1e-12)
+}
+
+function expandedCohort(population: ProjectionObservation[], age: number, score: number, scope: string, fallbackLevel: number): ContextualCohort | null {
+  if (!population.length) return null
+  let ageBandwidth = INITIAL_AGE_BANDWIDTH
+  let scoreBandwidth = INITIAL_SCORE_BANDWIDTH
+  const maxAgeDistance = Math.max(INITIAL_AGE_BANDWIDTH, ...population.map(row => Math.abs(row.age - age)))
+  const maxScoreDistance = Math.max(INITIAL_SCORE_BANDWIDTH, ...population.map(row => Math.abs(row.score - score)))
+  let rows = weightedRows(population, age, score, ageBandwidth, scoreBandwidth)
+  let effectiveSample = effectiveSampleSize(rows.map(row => row.weight))
+
+  // Expand exactly as specified. The data range itself is the natural expansion limit.
+  while (effectiveSample < TARGET_EFFECTIVE_SAMPLE && (ageBandwidth < maxAgeDistance || scoreBandwidth < maxScoreDistance)) {
+    ageBandwidth *= BANDWIDTH_EXPANSION
+    scoreBandwidth *= BANDWIDTH_EXPANSION
+    rows = weightedRows(population, age, score, ageBandwidth, scoreBandwidth)
+    effectiveSample = effectiveSampleSize(rows.map(row => row.weight))
   }
-  const total = weights.reduce((sum, weight) => sum + weight, 0)
-  if (total <= 0) return null
+  return { rows, effectiveSample, scope, fallbackLevel }
+}
+
+export function contextualCohort(reference: ProjectionReference, family: ProjectionFamily, age: number, score: number): ContextualCohort | null {
+  const exact = expandedCohort(reference.observations.filter(row => row.family === family), age, score, `family:${family}`, 0)
+  if (exact && exact.effectiveSample >= TARGET_EFFECTIVE_SAMPLE) return exact
+
+  // A goalkeeper is not mixed with outfield players. For outfield families, the only broad fallback is the
+  // audited outfield corpus; this is explicit in the returned scope/fallback metadata.
+  if (family !== 'GK') {
+    const broad = expandedCohort(reference.observations.filter(row => row.family !== 'GK'), age, score, 'outfield:all', 1)
+    if (broad && broad.effectiveSample >= TARGET_EFFECTIVE_SAMPLE) return broad
+    if (broad && (!exact || broad.effectiveSample > exact.effectiveSample)) return broad
+  }
+  return exact
+}
+
+export function contextualHeadroomPercentile(rows: WeightedObservation[], headroom: number) {
   let below = 0
-  let equal = 0
-  observations.forEach((item, index) => {
-    if (item.cp < cp) below += weights[index]
-    else if (item.cp === cp) equal += weights[index]
-  })
-  return { percentile: clamp((below + 0.5 * equal) / total, 0, 1), effectiveSample: nEff }
-}
-
-export function weightedQuantile(values: number[], quantile: number, weights?: number[]) {
-  if (!values.length) return null
-  const rows = values.map((value, index) => ({ value, weight: Math.max(0, weights?.[index] ?? 1) })).filter(row => Number.isFinite(row.value) && row.weight > 0).sort((a, b) => a.value - b.value)
-  if (!rows.length) return null
-  const total = rows.reduce((sum, row) => sum + row.weight, 0)
-  const target = clamp(quantile, 0, 1) * total
-  let cumulative = 0
-  for (const row of rows) { cumulative += row.weight; if (cumulative >= target) return row.value }
-  return rows[rows.length - 1].value
-}
-
-function peakAgeFor(input: ProjectionInput) {
-  const custom = input.reference?.peakAges?.[`${input.scoreType}:${input.scoreKey}`]
-  if (typeof custom === 'number' && Number.isFinite(custom)) return custom
-  if (input.scoreType === 'general') return input.scoreKey === 'GK' ? 28 : 26
-  return 26
-}
-
-function empty(input: ProjectionInput, status: ProjectionStatus, exactAge: number | null = null, peakAge: number | null = null): ProjectionResult {
-  return { projectedScore: null, status, modelVersion: '1.0', referenceVersion: input.reference?.referenceVersion ?? null, referenceMode: input.reference?.mode ?? null, exactAge, peakAge, cpPercentile: null, effectiveSample: null, mdi: null, personalityShift: 0, historyShift: 0, trajectoryQuantile: null, personalitySource: input.personalitySource ?? 'neutral' }
-}
-
-function interpolateAnchoredGrowth(anchors: number[], values: number[], quantile: number) {
-  if (anchors.length !== values.length || anchors.length < 2) return null
-  const q = clamp(quantile, anchors[0], anchors[anchors.length - 1])
-  if (q <= anchors[0]) return values[0]
-  for (let index = 1; index < anchors.length; index += 1) {
-    if (q > anchors[index]) continue
-    const leftQ = anchors[index - 1], rightQ = anchors[index]
-    const leftValue = values[index - 1], rightValue = values[index]
-    if (![leftQ, rightQ, leftValue, rightValue].every(Number.isFinite)) return null
-    const ratio = rightQ === leftQ ? 0 : (q - leftQ) / (rightQ - leftQ)
-    return leftValue + (rightValue - leftValue) * ratio
+  let tied = 0
+  let total = 0
+  for (const { observation, weight } of rows) {
+    total += weight
+    if (observation.headroom < headroom) below += weight
+    else if (observation.headroom === headroom) tied += weight
   }
-  return values[values.length - 1]
+  return total > 0 ? clamp((below + 0.5 * tied) / total, 0, 1) : null
+}
+
+export function weightedQuantile(values: number[], q: number, weights?: number[]) {
+  if (!values.length) return null
+  const pairs = values.map((value, index) => ({ value, weight: Math.max(0, weights?.[index] ?? 1) })).filter(item => Number.isFinite(item.value) && item.weight > 0).sort((a, b) => a.value - b.value)
+  if (!pairs.length) return null
+  const total = pairs.reduce((sum, item) => sum + item.weight, 0)
+  const target = clamp(q, 0, 1) * total
+  let cumulative = 0
+  for (const item of pairs) {
+    cumulative += item.weight
+    if (cumulative >= target) return item.value
+  }
+  return pairs[pairs.length - 1].value
+}
+
+function baseResult(input: ProjectionInput, status: ProjectionStatus, exactAge: number | null, personalitySource: PersonalitySource): ProjectionResult {
+  return {
+    status,
+    projectedScore: null,
+    modelVersion: PROJECTION_MODEL_VERSION,
+    referenceVersion: input.reference?.referenceVersion ?? null,
+    referenceMode: input.reference?.mode ?? null,
+    exactAge,
+    peakAge: null,
+    cpPercentile: null,
+    headroom: finite(input.ca) && finite(input.pa) ? Math.max(0, input.pa - input.ca) : null,
+    headroomPercentile: null,
+    mdi: null,
+    personalityShift: 0,
+    historyShift: 0,
+    baseQuantile: null,
+    trajectoryQuantile: null,
+    expectedIntrinsicPeakGain: null,
+    cohortCount: 0,
+    referenceEffectiveSample: 0,
+    referenceScope: null,
+    referenceFallbackLevel: null,
+    personalitySource,
+  }
 }
 
 export function projectScore(input: ProjectionInput): ProjectionResult {
-  if (input.currentScore == null || !Number.isFinite(input.currentScore)) return empty(input, 'missing_score')
-  if (input.eligible === false) return empty(input, 'unsupported_position')
-  if (input.cp == null || !Number.isFinite(input.cp)) return empty(input, 'missing_cp')
-  if (!input.reference) return empty(input, 'missing_reference')
+  const personalitySource: PersonalitySource = input.personalitySource === 'exact' ? 'exact' : 'neutral'
   const exactAge = exactAgeYears(input.birthDate, input.snapshotDate)
-  if (exactAge == null) return empty(input, 'missing_age')
-  const peakAge = peakAgeFor(input)
-  if (exactAge >= peakAge) return empty(input, 'peak_reached', exactAge, peakAge)
+  if (input.eligible === false) return baseResult(input, 'unsupported_position', exactAge, personalitySource)
+  if (input.scoreType !== 'general') return baseResult(input, 'unsupported_score_type', exactAge, personalitySource)
+  if (!finite(input.currentScore)) return baseResult(input, 'missing_score', exactAge, personalitySource)
+  if (!input.reference) return baseResult(input, 'missing_reference', exactAge, personalitySource)
+  if (exactAge === null) return baseResult(input, 'missing_age', null, personalitySource)
+  if (!finite(input.ca)) return baseResult(input, 'missing_ca', exactAge, personalitySource)
+  if (!finite(input.pa)) return baseResult(input, 'missing_pa', exactAge, personalitySource)
+  if (!input.family) return baseResult(input, 'missing_family', exactAge, personalitySource)
 
-  const experimental = input.reference.mode === 'experimental-alpha1' ? input.reference.experimental : null
-  let cpSignal: number
-  let cpPercentile: number | null = null
-  let effectiveSampleValue: number | null = null
-  if (experimental?.cpAdapter === 'absolute_scale_standin') {
-    cpSignal = clamp((input.cp - 1) / 199, 0, 1)
-  } else {
-    const cohort = input.reference.cohorts.find(item => item.scoreType === input.scoreType && item.scoreKey === input.scoreKey)
-    if (!cohort?.observations.length) return empty(input, 'missing_reference', exactAge, peakAge)
-    const cpContext = contextualCpPercentile(cohort.observations, exactAge, input.currentScore, input.cp)
-    if (!cpContext) return empty(input, 'missing_reference', exactAge, peakAge)
-    cpSignal = cpContext.percentile
-    cpPercentile = cpContext.percentile
-    effectiveSampleValue = cpContext.effectiveSample
-  }
+  const headroom = Math.max(0, input.pa - input.ca)
+  const cohort = contextualCohort(input.reference, input.family, exactAge, input.currentScore)
+  if (!cohort || !cohort.rows.length || cohort.effectiveSample <= 0) return baseResult(input, 'insufficient_reference', exactAge, personalitySource)
 
-  const pro = validTrait(input.professionalism) ?? 10
-  const amb = validTrait(input.ambition) ?? 10
-  const det = validTrait(input.determination) ?? 10
-  const mdi = mentalDevelopmentIndex(pro, amb, det)
-  const pShift = personalityShift(mdi)
-  const hShift = historyShift(input.historyPercentile)
-  const qBase = Q_LOW + (Q_HIGH - Q_LOW) * cpSignal
-  const quantile = clamp(qBase + pShift + hShift, Q_LOW, Q_HIGH)
+  const headroomPercentile = contextualHeadroomPercentile(cohort.rows, headroom)
+  if (headroomPercentile === null) return baseResult(input, 'insufficient_reference', exactAge, personalitySource)
+  const baseQuantile = Q_LOW + (Q_HIGH - Q_LOW) * headroomPercentile
 
-  let projection = input.currentScore
-  const firstAge = Math.floor(exactAge)
-  const fractional = exactAge - firstAge
-  const firstFactor = fractional < 1e-9 ? 1 : 1 - fractional
-  for (let ageStart = firstAge; ageStart < Math.ceil(peakAge); ageStart += 1) {
-    if (ageStart >= peakAge) break
-    let growth: number | null
-    if (experimental) {
-      const curve = experimental.curvesByIntegerAge[ageStart]
-      growth = curve ? interpolateAnchoredGrowth(curve.anchors, curve.values, quantile) : null
-    } else {
-      const bucket = input.reference.growth.find(item => item.scoreType === input.scoreType && item.scoreKey === input.scoreKey && item.ageStart === ageStart)
-      growth = bucket?.deltas.length ? weightedQuantile(bucket.deltas, quantile, bucket.weights) : null
-    }
-    if (growth == null) return empty(input, 'missing_reference', exactAge, peakAge)
-    const intervalEnd = Math.min(ageStart + 1, peakAge)
-    const factor = ageStart === firstAge ? Math.min(firstFactor, intervalEnd - exactAge) : intervalEnd - ageStart
-    projection += growth * Math.max(0, factor)
-  }
-  projection = Math.min(20, Math.max(input.currentScore, projection))
+  const exactPersonality = finite(input.professionalism) && finite(input.ambition) && finite(input.determination)
+  const mdi = exactPersonality
+    ? mentalDevelopmentIndex(input.professionalism as number, input.ambition as number, input.determination as number)
+    : MDI_NEUTRAL
+  const shift = exactPersonality ? personalityShift(mdi) : 0
+  const trajectoryQuantile = clamp(baseQuantile + shift, Q_LOW, Q_HIGH)
+  const gain = weightedQuantile(
+    cohort.rows.map(row => row.observation.intrinsicPeakGain),
+    trajectoryQuantile,
+    cohort.rows.map(row => row.weight),
+  )
+  if (gain === null) return baseResult(input, 'insufficient_reference', exactAge, personalitySource)
+  const expectedIntrinsicPeakGain = Math.max(0, gain)
+  const projectedScore = clamp(Math.max(input.currentScore, input.currentScore + expectedIntrinsicPeakGain), input.currentScore, 20)
 
   return {
-    projectedScore: Math.round(projection * 100) / 100,
     status: 'ok',
-    modelVersion: '1.0',
+    projectedScore,
+    modelVersion: PROJECTION_MODEL_VERSION,
     referenceVersion: input.reference.referenceVersion,
     referenceMode: input.reference.mode,
     exactAge,
-    peakAge,
-    cpPercentile,
-    effectiveSample: effectiveSampleValue,
+    peakAge: null,
+    cpPercentile: null,
+    headroom,
+    headroomPercentile,
     mdi,
-    personalityShift: pShift,
-    historyShift: hShift,
-    trajectoryQuantile: quantile,
-    personalitySource: input.personalitySource ?? (validTrait(input.professionalism) && validTrait(input.ambition) && validTrait(input.determination) ? 'exact' : 'neutral'),
+    personalityShift: shift,
+    historyShift: 0,
+    baseQuantile,
+    trajectoryQuantile,
+    expectedIntrinsicPeakGain,
+    cohortCount: cohort.rows.length,
+    referenceEffectiveSample: cohort.effectiveSample,
+    referenceScope: cohort.scope,
+    referenceFallbackLevel: cohort.fallbackLevel,
+    personalitySource: exactPersonality ? 'exact' : 'neutral',
+  }
+}
+
+export type DevelopmentPaceInput = {
+  days: number
+  currentCa?: number | null
+  previousCa?: number | null
+  currentVisibleBaseScore?: number | null
+  previousVisibleBaseScore?: number | null
+  currentLatentBaseScore?: number | null
+  previousLatentBaseScore?: number | null
+}
+
+export type DevelopmentPace = {
+  days: number
+  recentCaAnnualized: number | null
+  recentVisibleBaseRate: number | null
+  recentLatentBaseRate: number | null
+}
+
+function annualized(current: number | null | undefined, previous: number | null | undefined, days: number) {
+  return finite(current) && finite(previous) && days >= 90 ? (current - previous) * 365.2425 / days : null
+}
+
+/** Separate short-term development signals. They deliberately do not alter Peak Projection v2.1. */
+export function developmentPace(input: DevelopmentPaceInput): DevelopmentPace | null {
+  if (!Number.isFinite(input.days) || input.days < 90) return null
+  return {
+    days: input.days,
+    recentCaAnnualized: annualized(input.currentCa, input.previousCa, input.days),
+    recentVisibleBaseRate: annualized(input.currentVisibleBaseScore, input.previousVisibleBaseScore, input.days),
+    recentLatentBaseRate: annualized(input.currentLatentBaseScore, input.previousLatentBaseScore, input.days),
   }
 }
