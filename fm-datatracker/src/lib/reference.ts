@@ -1,4 +1,5 @@
-import{attributeScore}from'./scoring'
+import { pairedRoleScore, rawRoleScore, roleScore } from './role-scoring'
+import { eligibleGeneralScoreFamilies, generalScoreForReference, type GeneralScoreSnapshot } from './base-position-score'
 
 export type ReferencePlayer={c:string;d:number;a:number|null;p:string;v:Array<number|null>}
 export type ReferenceMarket={country:string;division:number;count:number}
@@ -26,8 +27,31 @@ export function positionFamilies(value:string|string[]){
   return found.length?found:[positionFamily(value)]
 }
 
+export function referenceAttributes(player:ReferencePlayer,attributes:string[]){
+  return attributes.map((key,index)=>({key,value:player.v[index]??null}))
+}
+
 export function referenceScore(player:ReferencePlayer,attributes:string[],weights:Record<string,number>){
-  return attributeScore(attributes.map((key,index)=>({key,value:player.v[index]??null,weight:weights[key]??1})))
+  return rawRoleScore(referenceAttributes(player,attributes),weights)
+}
+
+export function referenceRoleScore(player:ReferencePlayer,attributes:string[],weights:Record<string,number>){
+  return roleScore(referenceAttributes(player,attributes),weights)
+}
+
+export function referencePairedRoleScore(player:ReferencePlayer,attributes:string[],ipWeights:Record<string,number>,oopWeights:Record<string,number>){
+  return pairedRoleScore(referenceAttributes(player,attributes),ipWeights,oopWeights)
+}
+
+export function generalReferenceScoresByFamily(players:ReferencePlayer[],attributes:string[]){
+  const groups:Record<string,number[]>={GK:[],D:[],WB:[],DM:[],M:[],AM:[],ST:[]}
+  for(const player of players){
+    const score=generalScoreForReference(player,attributes)?.score??null
+    if(score===null)continue
+    for(const family of positionFamilies(player.p))if(groups[family])groups[family].push(score)
+  }
+  for(const scores of Object.values(groups))scores.sort((a,b)=>a-b)
+  return groups
 }
 
 export function percentile(score:number,sortedScores:number[]){
@@ -35,6 +59,16 @@ export function percentile(score:number,sortedScores:number[]){
   let low=0,high=sortedScores.length
   while(low<high){const middle=(low+high)>>>1;if(sortedScores[middle]<=score)low=middle+1;else high=middle}
   return Math.round(low/sortedScores.length*100)
+}
+
+export function generalReferencePercentile(score:number,snapshot:GeneralScoreSnapshot,groups:Record<string,number[]>){
+  let best:{percentile:number;family:string;population:number[]}|null=null
+  for(const family of eligibleGeneralScoreFamilies(snapshot)){
+    const population=groups[family]??[]
+    const value=percentile(score,population)
+    if(value!==null&&(!best||value>best.percentile))best={percentile:value,family,population}
+  }
+  return best
 }
 
 export function referenceLevel(value:number):ReferenceLevel{

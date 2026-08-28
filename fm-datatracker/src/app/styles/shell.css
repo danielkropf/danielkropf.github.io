@@ -1,0 +1,111 @@
+/* Design System v1.0 — canonical application shell.
+   This module owns only global shell/sidebar chrome. It deliberately overrides
+   the historical shell declarations that still live in legacy stylesheets. */
+.shell{
+  grid-template-columns:var(--dt-sidebar-width) minmax(0,1fr);
+  width:100%;
+  height:100vh;
+  min-height:100vh;
+  overflow:hidden;
+  background:var(--dt-bg-canvas);
+}
+.shell>aside{
+  box-sizing:border-box;
+  width:var(--dt-sidebar-width);
+  height:100vh;
+  padding:var(--dt-space-5) var(--dt-space-4);
+  border-right:1px solid var(--dt-border);
+  background:var(--dt-bg-sidebar);
+  box-shadow:none;
+}
+.shell>aside .brand{display:flex;align-items:center;gap:var(--dt-space-2);font-family:var(--dt-font-family);font-size:1rem;font-weight:700;color:var(--dt-text-1)}
+.shell>aside .brand span{display:grid;place-items:center;width:40px;height:40px;border-radius:var(--dt-radius-card);background:var(--dt-lime);color:#10200f;font-size:.8rem;font-weight:800}
+.shell>aside .brand strong{font-size:1rem;font-weight:700;letter-spacing:-.015em}
+
+.save-context{display:grid;gap:var(--dt-space-2);margin-top:var(--dt-space-6)}
+.save-context-label{color:var(--dt-text-3);font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.shell>aside .save-select{
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  height:var(--dt-control-height);
+  min-height:var(--dt-control-height);
+  margin:0;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-control);
+  background-color:var(--dt-surface-2)!important;
+  color:var(--dt-text-1)!important;
+  font-size:.78rem;
+  font-weight:600;
+}
+.shell>aside .save-select:hover{border-color:color-mix(in srgb,var(--dt-border-strong),var(--dt-text-2) 36%)!important;background-color:var(--dt-surface-3)!important}
+.shell>aside .save-select:focus{border-color:var(--dt-lime)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--dt-lime) 12%,transparent)!important}
+
+.shell>aside .potential-toggle{
+  min-height:var(--dt-control-height);
+  margin:var(--dt-space-3) 0 0;
+  padding:0 var(--dt-space-3);
+  border-color:var(--dt-border)!important;
+  border-radius:var(--dt-radius-control);
+  background:var(--dt-surface-1)!important;
+  color:var(--dt-text-2)!important;
+  box-shadow:none;
+}
+.shell>aside .potential-toggle:hover:not(.is-disabled){border-color:var(--dt-border-strong)!important;background:var(--dt-surface-2)!important;color:var(--dt-text-1)!important}
+.shell>aside .potential-toggle.is-on{border-color:color-mix(in srgb,var(--dt-lime) 28%,var(--dt-border))!important;color:var(--dt-text-1)!important}
+.shell>aside .potential-switch{border-color:var(--dt-border-strong);background:var(--dt-bg-canvas)}
+.shell>aside .potential-toggle.is-on .potential-switch{border-color:color-mix(in srgb,var(--dt-lime) 55%,var(--dt-border));background:color-mix(in srgb,var(--dt-lime) 10%,var(--dt-surface-2))}
+.shell>aside .potential-toggle.is-on .potential-switch::after{background:var(--dt-lime)}
+
+.shell>aside nav{display:grid;gap:var(--dt-space-1);margin-top:var(--dt-space-5)}
+.shell>aside nav a{
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  min-height:40px;
+  padding:0 var(--dt-space-3);
+  border:1px solid transparent;
+  border-radius:var(--dt-radius-control);
+  background:transparent;
+  color:var(--dt-text-2);
+  font-size:.82rem;
+  font-weight:600;
+  text-decoration:none;
+}
+.shell>aside nav a:hover{border-color:var(--dt-border);background:var(--dt-surface-1);color:var(--dt-text-1)}
+.shell>aside nav a.active{border-color:color-mix(in srgb,var(--dt-lime) 24%,var(--dt-border));background:color-mix(in srgb,var(--dt-lime) 6%,var(--dt-surface-1));color:var(--dt-text-1);box-shadow:inset 2px 0 var(--dt-lime)}
+
+.shell>aside .sidebar-footer{display:grid;gap:var(--dt-space-2);margin-top:auto}
+.shell>aside .sidebar-actions{display:grid;gap:var(--dt-space-2);margin-top:0}
+.shell>aside .sidebar-actions .ghost{
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  width:100%;
+  min-height:var(--dt-control-compact-height);
+  margin:0;
+  padding:0 var(--dt-space-3);
+  border:1px solid var(--dt-border);
+  border-radius:var(--dt-radius-control);
+  background:transparent;
+  color:var(--dt-text-2);
+  font-size:.75rem;
+  font-weight:600;
+  text-decoration:none;
+}
+.shell>aside .sidebar-actions .ghost:hover{border-color:var(--dt-border-strong);background:var(--dt-surface-1);color:var(--dt-text-1)}
+.shell>aside .sidebar-footer .app-version{margin:0;padding-top:var(--dt-space-2);border-top:1px solid var(--dt-border);color:var(--dt-text-3)}
+.shell>aside .sidebar-footer .app-version span:first-child{color:var(--dt-lime)}
+
+.shell>main{
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  max-width:none;
+  height:100vh;
+  min-height:0;
+  padding:var(--dt-page-padding-y) var(--dt-page-padding-x);
+  overflow:hidden;
+  background:var(--dt-bg-canvas);
+}

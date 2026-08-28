@@ -2,15 +2,15 @@ import{createContext,useContext,useEffect,useId,useLayoutEffect,useMemo,useRef,u
 import{createPortal}from'react-dom'
 import{useNavigate}from'react-router-dom'
 import{supabase}from'../lib/supabase'
-import{attributeScore,combinedPhaseScore,fmScaleScore}from'../lib/scoring'
+import{generalScoreForSnapshot}from'../lib/base-position-score'
+import{pairedRoleScore,resolveRoleWeights,roleScore}from'../lib/role-scoring'
 import{ScoreWithProjection}from'../components/ScoreWithProjection'
 import{functionProjectionKey}from'../lib/projection-player'
 import{CustomSelect}from'../components/CustomSelect'
 import{PositionSelector}from'../components/PositionSelector'
 import{positionRank,positionSideRank}from'../lib/positions'
-import{ATTRIBUTE_CATALOG,DEFAULT_ATTRIBUTE_WEIGHTS,type AttributeCategory}from'../lib/attributes'
-import{normalizeCountry,percentile as calculatePercentile,positionFamilies,referenceLevel,referenceScore,type ReferenceDataset,type ReferenceLevel}from'../lib/reference'
-import{roleDefaultWeights}from'../lib/roleWeights'
+import{ATTRIBUTE_CATALOG,type AttributeCategory}from'../lib/attributes'
+import{generalReferencePercentile,generalReferenceScoresByFamily,normalizeCountry,referenceLevel,type ReferenceDataset,type ReferenceLevel}from'../lib/reference'
 import{positionGroup,rolesFor,type TacticPhase}from'../lib/tactics'
 import{canPlayPosition}from'../lib/positions'
 import{loadCurrentPlayers,loadReferenceDataset}from'../lib/dataCache'
@@ -26,7 +26,7 @@ type Tactic={id:string;name:string;ipAssignments:Assignment[];oopAssignments:Ass
 type TableColumn={id:string;kind:'data'|'attribute'|'role'|'tacticRole';key?:ColumnKey;attributeKey?:string;phase?:TacticPhase;position?:string;roleCode?:string;tacticId?:string;linkId?:string;label:string}
 type Snapshot=PlayerRow['player_snapshots'][number]
 type Planning={groups:Array<{id:string;name:string}>;assignments:Record<string,string>;slotAssignments?:Record<string,Record<string,string[]>>}
-type ModelConfig={general_weights?:Record<string,number>;role_weight_overrides?:Record<string,Record<string,number>>;planning?:Planning;tactics?:Tactic[]}
+type ModelConfig={role_weight_overrides?:Record<string,Record<string,number>>;planning?:Planning;tactics?:Tactic[]}
 type Row={player:PlayerRow;latest:Snapshot|undefined;score:number|null;status:string;marketValue:string|null;referencePercentile:number|null;referenceLevel:ReferenceLevel|null;referenceSample:number;referenceGroup:string;compatible:boolean;columnScores:Record<string,number|null>}
 type Filter={id:string;column:SortKey;operator:'contains'|'equals'|'gte'|'lte';value:string}
 
@@ -74,33 +74,21 @@ export function SquadPage(){
     loadModelConfig(selected.id)
   ]).then(([cached,modelConfig])=>{if(!active)return;startTransition(()=>{setPlayers(cached as unknown as PlayerRow[]);setModel(modelConfig as ModelConfig);setLoading(false)})}).catch(()=>{if(active)setLoading(false)});return()=>{active=false}},[selected?.id])
 
-  const activeWeights=useMemo(()=>({...DEFAULT_ATTRIBUTE_WEIGHTS,...(model.general_weights??{})}),[model.general_weights])
-
-  const referenceScores=useMemo(()=>{
-    const groups:Record<string,number[]>={GK:[],D:[],WB:[],DM:[],M:[],AM:[],ST:[]}
-    if(!reference)return groups
-    for(const player of reference.players){
-      if(player.c!==referenceCountry||player.d!==referenceDivision)continue
-      const rawScore=referenceScore(player,reference.attributes,activeWeights),score=rawScore===null?null:fmScaleScore(rawScore);if(score===null)continue
-      for(const group of positionFamilies(player.p))if(groups[group])groups[group].push(score)
-    }
-    for(const scores of Object.values(groups))scores.sort((a,b)=>a-b)
-    return groups
-  },[reference,referenceCountry,referenceDivision,activeWeights])
+  const referenceScores=useMemo(()=>generalReferenceScoresByFamily(
+    reference?.players.filter(player=>player.c===referenceCountry&&player.d===referenceDivision)??[],
+    reference?.attributes??[]
+  ),[reference,referenceCountry,referenceDivision])
 
   const rows=useMemo(()=>players.filter(player=>player.current_name.toLowerCase().includes(search.toLowerCase())).map(player=>{
     const latest=player.player_snapshots[0]
-    const rawScore=latest?attributeScore(latest.player_attributes.map(attribute=>({key:attribute.attribute_key,value:attribute.value,weight:activeWeights[attribute.attribute_key]??1}))):null,score=rawScore===null?null:fmScaleScore(rawScore)
-    const eligible=latest?positionFamilies(latest.positions):[]
-    let referenceGroup=eligible[0]??'M',referencePercentile:number|null=null,referenceSample=0
-    if(score!==null){
-      for(const group of eligible){const population=referenceScores[group]??[],value=calculatePercentile(score,population);if(value!==null&&(referencePercentile===null||value>referencePercentile)){referencePercentile=value;referenceGroup=group;referenceSample=population.length}}
-    }
+    const score=latest?generalScoreForSnapshot(latest)?.score??null:null
+    const referenceResult=latest&&score!==null?generalReferencePercentile(score,latest,referenceScores):null
+    const referenceGroup=referenceResult?.family??'M',referencePercentile=referenceResult?.percentile??null,referenceSample=referenceResult?.population.length??0
     const groupId=Object.entries(model.planning?.slotAssignments??{}).find(([,rows])=>Object.values(rows).some(ids=>ids.includes(player.id)))?.[0],status=model.planning?.groups.find(group=>group.id===groupId)?.name??'Não selecionado'
     const row:Row={player,latest,score,status,marketValue:latest?extractMarketValue(latest):null,referencePercentile,referenceLevel:referencePercentile===null?null:referenceLevel(referencePercentile),referenceSample,referenceGroup,compatible:true,columnScores:{}}
     for(const column of columns){if(column.kind==='role')row.columnScores[column.id]=scoreForRole(row,column,model);else if(column.kind==='tacticRole')row.columnScores[column.id]=scoreForTacticRole(row,column,model)}
     return row
-  }).filter(row=>filters.every(filter=>matchesFilter(row,filter))&&(positionFilters===null||positionFilters.length>0&&positionFilters.some(target=>canPlayPosition(row.latest?.positions??[],target)))).sort((a,b)=>compareTableRows(a,b,sort.key,columns)*sort.direction||a.player.current_name.localeCompare(b.player.current_name,'pt-BR')),[players,search,sort,activeWeights,referenceScores,model,filters,positionFilters,columns])
+  }).filter(row=>filters.every(filter=>matchesFilter(row,filter))&&(positionFilters===null||positionFilters.length>0&&positionFilters.some(target=>canPlayPosition(row.latest?.positions??[],target)))).sort((a,b)=>compareTableRows(a,b,sort.key,columns)*sort.direction||a.player.current_name.localeCompare(b.player.current_name,'pt-BR')),[players,search,sort,referenceScores,model,filters,positionFilters,columns])
 
   function changeSort(key:string){setSort(current=>({key,direction:current.key===key?current.direction===1?-1:1:key==='score'||key==='value'||key==='reference'||key.startsWith('role|')||key.startsWith('tactic|')?-1:1}))}
   function removeColumn(index:number){if(columns[index]?.id==='name')return;setColumns(current=>current.filter((_,itemIndex)=>itemIndex!==index));setFrozenIndex(current=>{const next=Math.min(current,index-1),nameIndex=columns.filter((_,itemIndex)=>itemIndex!==index).findIndex(column=>column.id==='name');return Math.max(next,nameIndex)});setColumnMenu(null)}
@@ -118,7 +106,7 @@ export function SquadPage(){
 
 function SquadCell({column,row,referenceCountry,referenceDivision,model,frozen,frozenEdge,left,openPlayer}:{column:TableColumn;row:Row;referenceCountry:string;referenceDivision:number;model:ModelConfig;frozen:boolean;frozenEdge:boolean;left:number;openPlayer:()=>void}){
   const style=frozen?{position:'sticky' as const,left,zIndex:3}:undefined,cellClass=frozenEdge?'frozen-edge':''
-  if(column.kind==='tacticRole'||column.kind==='role'){const score=row.columnScores[column.id]??null;let scoreKey='';let eligible=false;if(column.kind==='role'&&column.phase&&column.position&&column.roleCode){scoreKey=functionProjectionKey([{phase:column.phase,position:column.position,roleCode:column.roleCode}]);eligible=Boolean(row.latest&&canPlayPosition(row.latest.positions,column.position))}else if(column.kind==='tacticRole'&&column.tacticId&&column.linkId){const tactic=model.tactics?.find(item=>item.id===column.tacticId),ip=tactic?.ipAssignments.find(item=>item.playerId===column.linkId),oop=tactic?.oopAssignments.find(item=>item.playerId===column.linkId)??ip;if(ip&&oop){scoreKey=functionProjectionKey([{phase:'IP',position:ip.position,roleCode:ip.roleCode},{phase:'OOP',position:oop.position,roleCode:oop.roleCode}]);eligible=Boolean(row.latest&&canPlayPosition(row.latest.positions,ip.position)&&canPlayPosition(row.latest.positions,oop.position))}}return <td className={`role-score-cell ${cellClass}`} style={style}><ScoreWithProjection playerId={row.player.id} currentScore={score} snapshot={row.latest} scoreType="function" scoreKey={scoreKey} eligible={eligible} variant="inline" currentTitle="Nota atual nesta função" projectionTitle={'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.'}/></td>}
+  if(column.kind==='tacticRole'||column.kind==='role'){const score=row.columnScores[column.id]??null;let scoreKey='';if(column.kind==='role'&&column.phase&&column.position&&column.roleCode){scoreKey=functionProjectionKey([{phase:column.phase,position:column.position,roleCode:column.roleCode}])}else if(column.kind==='tacticRole'&&column.tacticId&&column.linkId){const tactic=model.tactics?.find(item=>item.id===column.tacticId),ip=tactic?.ipAssignments.find(item=>item.playerId===column.linkId),oop=tactic?.oopAssignments.find(item=>item.playerId===column.linkId)??ip;if(ip&&oop)scoreKey=functionProjectionKey([{phase:'IP',position:ip.position,roleCode:ip.roleCode},{phase:'OOP',position:oop.position,roleCode:oop.roleCode}])}return <td className={`role-score-cell ${cellClass}`} style={style}><ScoreWithProjection playerId={row.player.id} currentScore={score} snapshot={row.latest} scoreType="function" scoreKey={scoreKey} variant="inline" currentTitle="Nota atual nesta função" projectionTitle={'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.'}/></td>}
   if(column.kind==='attribute'){const attribute=row.latest?.player_attributes.find(item=>item.attribute_key===column.attributeKey);return <td className={`attribute-table-cell ${cellClass}`} style={style}><b>{attribute?.value??'—'}</b></td>}
   const key=column.key!
   if(key==='status')return <td className={cellClass} style={style}><span className={`planning-status ${row.status==='Não selecionado'?'unselected':'selected'}`}>{row.status}</span></td>
@@ -142,8 +130,8 @@ function numericMarketValue(raw:string|null){if(!raw)return-1;const first=raw.sp
 function compareRows(a:Row,b:Row,key:SortKey){if(key==='position'){const ap=a.latest?.positions??[],bp=b.latest?.positions??[];return positionRank(ap)-positionRank(bp)||positionSideRank(ap)-positionSideRank(bp)}if(key==='score')return(a.score??-1)-(b.score??-1);if(key==='reference')return(a.referencePercentile??-1)-(b.referencePercentile??-1);if(key==='value')return numericMarketValue(a.marketValue)-numericMarketValue(b.marketValue);if(key==='age'||key==='height'||key==='weight')return Number(rowValue(a,key)??999)-Number(rowValue(b,key)??999);return String(rowValue(a,key)??'').localeCompare(String(rowValue(b,key)??''),'pt-BR')}
 function rowValue(row:Row,key:SortKey){if(key==='status')return row.status;if(key==='name')return row.player.current_name;if(key==='nationality')return row.player.nationality;if(key==='team')return row.latest?.club||row.latest?.squad;if(key==='position')return row.latest?.positions?.join(', ');if(key==='age')return row.latest?.age;if(key==='height')return row.latest?.height;if(key==='weight')return row.latest?.weight;if(key==='foot')return row.latest?.preferred_foot;if(key==='contract')return row.latest?.contract_expiry;if(key==='snapshot')return row.latest?.snapshot_date;if(key==='score')return row.score;if(key==='reference')return row.referencePercentile;return row.marketValue}
 function compareTableRows(a:Row,b:Row,key:string,columns:TableColumn[]){const column=columns.find(item=>item.id===key);if(column?.kind==='tacticRole'||column?.kind==='role')return(a.columnScores[column.id]??-1)-(b.columnScores[column.id]??-1);if(column?.kind==='attribute'){const value=(row:Row)=>row.latest?.player_attributes.find(item=>item.attribute_key===column.attributeKey)?.value??-1;return value(a)-value(b)}return compareRows(a,b,key as SortKey)}
-function scoreForRole(row:Row,column:TableColumn,model:ModelConfig){if(!row.latest||!column.phase||!column.position||!column.roleCode)return null;const roleName=rolesFor(column.position,column.phase).find(([code])=>code===column.roleCode)?.[1]??column.roleCode,id=`${column.phase}-${positionGroup(column.position)}-${column.roleCode}`,weights=model.role_weight_overrides?.[id]??roleDefaultWeights(id,roleName),raw=attributeScore(row.latest.player_attributes.map(attribute=>({key:attribute.attribute_key,value:attribute.value,weight:weights[attribute.attribute_key]??1})));return raw===null?null:fmScaleScore(raw)}
-function scoreForTacticRole(row:Row,column:TableColumn,model:ModelConfig){if(!row.latest||!column.tacticId||!column.linkId)return null;const tactic=model.tactics?.find(item=>item.id===column.tacticId),ip=tactic?.ipAssignments.find(item=>item.playerId===column.linkId),oop=tactic?.oopAssignments.find(item=>item.playerId===column.linkId)??ip;if(!tactic||!ip||!oop)return null;const calculate=(assignment:Assignment)=>{const id=assignment.roleId??assignment.roleCode,weights=model.role_weight_overrides?.[id]??tactic.roles?.find(role=>role.id===id)?.weights??roleDefaultWeights(id,assignment.roleName);return attributeScore(row.latest!.player_attributes.map(attribute=>({key:attribute.attribute_key,value:attribute.value,weight:weights[attribute.attribute_key]??3})))};return combinedPhaseScore(calculate(ip),calculate(oop))}
+function scoreForRole(row:Row,column:TableColumn,model:ModelConfig){if(!row.latest||!column.phase||!column.position||!column.roleCode)return null;const roleName=rolesFor(column.position,column.phase).find(([code])=>code===column.roleCode)?.[1]??column.roleCode,id=`${column.phase}-${positionGroup(column.position)}-${column.roleCode}`,weights=resolveRoleWeights({roleId:id,roleName,overrideWeights:model.role_weight_overrides?.[id]});return roleScore(row.latest.player_attributes,weights)}
+function scoreForTacticRole(row:Row,column:TableColumn,model:ModelConfig){if(!row.latest||!column.tacticId||!column.linkId)return null;const tactic=model.tactics?.find(item=>item.id===column.tacticId),ip=tactic?.ipAssignments.find(item=>item.playerId===column.linkId),oop=tactic?.oopAssignments.find(item=>item.playerId===column.linkId)??ip;if(!tactic||!ip||!oop)return null;const weights=(assignment:Assignment,phase:'IP'|'OOP')=>{const id=assignment.roleId??`${phase}-${positionGroup(assignment.position)}-${assignment.roleCode}`;return resolveRoleWeights({roleId:id,roleName:assignment.roleName,overrideWeights:model.role_weight_overrides?.[id]??tactic.roles?.find(role=>role.id===id)?.weights})};return pairedRoleScore(row.latest.player_attributes,weights(ip,'IP'),weights(oop,'OOP'))}
 function frozenLeft(columns:TableColumn[],index:number,widths:Record<string,number>){return columns.slice(0,index).reduce((total,column)=>total+(widths[column.id]??defaultWidth(column)),0)}
 const filterColumns:Array<[SortKey,string]>=[['status','Status'],['name','Nome'],['age','Idade'],['nationality','Nacionalidade'],['value','Valor'],['team','Equipe'],['position','Posições'],['score','Nota'],['reference','Percentil']]
 function filterValue(row:Row,column:SortKey){if(column==='status')return row.status;if(column==='name')return row.player.current_name;if(column==='age')return row.latest?.age??null;if(column==='nationality')return row.player.nationality??'';if(column==='value')return numericMarketValue(row.marketValue);if(column==='team')return row.latest?.club||row.latest?.squad||'';if(column==='position')return row.latest?.positions?.join(', ')||'';if(column==='score')return row.score;return row.referencePercentile}

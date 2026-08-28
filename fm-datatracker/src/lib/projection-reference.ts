@@ -2,7 +2,8 @@ export const PROJECTION_REFERENCE_ID = 'projection_reference_fm26_v2_provisional
 export const PROJECTION_REFERENCE_VERSION = 'fm26-v2-provisional'
 export const PROJECTION_MODEL_VERSION = '2.0-research'
 export const PROJECTION_STATUS = 'provisional_longitudinal'
-export const PROJECTION_REFERENCE_PATH = '/reference/projection.fm26-v2-provisional.json'
+export const PROJECTION_REFERENCE_FILENAME = 'projection.fm26-v2-provisional.json'
+export const PROJECTION_REFERENCE_PATH = `reference/${PROJECTION_REFERENCE_FILENAME}`
 export const PROJECTION_SOURCE_SHA256 = 'cd5e9d85f411faa15eac7ca3bff89d9679491d588a4231814eb1c5c295f9917b'
 export const PROJECTION_EXPECTED_OBSERVATIONS = 43_412
 export const PROJECTION_EXPECTED_FUTURE_LINKS = 174_281
@@ -38,7 +39,7 @@ export type ProjectionReference = {
 }
 
 export type ProjectionReferenceState = {
-  status: 'loading' | 'ready' | 'experimental' | 'missing' | 'invalid'
+  status: 'ready' | 'experimental' | 'missing' | 'invalid'
   reference: ProjectionReference | null
   detail: string
 }
@@ -86,7 +87,6 @@ function exactExpectedPopulation(observations: ProjectionObservation[]) {
   if (observations.length !== PROJECTION_EXPECTED_OBSERVATIONS) return false
   const { byFamily, byUniverse } = inspectSample(observations)
   if (FAMILIES.some(family => byFamily[family] !== EXPECTED_BY_FAMILY[family])) return false
-  // The audited raw asset contains universe on every row. Requiring the exact split also prevents partial/truncated substitutes.
   return byUniverse.bayern === EXPECTED_BY_UNIVERSE.bayern && byUniverse.numancia === EXPECTED_BY_UNIVERSE.numancia
 }
 
@@ -109,16 +109,10 @@ function buildReference(observations: ProjectionObservation[]): ProjectionRefere
   }
 }
 
-/**
- * Accepts the final enveloped reference and, intentionally, the audited raw-array artifact produced by research.
- * Raw-array support keeps the original 43,412-row file byte-for-byte intact; runtime metadata is attached only
- * after strict population validation. No synthetic observations or aggregate reconstruction are accepted.
- */
 export function validateProjectionReference(value: unknown): ProjectionReference | null {
   let rawObservations: unknown[] | null = null
-  if (Array.isArray(value)) {
-    rawObservations = value
-  } else {
+  if (Array.isArray(value)) rawObservations = value
+  else {
     const source = record(value)
     if (!source) return null
     if (source.id !== PROJECTION_REFERENCE_ID || source.referenceVersion !== PROJECTION_REFERENCE_VERSION || source.projectionModelVersion !== PROJECTION_MODEL_VERSION || source.projectionStatus !== PROJECTION_STATUS || source.calibrated !== false) return null
@@ -135,14 +129,29 @@ export function validateProjectionReference(value: unknown): ProjectionReference
   return buildReference(observations)
 }
 
+export function projectionReferenceUrl(baseUrl = import.meta.env.BASE_URL) {
+  const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+  return `${base}${PROJECTION_REFERENCE_PATH}`
+}
+
+export async function sha256Hex(bytes: ArrayBuffer) {
+  if (!globalThis.crypto?.subtle) throw new Error('Web Crypto indisponível')
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
 let cachedPromise: Promise<ProjectionReferenceState> | null = null
 
-async function fetchJson(path: string) {
-  const response = await fetch(path, { cache: 'no-store' })
+async function fetchReference() {
+  const response = await fetch(projectionReferenceUrl(), { cache: 'force-cache' })
   if (!response.ok) return { kind: 'missing' as const, value: null }
-  const text = await response.text()
-  if (!text.trim() || /^\s*</.test(text)) return { kind: 'invalid' as const, value: null }
-  try { return { kind: 'ok' as const, value: JSON.parse(text) as unknown } }
+  const bytes = await response.arrayBuffer()
+  if (!bytes.byteLength) return { kind: 'invalid' as const, value: null }
+  const hash = await sha256Hex(bytes)
+  if (hash !== PROJECTION_SOURCE_SHA256) return { kind: 'invalid' as const, value: null }
+  const sourceText = new TextDecoder().decode(bytes)
+  if (!sourceText.trim() || /^\s*</.test(sourceText)) return { kind: 'invalid' as const, value: null }
+  try { return { kind: 'ok' as const, value: JSON.parse(sourceText) as unknown } }
   catch { return { kind: 'invalid' as const, value: null } }
 }
 
@@ -152,9 +161,9 @@ export function loadProjectionReference(): Promise<ProjectionReferenceState> {
   if (cachedPromise) return cachedPromise
   cachedPromise = (async () => {
     try {
-      const loaded = await fetchJson(PROJECTION_REFERENCE_PATH)
+      const loaded = await fetchReference()
       if (loaded.kind === 'missing') return { status: 'missing', reference: null, detail: 'Projection v2.1 indisponível: referência longitudinal não encontrada.' } as ProjectionReferenceState
-      if (loaded.kind === 'invalid') return { status: 'invalid', reference: null, detail: 'Projection v2.1 indisponível: referência longitudinal inválida.' } as ProjectionReferenceState
+      if (loaded.kind === 'invalid') return { status: 'invalid', reference: null, detail: 'Projection v2.1 indisponível: asset longitudinal inválido ou com SHA-256 divergente.' } as ProjectionReferenceState
       const reference = validateProjectionReference(loaded.value)
       if (!reference) return { status: 'invalid', reference: null, detail: 'Projection v2.1 indisponível: o asset não corresponde ao corpus longitudinal auditado.' } as ProjectionReferenceState
       return {
@@ -163,7 +172,7 @@ export function loadProjectionReference(): Promise<ProjectionReferenceState> {
         detail: `Projection v2.1 provisória · ${reference.sample.observations.toLocaleString('pt-BR')} observações longitudinais · não calibrada`,
       } as ProjectionReferenceState
     } catch {
-      return { status: 'missing', reference: null, detail: 'Projection v2.1 indisponível: não foi possível carregar a referência longitudinal.' } as ProjectionReferenceState
+      return { status: 'missing', reference: null, detail: 'Projection v2.1 indisponível: não foi possível carregar ou verificar a referência longitudinal.' } as ProjectionReferenceState
     }
   })()
   return cachedPromise

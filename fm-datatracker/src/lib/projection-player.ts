@@ -1,6 +1,6 @@
 import type { ProjectionInput, PersonalitySource } from './projection-engine'
 import type { ProjectionReference, ProjectionScoreType } from './projection-reference'
-import { generalBasePositionScore } from './base-position-score'
+import { generalScoreForSnapshot } from './base-position-score'
 import { canPlayPosition } from './positions'
 
 type UnknownRecord = Record<string, unknown>
@@ -68,13 +68,13 @@ export function projectionInputForSnapshot({ snapshot, currentScore, scoreType, 
   reference: ProjectionReference | null
 }): ProjectionInput {
   const facts = snapshotProjectionFacts(snapshot)
-  const p0 = scoreType === 'general' ? generalBasePositionScore(snapshot) : null
+  const p0 = scoreType === 'general' ? generalScoreForSnapshot(snapshot) : null
   return {
     currentScore: scoreType === 'general' ? p0?.score ?? null : currentScore,
     scoreType,
     scoreKey: scoreType === 'general' ? p0?.scoreKey ?? scoreKey ?? generalProjectionKey(snapshot.positions) : scoreKey ?? '',
     family: scoreType === 'general' ? p0?.family ?? null : null,
-    eligible: scoreType === 'general' ? eligible && Boolean(p0) : eligible,
+    eligible: scoreType === 'general' ? eligible && Boolean(p0) : true,
     reference,
     snapshotDate: snapshot.snapshot_date,
     birthDate: facts.birthDate,

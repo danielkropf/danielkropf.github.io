@@ -17,12 +17,15 @@
 @import '../../score-badge.css';
 @import '../../tactics-refinement.css';
 @import '../../planning-position-colors.css';
-@import '../../responsive.css';
 @import '../../interaction-ux.css';
 @import '../../pre-one-polish.css';
 @import '../../dashboard-distribution.css';
 @import '../../planning-flex.css';
 @import '../../saves-management.css';
 @import '../../save-state.css';
+@import '../../potential.css';
 
-@import "../../potential.css";
+/* Canonical DS v1 shell is intentionally loaded after legacy modules. */
+@import './shell.css';
+/* Responsive contracts must remain last so mobile/tablet geometry wins. */
+@import '../../responsive.css';

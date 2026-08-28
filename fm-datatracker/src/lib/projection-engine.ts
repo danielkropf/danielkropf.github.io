@@ -140,14 +140,29 @@ function expandedCohort(population: ProjectionObservation[], age: number, score:
   return { rows, effectiveSample, scope, fallbackLevel }
 }
 
-export function contextualCohort(reference: ProjectionReference, family: ProjectionFamily, age: number, score: number): ContextualCohort | null {
-  const exact = expandedCohort(reference.observations.filter(row => row.family === family), age, score, `family:${family}`, 0)
-  if (exact && exact.effectiveSample >= TARGET_EFFECTIVE_SAMPLE) return exact
+type ReferencePopulationIndex = { byFamily: Record<ProjectionFamily, ProjectionObservation[]>; outfield: ProjectionObservation[] }
+const populationIndexCache = new WeakMap<ProjectionReference, ReferencePopulationIndex>()
 
-  // A goalkeeper is not mixed with outfield players. For outfield families, the only broad fallback is the
-  // audited outfield corpus; this is explicit in the returned scope/fallback metadata.
+function referencePopulationIndex(reference: ProjectionReference) {
+  const cached = populationIndexCache.get(reference)
+  if (cached) return cached
+  const byFamily = { GK: [], D: [], WB: [], DM: [], M: [], AM: [], ST: [] } as Record<ProjectionFamily, ProjectionObservation[]>
+  const outfield: ProjectionObservation[] = []
+  for (const observation of reference.observations) {
+    byFamily[observation.family].push(observation)
+    if (observation.family !== 'GK') outfield.push(observation)
+  }
+  const index = { byFamily, outfield }
+  populationIndexCache.set(reference, index)
+  return index
+}
+
+export function contextualCohort(reference: ProjectionReference, family: ProjectionFamily, age: number, score: number): ContextualCohort | null {
+  const populations = referencePopulationIndex(reference)
+  const exact = expandedCohort(populations.byFamily[family], age, score, `family:${family}`, 0)
+  if (exact && exact.effectiveSample >= TARGET_EFFECTIVE_SAMPLE) return exact
   if (family !== 'GK') {
-    const broad = expandedCohort(reference.observations.filter(row => row.family !== 'GK'), age, score, 'outfield:all', 1)
+    const broad = expandedCohort(populations.outfield, age, score, 'outfield:all', 1)
     if (broad && broad.effectiveSample >= TARGET_EFFECTIVE_SAMPLE) return broad
     if (broad && (!exact || broad.effectiveSample > exact.effectiveSample)) return broad
   }

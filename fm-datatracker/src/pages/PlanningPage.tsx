@@ -1,14 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { attributeScore, combinedPhaseScore, fmScaleScore } from '../lib/scoring'
+import { generalScoreForSnapshot } from '../lib/base-position-score'
+import { pairedRoleScore, resolveRoleWeights } from '../lib/role-scoring'
 import { ScoreWithProjection } from '../components/ScoreWithProjection'
 import { SaveState } from '../components/SaveState'
 import { CustomSelect } from '../components/CustomSelect'
 import { PositionSelector, canonicalPosition } from '../components/PositionSelector'
-import { percentile, positionFamilies, referenceScore, type ReferenceDataset } from '../lib/reference'
-import { roleDefaultWeights } from '../lib/roleWeights'
-import { DEFAULT_ATTRIBUTE_WEIGHTS } from '../lib/attributes'
+import { generalReferencePercentile, generalReferenceScoresByFamily, percentile, referencePairedRoleScore, type ReferenceDataset } from '../lib/reference'
 import { canPlayPosition } from '../lib/positions'
 import { isPlanningFamiliar, isPlanningOutOfPosition, planningFamiliarity, planningFamiliarityLabel, planningFamiliarityTooltip, type PlanningFamiliarity } from '../lib/planning-familiarity'
 import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
@@ -19,6 +18,7 @@ import { loadModelConfig, patchModelConfig, retryModelConfigPatch, scheduleModel
 import { describeDbError } from '../lib/db-error'
 import { calculatePlanningCardLayout, resolvePlanningInsertionBefore } from '../lib/planning-layout'
 import { functionProjectionKey } from '../lib/projection-player'
+import { positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
 import {
   canGroupAdjacentPlanningSets,
@@ -61,7 +61,7 @@ type Planning = FlexiblePlanning & { groups: Group[] }
 type Assignment = { playerId: string; nodeId: string; position: string; roleId?: string; roleCode: string; roleName: string }
 type Pair = { ip: Assignment; oop: Assignment }
 type Tactic = { id: string; name: string; ipAssignments: Assignment[]; oopAssignments: Assignment[]; roles?: { id: string; name: string; weights: Record<string, number> }[] }
-type Config = Record<string, unknown> & { planning?: Planning; tactics?: Tactic[]; selected_tactic_id?: string | null; general_weights?: Record<string, number>; role_weight_overrides?: Record<string, Record<string, number>> }
+type Config = Record<string, unknown> & { planning?: Planning; tactics?: Tactic[]; selected_tactic_id?: string | null; role_weight_overrides?: Record<string, Record<string, number>> }
 type DragItem = { type: 'player'; id: string }
 type Menu = { x: number; y: number; playerId: string }
 type Familiarity = PlanningFamiliarity
@@ -168,7 +168,6 @@ export function PlanningPage() {
   const slotDescriptors: TacticSlotDescriptor[] = useMemo(() => pairs.map(pair => ({ id: pair.ip.playerId, position: pair.ip.position, oopPosition: pair.oop.position })), [pairs])
   const pairBySlot = useMemo(() => new Map(pairs.map(pair => [pair.ip.playerId, pair])), [pairs])
   const roleOverrides = config.role_weight_overrides ?? EMPTY_ROLE_OVERRIDES
-  const generalWeights = useMemo(() => ({ ...DEFAULT_ATTRIBUTE_WEIGHTS, ...(config.general_weights ?? {}) }), [config.general_weights])
   const latestByPlayer = useMemo(() => new Map(players.map(player => [player.id, player.player_snapshots[0]])), [players])
   const latest = (player: Player) => latestByPlayer.get(player.id)
 
@@ -182,49 +181,32 @@ export function PlanningPage() {
     if (focusedSetId && !currentSets.some(set => set.id === focusedSetId)) setFocusedSetId(null)
   }, [focusedSetId, currentSets])
 
-  function roleScore(player: Player, slot: Assignment) {
+  function resolvedWeights(slot: Assignment, phase: 'IP' | 'OOP') {
+    const id = slot.roleId ?? `${phase}-${positionGroup(slot.position)}-${slot.roleCode}`
+    return resolveRoleWeights({ roleId: id, roleName: slot.roleName, overrideWeights: roleOverrides[id] ?? tactic?.roles?.find(role => role.id === id)?.weights })
+  }
+
+  function pairRoleScore(player: Player, pair: Pair) {
     const snapshot = latest(player)
-    const id = slot.roleId ?? slot.roleCode
-    const weights = roleOverrides[id] ?? tactic?.roles?.find(role => role.id === id)?.weights ?? roleDefaultWeights(id, slot.roleName)
-    return snapshot ? attributeScore(snapshot.player_attributes.map(attribute => ({ key: attribute.attribute_key, value: attribute.value, weight: weights[attribute.attribute_key] ?? 3 }))) : null
+    return snapshot ? pairedRoleScore(snapshot.player_attributes, resolvedWeights(pair.ip, 'IP'), resolvedWeights(pair.oop, 'OOP')) : null
   }
 
   function generalScore(player: Player) {
     const snapshot = latest(player)
-    if (!snapshot) return null
-    const raw = attributeScore(snapshot.player_attributes.map(attribute => ({ key: attribute.attribute_key, value: attribute.value, weight: generalWeights[attribute.attribute_key] ?? 3 })))
-    return raw === null ? null : fmScaleScore(raw)
+    return snapshot ? generalScoreForSnapshot(snapshot)?.score ?? null : null
   }
 
-  const generalReferenceRatings = useMemo(() => {
-    const groups: Record<string, number[]> = { GK: [], D: [], WB: [], DM: [], M: [], AM: [], ST: [] }
-    for (const player of reference?.players ?? []) {
-      const raw = referenceScore(player, reference!.attributes, generalWeights)
-      if (raw === null) continue
-      const value = fmScaleScore(raw)
-      for (const family of positionFamilies(player.p)) if (groups[family]) groups[family].push(value)
-    }
-    for (const values of Object.values(groups)) values.sort((a, b) => a - b)
-    return groups
-  }, [reference, generalWeights])
-
-  function generalReferencePopulation(player: Player) {
-    const families = positionFamilies(latest(player)?.positions ?? [])
-    const candidates = families.map(family => generalReferenceRatings[family] ?? []).filter(values => values.length)
-    return candidates.sort((a, b) => b.length - a.length)[0] ?? []
-  }
+  const generalReferenceRatings = useMemo(() => generalReferenceScoresByFamily(reference?.players ?? [], reference?.attributes ?? []), [reference])
 
   const referenceRatings = useMemo(() => new Map(pairs.map(pair => {
-    const ipId = pair.ip.roleId ?? pair.ip.roleCode
-    const oopId = pair.oop.roleId ?? pair.oop.roleCode
-    const ipWeights = roleOverrides[ipId] ?? tactic?.roles?.find(role => role.id === ipId)?.weights ?? roleDefaultWeights(ipId, pair.ip.roleName)
-    const oopWeights = roleOverrides[oopId] ?? tactic?.roles?.find(role => role.id === oopId)?.weights ?? roleDefaultWeights(oopId, pair.oop.roleName)
-    const ratings = (reference?.players ?? []).filter(player => canPlay([player.p], pair.ip.position)).map(player => combinedPhaseScore(referenceScore(player, reference!.attributes, ipWeights), referenceScore(player, reference!.attributes, oopWeights))).filter((value): value is number => value !== null).sort((a, b) => a - b)
+    const ipWeights = resolvedWeights(pair.ip, 'IP')
+    const oopWeights = resolvedWeights(pair.oop, 'OOP')
+    const ratings = (reference?.players ?? []).filter(player => canPlay([player.p], pair.ip.position)).map(player => referencePairedRoleScore(player, reference!.attributes, ipWeights, oopWeights)).filter((value): value is number => value !== null).sort((a, b) => a - b)
     return [pair.ip.playerId, ratings]
   })), [pairs, reference, roleOverrides, tactic])
 
   const playerScores = useMemo(() => new Map(players.map(player => [player.id, new Map(pairs.map(pair => {
-    const value = combinedPhaseScore(roleScore(player, pair.ip), roleScore(player, pair.oop))
+    const value = pairRoleScore(player, pair)
     const rank = value === null ? null : percentile(value, referenceRatings.get(pair.ip.playerId) ?? [])
     return [pair.ip.playerId, { value, rank }]
   }))])), [players, pairs, referenceRatings, roleOverrides, tactic])
@@ -248,14 +230,15 @@ export function PlanningPage() {
     const snapshot = latest(player)
     const contextual = contextualPairs.length > 0
     const pair = contextual ? contextualPairs.reduce<Pair | undefined>((best, current) => !best || (pairRating(player, current) ?? -1) > (pairRating(player, best) ?? -1) ? current : best, undefined) : undefined
-    const rankPopulation = contextual && pair ? (referenceRatings.get(pair.ip.playerId) ?? []) : generalReferencePopulation(player)
     const score = contextual && pair ? pairRating(player, pair) : generalScore(player)
-    const rank = score === null ? null : percentile(score, rankPopulation)
+    const generalReference = !contextual && snapshot && score !== null ? generalReferencePercentile(score, snapshot, generalReferenceRatings) : null
+    const rankPopulation = contextual && pair ? (referenceRatings.get(pair.ip.playerId) ?? []) : generalReference?.population ?? []
+    const rank = contextual ? (score === null ? null : percentile(score, rankPopulation)) : generalReference?.percentile ?? null
     const compatible = contextual ? isPlanningFamiliar(planningFamiliarity(snapshot, contextualPairs)) : true
     const positionVisible = positionFilters === null ? true : positionFilters.length > 0 && positionFilters.some(position => canPlay(snapshot?.positions ?? [], position))
     return { player, score, rank, rankPopulation, compatible, positionVisible }
   }).filter(row => row.positionVisible && !assignmentIndex[row.player.id] && row.player.current_name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => Number(b.compatible) - Number(a.compatible) || (b.score ?? 0) - (a.score ?? 0) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')), [players, search, contextualPairs, playerScores, assignmentIndex, latestByPlayer, generalWeights, generalReferenceRatings, referenceRatings])
+    .sort((a, b) => Number(b.compatible) - Number(a.compatible) || (b.score ?? 0) - (a.score ?? 0) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')), [players, search, contextualPairs, playerScores, assignmentIndex, latestByPlayer, generalReferenceRatings, referenceRatings])
 
   const activePlayer = players.find(player => player.id === dragging?.id)
   const currentGroupPlayerIds = useMemo(() => new Set(Object.values(planning.slotAssignments[currentGroup?.id ?? ''] ?? {}).flat().filter(Boolean)), [planning.slotAssignments, currentGroup?.id])
@@ -576,13 +559,13 @@ function BoardPlayerCard({ player, snapshot, score, rank, rankPopulation, covera
   const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, out ? familiarityTooltip : null].filter(Boolean).join('\n\n')
   return <article data-planning-player-id={player.id} className={`planning-set-player-card ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
     <button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
-    <span className="planning-score-wrap"><ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} eligible={isPlanningFamiliar(familiarity)} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.'} /></span>
+    <span className="planning-score-wrap"><ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.'} /></span>
     <div className="planning-card-meta"><small>{snapshot.age ?? '—'} anos</small><span className="planning-card-badges">{coverage && <b className="coverage-badge">Cobertura</b>}{familiarityLabel && <b className="out-position-badge">{familiarityLabel.includes('IP/OOP') ? 'Fora pos. IP/OOP' : familiarityLabel.includes('IP') ? 'Fora pos. IP' : familiarityLabel.includes('OOP') ? 'Fora pos. OOP' : 'Fora pos.'}</b>}</span></div>
   </article>
 }
 
 function RosterPlayerCard({ player, snapshot, score, rank, rankPopulation, compatible, contextual, scoreKey, drag, dragEnd, open }: { player: Player; snapshot: Snapshot; score: number | null; rank: number | null; rankPopulation: number[]; compatible: boolean; contextual: boolean; scoreKey?: string; drag: (event: DragEvent<HTMLDivElement>) => void; dragEnd: () => void; open: () => void }) {
-  return <div className={`planning-player roster-player-card ${!compatible ? 'incompatible' : ''}`} draggable onDragStart={drag} onDragEnd={dragEnd}><PlayerPeek player={player} snapshot={snapshot} /><div className="roster-player-main"><button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{player.current_name}</button><span>{snapshot.positions.join(', ') || 'Sem posição informada'}</span><small>{[snapshot.age !== null ? `${snapshot.age} anos` : null, snapshot.height ? `${snapshot.height} cm` : null, snapshot.preferred_foot ? footLabel(snapshot.preferred_foot) : null].filter(Boolean).join(' · ') || 'Sem metadados adicionais'}</small></div><span className="planning-score-wrap roster-score-wrap"><ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType={contextual ? 'function' : 'general'} scoreKey={scoreKey} eligible={!contextual || compatible} variant="compact" currentTitle={contextual ? 'Nota atual nesta função' : 'Nota atual'} /></span></div>
+  return <div className={`planning-player roster-player-card ${!compatible ? 'incompatible' : ''}`} draggable onDragStart={drag} onDragEnd={dragEnd}><PlayerPeek player={player} snapshot={snapshot} /><div className="roster-player-main"><button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{player.current_name}</button><span>{snapshot.positions.join(', ') || 'Sem posição informada'}</span><small>{[snapshot.age !== null ? `${snapshot.age} anos` : null, snapshot.height ? `${snapshot.height} cm` : null, snapshot.preferred_foot ? footLabel(snapshot.preferred_foot) : null].filter(Boolean).join(' · ') || 'Sem metadados adicionais'}</small></div><span className="planning-score-wrap roster-score-wrap"><ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType={contextual ? 'function' : 'general'} scoreKey={scoreKey} variant="compact" currentTitle={contextual ? 'Nota atual nesta função' : 'Nota atual'} /></span></div>
 }
 
 function TransferGroupPanel({ group, playerIds, players, latest, dragging, drop, startDrag, dragEnd, open, remove }: { group: Group; playerIds: string[]; players: Player[]; latest: (player: Player) => Snapshot | undefined; dragging: boolean; drop: () => void; startDrag: (id: string) => void; dragEnd: () => void; open: (id: string) => void; remove: (id: string) => void }) {

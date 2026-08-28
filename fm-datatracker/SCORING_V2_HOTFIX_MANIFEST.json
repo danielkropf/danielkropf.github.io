@@ -1,0 +1,125 @@
+{
+  "packageVersion": "0.26.5",
+  "baseCommit": "2264e39a9d97e0cb481f3f556bef1d2b56e1a9f1",
+  "hotfix": "scoring-v2-runtime",
+  "delete": [
+    "package-lock.json.patch"
+  ],
+  "projectionAsset": {
+    "path": "public/reference/projection.fm26-v2-provisional.json",
+    "included": false,
+    "sha256": "cd5e9d85f411faa15eac7ca3bff89d9679491d588a4231814eb1c5c295f9917b",
+    "observations": 43412
+  },
+  "validation": {
+    "typescriptSyntax": "passed",
+    "fullNpmBuild": "not_run_offline_environment"
+  },
+  "files": [
+    {
+      "path": "LEIA_ANTES_DE_APLICAR.txt",
+      "bytes": 1866,
+      "sha256": "7d45799c6ffc27ffa7c7b704cde65eb0d1e9a03dd297de2679eadacbbb775102"
+    },
+    {
+      "path": "docs/scoring-v2-runtime.md",
+      "bytes": 2076,
+      "sha256": "0ecd054011dfe596f2c6e36b06863e525113677d4eda3928706079452e365421"
+    },
+    {
+      "path": "src/components/ScoreBadge.tsx",
+      "bytes": 783,
+      "sha256": "e274e6e8648e996fa1ba9ed0d317581613de798cda1af4a03a8bc5b4f705e61d"
+    },
+    {
+      "path": "src/features/potential/PotentialContext.tsx",
+      "bytes": 3592,
+      "sha256": "0ebe7c3d4848719acbb0911029478cc1aef196570619bda5217f7628c8bada6b"
+    },
+    {
+      "path": "src/lib/base-position-score.ts",
+      "bytes": 5684,
+      "sha256": "39dd405e4eebc450d293e3507bffbafba91dd2291ec87b84bc52294338ce2cc2"
+    },
+    {
+      "path": "src/lib/canonical-scoring.test.ts",
+      "bytes": 3535,
+      "sha256": "ae5d4eeb39d0c149b9c1f59fe3a154fd3026fc22caca3ce1791baec40456acb0"
+    },
+    {
+      "path": "src/lib/planning-familiarity.ts",
+      "bytes": 3922,
+      "sha256": "cbf9cc6b38e468de31b82d2f752d6d232bbf4436f0e791db4a0b70080719ab40"
+    },
+    {
+      "path": "src/lib/position-aptitude.ts",
+      "bytes": 2891,
+      "sha256": "3722181c440a1ac6b4318f14094a614fe1e634305e67d73411677af96b79c30f"
+    },
+    {
+      "path": "src/lib/projection-engine.ts",
+      "bytes": 13256,
+      "sha256": "4548324fb095086131ef8e55809b96ed596fc57f15aaf2e63c230a7de76c88fc"
+    },
+    {
+      "path": "src/lib/projection-player.test.ts",
+      "bytes": 1728,
+      "sha256": "b612a0ebb1e5d78eef04a017f28417a822ce29b0f4b8c8b3d75f5a5d2b5d1c3e"
+    },
+    {
+      "path": "src/lib/projection-player.ts",
+      "bytes": 4515,
+      "sha256": "4fcb33365e3a87e6aa6b3e7d454e56fb1b83ff4b0f0ef8d6e4dfaa8597ecf042"
+    },
+    {
+      "path": "src/lib/projection-reference.ts",
+      "bytes": 8849,
+      "sha256": "5efdf65771998331e79eea41553a653be387a1336dd31144b9f39ce3b81e5669"
+    },
+    {
+      "path": "src/lib/projection-routing.test.ts",
+      "bytes": 806,
+      "sha256": "a6739ec4de9fba905cf6969174f30ea82050c4bc6e9e53796723288af1771380"
+    },
+    {
+      "path": "src/lib/projection-scoring-integration.test.ts",
+      "bytes": 1400,
+      "sha256": "c21e5e7c2ab47757dbcf4823262bd75cbaae3b1ad73738b70e46e705dd156597"
+    },
+    {
+      "path": "src/lib/reference.ts",
+      "bytes": 3994,
+      "sha256": "13803f7701c78f65e34d386ee05e52836536657db0ef4d2267bbbb5fac8816f1"
+    },
+    {
+      "path": "src/lib/role-scoring.test.ts",
+      "bytes": 1800,
+      "sha256": "380a2ac1faa907c52904d43e8bc769fa2a2f82be6604e651d3089d5b29f85112"
+    },
+    {
+      "path": "src/lib/role-scoring.ts",
+      "bytes": 3203,
+      "sha256": "525df8d7223718df6a388d4ac5c14ecc61fedf5ae25e3fc5d816a2174788a4b8"
+    },
+    {
+      "path": "src/pages/ModelLabPage.tsx",
+      "bytes": 6537,
+      "sha256": "41424a3297a541ae87e19e57c01e7761be39ed402a2dd1304e932c6776809b75"
+    },
+    {
+      "path": "src/pages/PlanningPage.tsx",
+      "bytes": 52935,
+      "sha256": "74f5e63a1eafddac50d410f0c9903ae58516943c4395d888dee59c795d7b6cac"
+    },
+    {
+      "path": "src/pages/SquadPage.tsx",
+      "bytes": 34010,
+      "sha256": "10ef36ef6e33fda37f8aa47952a2997f743ad382340fb3b6263e7f7389a21457"
+    },
+    {
+      "path": "src/pages/TacticsPage.tsx",
+      "bytes": 30080,
+      "sha256": "7ab6db4593a3221b34647a238fc0791cb591a0a9e13ff50a4775c0662c10b683"
+    }
+  ]
+}

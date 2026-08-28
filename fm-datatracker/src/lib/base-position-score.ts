@@ -1,6 +1,6 @@
-import { attributeScore, combinedPhaseScore } from './scoring'
-import { roleDefaultWeights } from './roleWeights'
+import { pairedRoleScore, canonicalRoleDefaultWeights } from './role-scoring'
 import { canPlayPosition } from './positions'
+import { isGeneralScorePositionEligible } from './position-aptitude'
 import type { ProjectionFamily } from './projection-reference'
 import type { ReferencePlayer } from './reference'
 
@@ -12,94 +12,104 @@ export type BasePositionScoreResult = {
 }
 
 type AttributeValue = { attribute_key: string; value: number | null }
-type SnapshotLike = {
+export type GeneralScoreSnapshot = {
   positions: string[]
   normalized_data?: Record<string, unknown>
   raw_data?: Record<string, unknown>
   player_attributes: AttributeValue[]
 }
 
-type BaseDefinition = { position: string; scoreKey: string; family: ProjectionFamily; roleName: string }
+type BaseDefinition = {
+  position: string
+  scoreKey: string
+  family: ProjectionFamily
+  group: 'GK' | 'CB' | 'FB' | 'WB' | 'DM' | 'CM' | 'WM' | 'AM' | 'W' | 'ST'
+  roleCode: string
+  roleName: string
+}
+
 export const BASE_POSITION_DEFINITIONS: BaseDefinition[] = [
-  { position: 'GK', scoreKey: 'GK', family: 'GK', roleName: 'Goalkeeper' },
-  { position: 'D (C)', scoreKey: 'DC', family: 'D', roleName: 'Centre-Back' },
-  { position: 'D (L)', scoreKey: 'FB', family: 'D', roleName: 'Full Back' },
-  { position: 'D (R)', scoreKey: 'FB', family: 'D', roleName: 'Full Back' },
-  { position: 'WB (L)', scoreKey: 'WB', family: 'WB', roleName: 'Wing Back' },
-  { position: 'WB (R)', scoreKey: 'WB', family: 'WB', roleName: 'Wing Back' },
-  { position: 'DM (C)', scoreKey: 'DM', family: 'DM', roleName: 'Defensive Midfielder' },
-  { position: 'M (C)', scoreKey: 'CM', family: 'M', roleName: 'Central Midfielder' },
-  { position: 'M (L)', scoreKey: 'MRL', family: 'M', roleName: 'Wide Midfielder' },
-  { position: 'M (R)', scoreKey: 'MRL', family: 'M', roleName: 'Wide Midfielder' },
-  { position: 'AM (C)', scoreKey: 'AMC', family: 'AM', roleName: 'Attacking Midfielder' },
-  { position: 'AM (L)', scoreKey: 'W', family: 'AM', roleName: 'Winger' },
-  { position: 'AM (R)', scoreKey: 'W', family: 'AM', roleName: 'Winger' },
-  { position: 'ST (C)', scoreKey: 'ST', family: 'ST', roleName: 'Centre Forward' },
+  { position: 'GK', scoreKey: 'GK', family: 'GK', group: 'GK', roleCode: 'GK', roleName: 'Goalkeeper' },
+  { position: 'D (C)', scoreKey: 'DC', family: 'D', group: 'CB', roleCode: 'CB', roleName: 'Centre-Back' },
+  { position: 'D (L)', scoreKey: 'FB', family: 'D', group: 'FB', roleCode: 'FB', roleName: 'Full Back' },
+  { position: 'D (R)', scoreKey: 'FB', family: 'D', group: 'FB', roleCode: 'FB', roleName: 'Full Back' },
+  { position: 'WB (L)', scoreKey: 'WB', family: 'WB', group: 'WB', roleCode: 'WB', roleName: 'Wing Back' },
+  { position: 'WB (R)', scoreKey: 'WB', family: 'WB', group: 'WB', roleCode: 'WB', roleName: 'Wing Back' },
+  { position: 'DM (C)', scoreKey: 'DM', family: 'DM', group: 'DM', roleCode: 'DM', roleName: 'Defensive Midfielder' },
+  { position: 'M (C)', scoreKey: 'CM', family: 'M', group: 'CM', roleCode: 'CM', roleName: 'Central Midfielder' },
+  { position: 'M (L)', scoreKey: 'MRL', family: 'M', group: 'WM', roleCode: 'WM', roleName: 'Wide Midfielder' },
+  { position: 'M (R)', scoreKey: 'MRL', family: 'M', group: 'WM', roleCode: 'WM', roleName: 'Wide Midfielder' },
+  { position: 'AM (C)', scoreKey: 'AMC', family: 'AM', group: 'AM', roleCode: 'AM', roleName: 'Attacking Midfielder' },
+  { position: 'AM (L)', scoreKey: 'W', family: 'AM', group: 'W', roleCode: 'W', roleName: 'Winger' },
+  { position: 'AM (R)', scoreKey: 'W', family: 'AM', group: 'W', roleCode: 'W', roleName: 'Winger' },
+  { position: 'ST (C)', scoreKey: 'ST', family: 'ST', group: 'ST', roleCode: 'CF', roleName: 'Centre Forward' },
 ]
 
-const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-const finite = (value: unknown) => {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
-  return Number.isFinite(parsed) ? parsed : null
-}
-const normalizedKey = (value: string) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-
-function phaseScore(attributes: AttributeValue[], phase: 'IP' | 'OOP', roleName: string) {
-  const weights = roleDefaultWeights(`${phase}-base-position-score`, roleName)
-  return attributeScore(attributes.map(attribute => ({ key: attribute.attribute_key, value: finite(attribute.value), weight: weights[attribute.attribute_key] ?? 1 })))
+function baseWeights(phase: 'IP' | 'OOP', definition: BaseDefinition) {
+  return canonicalRoleDefaultWeights(`${phase}-${definition.group}-${definition.roleCode}`, definition.roleName)
 }
 
-function referencePhaseScore(player: ReferencePlayer, attributeKeys: string[], phase: 'IP' | 'OOP', roleName: string) {
-  const weights = roleDefaultWeights(`${phase}-base-position-score`, roleName)
-  return attributeScore(attributeKeys.map((key, index) => ({ key, value: finite(player.v[index]), weight: weights[key] ?? 1 })))
+function scoreDefinition(attributes: AttributeValue[], definition: BaseDefinition) {
+  return pairedRoleScore(attributes, baseWeights('IP', definition), baseWeights('OOP', definition))
 }
 
-function positionalRating(snapshot: SnapshotLike, definition: BaseDefinition) {
-  const normalized = record(snapshot.normalized_data)
-  const raw = record(snapshot.raw_data)
-  const containers = [record(normalized.position_ratings), record(normalized.positions_numeric), record(record(normalized.fm_hidden).positions), record(raw.position_ratings)]
-  const aliases = [definition.position, definition.position.replace(/[ ()]/g, ''), definition.scoreKey].map(normalizedKey)
-  for (const container of containers) {
-    for (const [key, value] of Object.entries(container)) {
-      if (!aliases.includes(normalizedKey(key))) continue
-      const parsed = finite(value)
-      if (parsed !== null) return parsed
-    }
-  }
-  return null
+function referenceAttributes(player: ReferencePlayer, attributeKeys: string[]) {
+  return attributeKeys.map((key, index) => ({ key, value: player.v[index] ?? null }))
 }
 
 function chooseBest(candidates: BasePositionScoreResult[]) {
   return candidates.length ? candidates.reduce((best, item) => item.score > best.score ? item : best) : null
 }
 
-export function generalBasePositionScore(snapshot: SnapshotLike): BasePositionScoreResult | null {
+export function eligibleBasePositionDefinitions(snapshot: GeneralScoreSnapshot) {
+  return BASE_POSITION_DEFINITIONS.filter(definition => isGeneralScorePositionEligible(snapshot, definition.position))
+}
+
+export function eligibleGeneralScoreFamilies(snapshot: GeneralScoreSnapshot) {
+  return [...new Set(eligibleBasePositionDefinitions(snapshot).map(definition => definition.family))]
+}
+
+export function basePositionScores(snapshot: GeneralScoreSnapshot): BasePositionScoreResult[] {
   const candidates: BasePositionScoreResult[] = []
   const seen = new Set<string>()
-  for (const definition of BASE_POSITION_DEFINITIONS) {
-    const rating = positionalRating(snapshot, definition)
-    if (rating !== null ? rating < 15 : !canPlayPosition(snapshot.positions, definition.position)) continue
+  for (const definition of eligibleBasePositionDefinitions(snapshot)) {
     const key = `${definition.scoreKey}:${definition.family}`
     if (seen.has(key)) continue
-    const score = combinedPhaseScore(phaseScore(snapshot.player_attributes, 'IP', definition.roleName), phaseScore(snapshot.player_attributes, 'OOP', definition.roleName))
+    const score = scoreDefinition(snapshot.player_attributes, definition)
     if (score === null) continue
     candidates.push({ position: definition.position, scoreKey: definition.scoreKey, family: definition.family, score })
     seen.add(key)
   }
-  return chooseBest(candidates)
+  return candidates
 }
 
-export function generalBasePositionScoreForReference(player: ReferencePlayer, attributeKeys: string[]): BasePositionScoreResult | null {
+export function generalScoreForSnapshot(snapshot: GeneralScoreSnapshot): BasePositionScoreResult | null {
+  return chooseBest(basePositionScores(snapshot))
+}
+
+export function generalScoreValue(snapshot: GeneralScoreSnapshot | null | undefined) {
+  return snapshot ? generalScoreForSnapshot(snapshot)?.score ?? null : null
+}
+
+export function basePositionScoresForReference(player: ReferencePlayer, attributeKeys: string[]): BasePositionScoreResult[] {
   const candidates: BasePositionScoreResult[] = []
   const seen = new Set<string>()
+  const attributes = referenceAttributes(player, attributeKeys)
   for (const definition of BASE_POSITION_DEFINITIONS) {
     if (!canPlayPosition([player.p], definition.position)) continue
     const key = `${definition.scoreKey}:${definition.family}`
     if (seen.has(key)) continue
-    const score = combinedPhaseScore(referencePhaseScore(player, attributeKeys, 'IP', definition.roleName), referencePhaseScore(player, attributeKeys, 'OOP', definition.roleName))
+    const score = pairedRoleScore(attributes, baseWeights('IP', definition), baseWeights('OOP', definition))
     if (score === null) continue
     candidates.push({ position: definition.position, scoreKey: definition.scoreKey, family: definition.family, score })
     seen.add(key)
   }
-  return chooseBest(candidates)
+  return candidates
 }
+
+export function generalScoreForReference(player: ReferencePlayer, attributeKeys: string[]): BasePositionScoreResult | null {
+  return chooseBest(basePositionScoresForReference(player, attributeKeys))
+}
+
+export const generalBasePositionScore = generalScoreForSnapshot
+export const generalBasePositionScoreForReference = generalScoreForReference
