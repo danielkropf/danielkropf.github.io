@@ -1,63 +1,70 @@
 # FM DataTracker
 
-Aplicação pessoal para acompanhar saves do Football Manager por meio de snapshots históricos. O projeto importa exports CSV e, em fase beta, arquivos de save `.fm`; organiza elenco, planejamento, táticas, pesos de funções e comparação com uma base de referência.
-
-> Antes de alterar o projeto, leia o [handoff técnico](docs/HANDOFF.md). Ele é o documento de referência para continuidade segura.
+Aplicação pessoal para acompanhar saves do Football Manager por meio de snapshots históricos. O DataTracker importa exports CSV e, em fase beta, arquivos `.fm`; organiza elenco, planejamento, táticas, funções e projeções sem promover campos experimentais a dados confirmados.
 
 ## Estado atual
 
-- Versão do aplicativo: **v0.23.1**.
-- CSV é o caminho de importação estável.
-- A leitura direta de `.fm` funciona localmente no navegador e permanece beta: campos sem mapeamento confirmado nunca devem ser inventados.
-- O projeto usa Supabase para autenticação e dados do usuário; o navegador recebe apenas a chave pública `anon`.
+- Versão desta entrega: **v0.26.7**.
+- CSV continua sendo o caminho estável de importação.
+- A leitura direta de `.fm` acontece localmente no navegador e continua **beta**.
+- CA/PA extraídos do `.fm` permanecem candidatos experimentais com provenance explícita; CA/PA antigos de CSV/PlayerExport não alimentam Projection.
+- Projection v2.1 permanece provisória (`calibrated=false`).
+- Autenticação e dados persistentes usam Supabase com RLS; o frontend utiliza somente a chave pública `anon`.
 
 ## Stack
 
-React 19, TypeScript strict, Vite, HashRouter, Supabase Auth/PostgreSQL/RLS, Papa Parse, Web Workers, `zstddec` e Vitest.
+React 19, TypeScript strict, Vite, HashRouter, Supabase Auth/PostgreSQL/Storage/RLS, Papa Parse, Web Workers, `zstddec` e Vitest.
 
 ## Desenvolvimento local
 
 ```bash
 cd fm-datatracker
-npm install
+npm ci
 copy .env.example .env.local
 npm run dev
 ```
 
 Preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` em `.env.local`. Nunca exponha uma chave `service_role` no frontend e nunca versione `.env.local`.
 
-## Verificação obrigatória
+## Gates obrigatórios
+
+Antes de considerar uma release válida:
 
 ```bash
+npm ci
 npm run typecheck
 npm test
 npm run build
 ```
 
-O build gera `dist/`. O workflow de GitHub Pages publica esse resultado em `/fm-datatracker/`; o `HashRouter` evita falhas ao atualizar rotas estáticas.
+O build gera `dist/`. GitHub Pages deve usar **Source = GitHub Actions**. O workflow `.github/workflows/deploy-pages.yml` monta `_site/fm-datatracker/` a partir de `dist/` e preserva os demais sites do repositório. Não usar publicação paralela por branch/Jekyll para o DataTracker.
 
-## Documentação
+## Documentação canônica
 
-- [Handoff técnico e regras de mudança](docs/HANDOFF.md)
-- [Arquitetura](docs/architecture.md)
-- [Importação CSV e `.fm`](docs/import-format.md)
-- [Banco e migrations](docs/database.md)
-- [Guia de desenvolvimento e release](docs/development.md)
-- [Base de referência](docs/reference-database.md)
-- [Pontuação e pesos](docs/scoring.md)
-- [Oracle/runtime FM26: contrato seguro](docs/ORACLE-HANDOFF.md)
+A documentação operacional não vive em `docs/` neste repositório. A fonte canônica está no Google Drive, pasta **FM-Datatracker**, especialmente:
+
+- `FM DataTracker — PROJECT INSTRUCTIONS`
+- `FM DataTracker — HANDOFF`
+- `FM DataTracker — Architecture`
+- `FM DataTracker — Import Format`
+- `FM DataTracker — Database`
+- `FM DataTracker — Development`
+- `FM DataTracker — Reference Database`
+- `FM DataTracker — Scoring`
+- `FM DataTracker — Design System`
+- `Research/FM DataTracker — FM Save Format`
+- `Research/FM DataTracker — Validation Ground Truth`
+
+O GitHub é a fonte canônica da implementação publicada; o Drive é a fonte canônica das especificações, pesquisa, decisões e continuidade.
 
 ## Supabase e migrations
 
-Execute as migrations em ordem de nome no SQL Editor:
+As migrations em `supabase/migrations/` são histórico append-only e devem ser aplicadas em ordem cronológica. Não reescrever migrations já aplicadas para corrigir drift: adicionar uma migration forward.
 
-1. `supabase/migrations/202608150001_initial_schema.sql`
-2. `supabase/migrations/202608150002_import_rpc.sql`
-3. `supabase/migrations/202608230001_fm_reader_samples.sql`
-4. `supabase/migrations/202608230003_oracle_roster_import.sql`
+O ledger remoto de produção inclui hardening de integridade em `20260827234211` e `20260827234421` e a estabilização `20260828060819`, que restaura `delete_fm_import`, expõe capability detection factual e provisiona o fluxo privado de diagnóstico `.fm` com reserva/cleanup/expiração.
 
-O terceiro arquivo cria um mecanismo opcional e privado para o usuário autorizar o envio de amostras que falharam na validação CSV × `.fm`.
+GitHub Pages **não aplica migrations Supabase automaticamente**. O estado remoto deve ser verificado antes de uma release depender de nova capability.
 
 ## Limites de segurança
 
-Não comite saves, DLLs proprietárias do FM, dumps de interop, exports privados ou credenciais. O leitor de `.fm` é estritamente de leitura: não deve modificar um save ou o estado persistente do jogo.
+Não comite saves, exports privados, DLLs proprietárias do FM, dumps de interop ou credenciais. O leitor `.fm` é estritamente de leitura e não deve modificar o save do jogo. Campos sem provenance/confiança suficiente devem permanecer indisponíveis em vez de receber valores inferidos.

@@ -14,7 +14,29 @@ export type ProjectionSnapshot = {
   player_attributes: Array<{ attribute_key: string; value: number }>
 }
 
-const record = (value: unknown): UnknownRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {}
+export type ProjectionAbilityFact = {
+  value: number | null
+  origin: 'fm26-save-offline' | null
+  namespace: 'normalized_data.fm_hidden' | null
+  status: 'candidate_with_provenance_not_universally_validated' | 'unavailable'
+  confidence: 'experimental_candidate' | 'unavailable'
+  reason: string | null
+}
+
+export type ProjectionAbilityFacts = {
+  ca: ProjectionAbilityFact
+  pa: ProjectionAbilityFact
+  available: boolean
+  reason: string | null
+}
+
+const ALLOWED_FM_ORIGIN = 'fm26-save-offline'
+const ALLOWED_CA_PA_STATUS = 'candidate_with_provenance_not_universally_validated'
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+const record = (value: unknown): UnknownRecord => isRecord(value) ? value : {}
 const finite = (value: unknown) => {
   const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
   return Number.isFinite(parsed) ? parsed : null
@@ -34,6 +56,53 @@ function deepFinite(sources: UnknownRecord[], keys: string[]) {
   return null
 }
 
+function unavailableAbility(reason: string): ProjectionAbilityFact {
+  return {
+    value: null,
+    origin: null,
+    namespace: null,
+    status: 'unavailable',
+    confidence: 'unavailable',
+    reason,
+  }
+}
+
+function trustedAbilityFact(snapshot: ProjectionSnapshot, key: 'current_ability' | 'potential_ability'): ProjectionAbilityFact {
+  const normalized = record(snapshot.normalized_data)
+  if (text(normalized.source) !== ALLOWED_FM_ORIGIN) {
+    return unavailableAbility('Projection requer CA/PA com provenance explícita do leitor .fm offline.')
+  }
+  if (text(normalized.ca_pa_status) !== ALLOWED_CA_PA_STATUS) {
+    return unavailableAbility('O status de confiança de CA/PA não é autorizado pela Projection experimental atual.')
+  }
+  const hidden = record(normalized.fm_hidden)
+  const value = finite(hidden[key])
+  if (value === null) {
+    return unavailableAbility(`${key === 'current_ability' ? 'CA' : 'PA'} confiável não está disponível neste snapshot.`)
+  }
+  return {
+    value,
+    origin: ALLOWED_FM_ORIGIN,
+    namespace: 'normalized_data.fm_hidden',
+    status: ALLOWED_CA_PA_STATUS,
+    confidence: 'experimental_candidate',
+    reason: null,
+  }
+}
+
+/**
+ * Canonical CA/PA gate for Projection.
+ * PlayerExport CSV fields, raw_data and generic normalized top-level aliases are
+ * intentionally preserved as evidence only and are never accepted here.
+ */
+export function projectionAbilityFacts(snapshot: ProjectionSnapshot): ProjectionAbilityFacts {
+  const ca = trustedAbilityFact(snapshot, 'current_ability')
+  const pa = trustedAbilityFact(snapshot, 'potential_ability')
+  const available = ca.value !== null && pa.value !== null
+  const reason = available ? null : ca.reason ?? pa.reason ?? 'CA/PA confiável indisponível.'
+  return { ca, pa, available, reason }
+}
+
 export function generalProjectionKey(positions: string[]) {
   return positions.some(position => position.toUpperCase().replaceAll(' ', '').startsWith('GK')) ? 'GK' : 'OUTFIELD'
 }
@@ -47,16 +116,28 @@ export function snapshotProjectionFacts(snapshot: ProjectionSnapshot) {
   const hidden = record(normalized.fm_hidden)
   const personality = record(normalized.hidden_personality)
   const raw = record(snapshot.raw_data)
-  const sources = [hidden, normalized, raw]
-  const ca = deepFinite(sources, ['current_ability', 'ca', 'ca_candidate'])
-  const pa = deepFinite(sources, ['potential_ability', 'pa', 'pa_candidate'])
-  const professionalism = deepFinite([hidden, personality, normalized, raw], ['professionalism'])
-  const ambition = deepFinite([hidden, personality, normalized, raw], ['ambition'])
-  const determination = finite(snapshot.player_attributes.find(attribute => attribute.attribute_key === 'determination')?.value) ?? deepFinite([hidden, personality, normalized, raw], ['determination'])
-  const birthDate = text(raw.birth_date) ?? text(raw.date_of_birth) ?? text(normalized.birth_date) ?? text(normalized.date_of_birth)
+  const abilities = projectionAbilityFacts(snapshot)
+  const trustedFm = text(normalized.source) === ALLOWED_FM_ORIGIN
+  const professionalism = trustedFm ? deepFinite([hidden, personality], ['professionalism']) : null
+  const ambition = trustedFm ? deepFinite([hidden, personality], ['ambition']) : null
+  const determination = finite(snapshot.player_attributes.find(attribute => attribute.attribute_key === 'determination')?.value)
+    ?? (trustedFm ? deepFinite([hidden, personality], ['determination']) : null)
+  const birthDate = text(normalized.birth_date) ?? text(normalized.date_of_birth) ?? text(raw.birth_date) ?? text(raw.date_of_birth)
   const exact = professionalism !== null && ambition !== null && determination !== null
   const personalitySource: PersonalitySource = exact ? 'exact' : 'neutral'
-  return { ca, pa, professionalism, ambition, determination, birthDate, personalitySource }
+  return {
+    ca: abilities.ca.value,
+    pa: abilities.pa.value,
+    caFact: abilities.ca,
+    paFact: abilities.pa,
+    abilityAvailable: abilities.available,
+    abilityUnavailableReason: abilities.reason,
+    professionalism,
+    ambition,
+    determination,
+    birthDate,
+    personalitySource,
+  }
 }
 
 export function projectionInputForSnapshot({ snapshot, currentScore, scoreType, scoreKey, eligible = true, reference }: {

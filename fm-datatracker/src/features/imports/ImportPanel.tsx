@@ -3,6 +3,7 @@ import { chooseImportDirectory, chooseImportFile, getImportDirectoryName, IMPORT
 import { detectNameColumn, filesHash, inferSnapshotYear, isValidIsoDate, normalizeHeader, parseCsvFile, prepareRows } from '../../lib/importer'
 import { matchImportRows, mergeValidatedRows, type PreparedImportRow } from '../../lib/import-match'
 import { normalizedDate, normalizedFoot, normalizedText, positionsMatch } from '../../lib/fm-comparison'
+import { uploadDiagnosticSample } from '../../lib/diagnostic-upload'
 import { supabase } from '../../lib/supabase'
 import type { ImportPreview, ImportType } from '../../types/domain'
 import { useSaves } from '../saves/SaveContext'
@@ -195,19 +196,49 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   }
 
   async function readFmInWorker(file: File): Promise<OfflineRead> {
-    const worker = new Worker(new URL('../../lib/fm26-offline-worker.ts', import.meta.url), { type: 'module' })
     const id = crypto.randomUUID()
     const bytes = await file.arrayBuffer()
     return new Promise((resolve, reject) => {
+      let worker: Worker
+      let settled = false
+      let lastStatus = 'Inicializando o worker .fm…'
+
+      const fail = (message: string) => {
+        if (settled) return
+        settled = true
+        worker?.terminate()
+        reject(new Error(message))
+      }
+
+      try {
+        worker = new Worker(new URL('../../lib/fm26-offline-worker.ts', import.meta.url), { type: 'module', name: 'fm26-offline-reader' })
+      } catch (error) {
+        reject(new Error(`Não foi possível iniciar o worker .fm: ${errorMessage(error)}`))
+        return
+      }
+
       worker.onmessage = event => {
         const response = event.data as { id: string; type: 'status' | 'result' | 'error'; status?: string; result?: OfflineRead; message?: string }
         if (response.id !== id) return
-        if (response.type === 'status') { setFmStatus(response.status ?? 'Lendo o save localmente…'); return }
+        if (response.type === 'status') {
+          lastStatus = response.status ?? 'Lendo o save localmente…'
+          setFmStatus(lastStatus)
+          return
+        }
+        if (settled) return
+        settled = true
         worker.terminate()
         if (response.type === 'result' && response.result) resolve(response.result)
-        else reject(new Error(response.message ?? 'O leitor não retornou um resultado.'))
+        else reject(new Error(response.message ?? `O leitor não retornou um resultado após: ${lastStatus}`))
       }
-      worker.onerror = event => { worker.terminate(); reject(new Error(event.message || 'Falha no worker do leitor .fm.')) }
+      worker.onerror = event => {
+        event.preventDefault()
+        const runtimeMessage = event.error instanceof Error ? `${event.error.name}: ${event.error.message}` : event.message
+        const location = event.filename ? `${event.filename}${event.lineno ? `:${event.lineno}${event.colno ? `:${event.colno}` : ''}` : ''}` : ''
+        const detail = [runtimeMessage, location].filter(Boolean).join(' — ')
+        fail(`Falha no worker do leitor .fm após "${lastStatus}".${detail ? ` ${detail}` : ' O navegador não forneceu detalhes adicionais.'}`)
+      }
+      worker.onmessageerror = () => fail(`Falha ao transferir dados entre o worker .fm e a interface após "${lastStatus}".`)
       worker.postMessage({ id, bytes, fileName: file.name }, [bytes])
     })
   }
@@ -247,20 +278,10 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   }
 
   async function uploadDiagnostics() {
-    if (!shareForDiagnostics || !supabase || !selected || !fmFile || !csvFile || !comparison) return
+    if (!shareForDiagnostics || !selected || !fmFile || !csvFile || !comparison) return
     setSendingDiagnostics(true); setMessage('')
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Sua sessão expirou. Entre novamente para enviar o diagnóstico.')
-      const prefix = `${user.id}/${crypto.randomUUID()}`
-      const [fmUpload, csvUpload] = await Promise.all([
-        supabase.storage.from('fm-reader-samples').upload(`${prefix}/${fmFile.name}`, fmFile, { upsert: false }),
-        supabase.storage.from('fm-reader-samples').upload(`${prefix}/${csvFile.name}`, csvFile, { upsert: false }),
-      ])
-      if (fmUpload.error) throw fmUpload.error
-      if (csvUpload.error) throw csvUpload.error
-      const { error } = await supabase.from('fm_reader_samples').insert({ owner_id: user.id, save_id: selected.id, fm_path: fmUpload.data.path, csv_path: csvUpload.data.path, comparison, parser_version: 'offline-v0.22' })
-      if (error) throw error
+      await uploadDiagnosticSample({ saveId: selected.id, fmFile, csvFile, comparison })
       setMessage('Arquivos enviados de forma privada para diagnóstico. Obrigado por ajudar a melhorar o leitor.')
     } catch (error) { setMessage(`Não foi possível enviar o diagnóstico: ${errorMessage(error)}`) }
     finally { setSendingDiagnostics(false) }

@@ -6,6 +6,7 @@ import { projectScore, type ProjectionResult } from '../lib/projection-engine'
 import { projectionInputForSnapshot, type ProjectionSnapshot } from '../lib/projection-player'
 import { projectionRecordFromResult, scheduleProjectionPersistence } from '../lib/projection-storage'
 import type { ProjectionScoreType } from '../lib/projection-reference'
+import { shouldDisplayProjectionForAge } from '../lib/projection-visibility'
 
 type Props = {
   playerId?: string
@@ -24,6 +25,7 @@ type Props = {
 }
 
 const PROVISIONAL_TOOLTIP = 'Projeção experimental baseada na evolução longitudinal observada nos saves de referência atualmente disponíveis. Será recalibrada conforme novos dados forem adicionados.'
+const GENERAL_CONTEXT_TOOLTIP = 'Projeção geral do jogador no pico. A nota atual ao lado pode ser específica da função; este valor projetado usa o GeneralScore/BasePositionScore e não representa projeção específica dessa função.'
 
 function unavailableLabel(result: ProjectionResult) {
   if (result.status === 'missing_score') return 'Projeção indisponível: nota-base atual não disponível.'
@@ -53,7 +55,21 @@ export function ScoreWithProjection({
 }: Props) {
   const potential = usePotential()
   const { selected } = useSaves()
-  const input = potential.showPotential && snapshot ? projectionInputForSnapshot({ snapshot, currentScore, scoreType, scoreKey, eligible, reference: potential.reference }) : null
+  const projectionVisible = potential.showPotential && shouldDisplayProjectionForAge(snapshot?.age)
+  // Planning board cards explicitly provide a projection title even though their current
+  // score is function-specific. Function peak projection is not scientifically supported,
+  // so that explicit projection slot uses the supported GeneralScore projection instead.
+  // Other function-score surfaces remain fail-closed until they opt in deliberately.
+  const usesGeneralProjectionContext = scoreType === 'function' && Boolean(projectionTitle)
+  const projectionScoreType: ProjectionScoreType = usesGeneralProjectionContext ? 'general' : scoreType
+  const input = projectionVisible && snapshot ? projectionInputForSnapshot({
+    snapshot,
+    currentScore,
+    scoreType: projectionScoreType,
+    scoreKey: usesGeneralProjectionContext ? undefined : scoreKey,
+    eligible,
+    reference: potential.reference,
+  }) : null
   const projection: ProjectionResult | null = input ? projectScore(input) : null
   const displayedCurrentScore = input && scoreType === 'general' ? input.currentScore : currentScore
   const displayedCurrentRank = input && scoreType === 'general' ? null : currentRank
@@ -61,18 +77,27 @@ export function ScoreWithProjection({
   useEffect(() => {
     // Projection v2.1 is explicitly provisional/calibrated=false, therefore it is never persisted as a definitive projection.
     if (!projection || !input || !selected?.id || !playerId || !snapshot?.id || potential.experimental) return
-    scheduleProjectionPersistence(projectionRecordFromResult({ saveId: selected.id, playerId, snapshotId: snapshot.id, scoreType, scoreKey: input.scoreKey, currentScore: input.currentScore, result: projection }))
-  }, [projection?.status, projection?.projectedScore, projection?.trajectoryQuantile, projection?.referenceVersion, input?.scoreKey, input?.currentScore, selected?.id, playerId, snapshot?.id, scoreType, potential.experimental])
+    scheduleProjectionPersistence(projectionRecordFromResult({
+      saveId: selected.id,
+      playerId,
+      snapshotId: snapshot.id,
+      scoreType: projectionScoreType,
+      scoreKey: input.scoreKey,
+      currentScore: input.currentScore,
+      result: projection,
+    }))
+  }, [projection?.status, projection?.projectedScore, projection?.trajectoryQuantile, projection?.referenceVersion, input?.scoreKey, input?.currentScore, selected?.id, playerId, snapshot?.id, projectionScoreType, potential.experimental])
 
+  const successfulProjectionTitle = usesGeneralProjectionContext ? GENERAL_CONTEXT_TOOLTIP : projectionTitle
   const projectionTooltip = projection?.status === 'ok'
     ? potential.experimental
-      ? (projectionTitle ? `${projectionTitle}\n${PROVISIONAL_TOOLTIP}` : PROVISIONAL_TOOLTIP)
-      : projectionTitle ?? 'Projeção DataTracker'
+      ? (successfulProjectionTitle ? `${successfulProjectionTitle}\n${PROVISIONAL_TOOLTIP}` : PROVISIONAL_TOOLTIP)
+      : successfulProjectionTitle ?? 'Projeção DataTracker'
     : projection ? unavailableLabel(projection) : ''
 
   return <span className={`score-with-projection score-projection-${variant} ${opacityState === 'coverage' ? 'is-coverage' : ''} ${className}`.trim()}>
     <span className="score-current" title={currentTitle}><ScoreBadge value={displayedCurrentScore} rank={displayedCurrentRank} className="score-badge-compact" showTitle={false} /></span>
-    {potential.showPotential && <>
+    {projectionVisible && <>
       <span className="score-projection-separator" aria-hidden="true">›</span>
       <span className={`score-projected ${projection?.status === 'ok' ? 'is-available' : 'is-unavailable'} ${potential.experimental ? 'is-experimental' : ''}`} title={projectionTooltip}>
         <span className="score-projection-arrow" aria-hidden="true">↗</span>

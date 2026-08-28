@@ -13,6 +13,7 @@ import{useSaves}from'../features/saves/SaveContext'
 import{loadModelConfig,patchModelConfig,retryModelConfigPatch,scheduleModelConfigPatch}from'../lib/model-config'
 import{describeDbError}from'../lib/db-error'
 import{loadCurrentPlayers}from'../lib/dataCache'
+import{createLatestSaveRequestGuard}from'../lib/latest-save-request'
 
 type Role={id:string;name:string;weights:Record<string,number>}
 type Assignment={playerId:string;nodeId:string;position:string;roleId:string;roleCode:string;roleName:string}
@@ -102,6 +103,7 @@ export function TacticsPage(){
   const[rolePicker,setRolePicker]=useState<RolePicker|null>(null)
   const cardWasDragged=useRef(false)
   const loaded=useRef(false)
+  const loadGuard=useRef(createLatestSaveRequestGuard())
 
   function saveStatus(next:string,detail?:string){setStatus(next);setSaveDetail(detail??'')}
   async function persistPatch(patch:Record<string,unknown>){
@@ -117,14 +119,17 @@ export function TacticsPage(){
 
   useEffect(()=>{
     loaded.current=false
-    if(!supabase||!selected)return
+    if(!supabase||!selected){loadGuard.current.invalidate();return}
+    const token=loadGuard.current.begin(selected.id)
     saveStatus('Carregando…')
     void loadModelConfig(selected.id).then(data=>{
+      if(!loadGuard.current.isCurrent(token))return
       const c=data as Partial<Config>
       setConfig({...fresh(),...c,tactics:(c.tactics??[]).map(t=>normalizeTactic(t))})
       loaded.current=true
       saveStatus('✓ Salvo')
-    }).catch(error=>saveStatus('⚠ Não foi possível carregar',describeDbError(error).full))
+    }).catch(error=>{if(loadGuard.current.isCurrent(token))saveStatus('⚠ Não foi possível carregar',describeDbError(error).full)})
+    return()=>loadGuard.current.invalidate(token)
   },[selected?.id])
 
   useEffect(()=>{

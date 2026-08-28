@@ -16,6 +16,12 @@ export type CurrentPlayerSummary = Pick<PlayerRow, 'id' | 'current_name' | 'is_a
 
 type CurrentPlayerOptions = { summary: true }
 
+// The integrity hardening intentionally uses the composite player/save FK.
+// Pin every PostgREST embed to that relationship instead of relying on
+// relationship inference. This keeps the public shape named player_snapshots
+// while making the ownership/save relationship explicit and unambiguous.
+export const PLAYER_SNAPSHOT_EMBED = 'player_snapshots:player_snapshots!player_snapshots_player_save_fkey'
+
 const players = new Map<string, Promise<RichPlayer[]>>()
 const currentPlayers = new Map<string, Promise<RichPlayer[]>>()
 const currentPlayerSummaries = new Map<string, Promise<CurrentPlayerSummary[]>>()
@@ -26,7 +32,11 @@ export function loadPlayers(saveId: string) {
   if (cached) return cached
   const request = (async () => {
     if (!supabase) return []
-    const result = await supabase.from('players').select('id,current_name,nationality,last_seen_date,is_active,player_snapshots(id,snapshot_date,age,club,squad,positions,contract_expiry,preferred_foot,height,weight,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))').eq('save_id', saveId).order('current_name')
+    const result = await supabase
+      .from('players')
+      .select(`id,current_name,nationality,last_seen_date,is_active,${PLAYER_SNAPSHOT_EMBED}(id,snapshot_date,age,club,squad,positions,contract_expiry,preferred_foot,height,weight,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))`)
+      .eq('save_id', saveId)
+      .order('current_name')
     if (result.error) throw result.error
     return (result.data ?? []) as unknown as RichPlayer[]
   })().catch(error => { players.delete(saveId); throw error })
@@ -44,7 +54,7 @@ export function loadCurrentPlayers(saveId: string, options?: CurrentPlayerOption
       if (!supabase) return []
       const result = await supabase
         .from('players')
-        .select('id,current_name,is_active,player_snapshots(snapshot_date,age,club,squad,positions)')
+        .select(`id,current_name,is_active,${PLAYER_SNAPSHOT_EMBED}(snapshot_date,age,club,squad,positions)`)
         .eq('save_id', saveId)
         .eq('is_active', true)
         .order('current_name')
@@ -63,7 +73,7 @@ export function loadCurrentPlayers(saveId: string, options?: CurrentPlayerOption
     if (!supabase) return []
     const result = await supabase
       .from('players')
-      .select('id,current_name,nationality,last_seen_date,is_active,player_snapshots(id,snapshot_date,age,club,squad,positions,contract_expiry,preferred_foot,height,weight,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))')
+      .select(`id,current_name,nationality,last_seen_date,is_active,${PLAYER_SNAPSHOT_EMBED}(id,snapshot_date,age,club,squad,positions,contract_expiry,preferred_foot,height,weight,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))`)
       .eq('save_id', saveId)
       .eq('is_active', true)
       .order('current_name')
