@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { supabase } from '../../lib/supabase'
 import { invalidateSaveData } from '../../lib/dataCache'
 import { discardModelConfigState } from '../../lib/model-config'
+import { sanitizeSquadTablePreferencesForSaveChange } from '../../lib/squad-table-preferences'
 import type { Save } from '../../types/domain'
 import { createSaveRefreshRequestGuard, resolveSaveRefresh } from './save-refresh'
 
@@ -30,6 +31,9 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   const refreshGuard = useRef(createSaveRefreshRequestGuard())
 
   function select(save: Save) {
+    if (selectedRef.current?.id && selectedRef.current.id !== save.id) {
+      sanitizeSquadTablePreferencesForSaveChange()
+    }
     selectedRef.current = save
     setSelected(save)
     localStorage.setItem(ACTIVE_SAVE_KEY, save.id)
@@ -58,6 +62,10 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       })
       setError(resolution.error)
       if (resolution.error) return
+      const previousSaveId = selectedRef.current?.id ?? null
+      if (previousSaveId && previousSaveId !== resolution.selected?.id) {
+        sanitizeSquadTablePreferencesForSaveChange()
+      }
       savesRef.current = resolution.saves
       selectedRef.current = resolution.selected
       setSaves(resolution.saves)
@@ -92,6 +100,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     invalidateSaveData(saveId)
     discardModelConfigState(saveId)
     if (selectedRef.current?.id === saveId) {
+      sanitizeSquadTablePreferencesForSaveChange()
       selectedRef.current = null
       setSelected(null)
       localStorage.removeItem(ACTIVE_SAVE_KEY)

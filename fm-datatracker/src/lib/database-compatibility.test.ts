@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDatabaseCompatibilityInfo } from './database-compatibility'
+import { parseDatabaseCompatibilityInfo, REQUIRED_DATABASE_SCHEMA } from './database-compatibility'
 
 const allCapabilities = {
   import_rpc: true,
@@ -10,21 +10,32 @@ const allCapabilities = {
   diagnostics_bucket: true,
   diagnostics_reservations: true,
   diagnostics_upload: true,
+  diagnostics_server_retention: true,
 }
 
 describe('database capability detection', () => {
-  it('aceita schema atual somente quando capabilities reais estão presentes', () => {
-    const result = parseDatabaseCompatibilityInfo({ schema_version: '202608280002', capabilities: allCapabilities })
+  it('aceita schema estabilizado somente quando capabilities reais estão presentes', () => {
+    const result = parseDatabaseCompatibilityInfo({ schema_version: REQUIRED_DATABASE_SCHEMA, capabilities: allCapabilities })
     expect(result.status).toBe('compatible')
     expect(result.capabilities.deleteImportRpc).toBe(true)
+    expect(result.capabilities.diagnosticsServerRetention).toBe(true)
     expect(result.capabilities.diagnosticsUpload).toBe(true)
   })
 
-
-  it('rejeita o schema anterior ao cleanup de relações PostgREST', () => {
-    const result = parseDatabaseCompatibilityInfo({ schema_version: '202608280001', capabilities: allCapabilities })
+  it('rejeita o schema anterior à retenção server-side', () => {
+    const result = parseDatabaseCompatibilityInfo({ schema_version: '202608280002', capabilities: allCapabilities })
     expect(result.status).toBe('outdated')
-    expect(result.diagnostic).toContain('202608280002')
+    expect(result.diagnostic).toContain('202608280003')
+  })
+
+  it('falha fechado apenas para novos diagnósticos se o job server-side não estiver ativo', () => {
+    const result = parseDatabaseCompatibilityInfo({
+      schema_version: REQUIRED_DATABASE_SCHEMA,
+      capabilities: { ...allCapabilities, diagnostics_server_retention: false },
+    })
+    expect(result.status).toBe('compatible')
+    expect(result.capabilities.diagnosticsServerRetention).toBe(false)
+    expect(result.capabilities.diagnosticsUpload).toBe(false)
   })
 
   it('não trata número alto de schema como prova de feature', () => {

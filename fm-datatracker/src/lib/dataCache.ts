@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import type { PlayerRow } from '../types/domain'
-import type { ReferenceDataset } from './reference'
+import { createReferenceDatasetLoader } from './reference-cache'
 
 type RichPlayer = PlayerRow & {
   player_snapshots: Array<PlayerRow['player_snapshots'][number] & {
@@ -25,7 +25,7 @@ export const PLAYER_SNAPSHOT_EMBED = 'player_snapshots:player_snapshots!player_s
 const players = new Map<string, Promise<RichPlayer[]>>()
 const currentPlayers = new Map<string, Promise<RichPlayer[]>>()
 const currentPlayerSummaries = new Map<string, Promise<CurrentPlayerSummary[]>>()
-let reference: Promise<ReferenceDataset | null> | null = null
+const referenceLoader = createReferenceDatasetLoader(() => `${import.meta.env.BASE_URL}reference/players.v1.json`)
 
 export function loadPlayers(saveId: string) {
   const cached = players.get(saveId)
@@ -94,9 +94,5 @@ export function invalidateSaveData(saveId: string) {
 }
 
 export function loadReferenceDataset() {
-  if (!reference) reference = fetch(`${import.meta.env.BASE_URL}reference/players.v1.json`).then(response => {
-    if (!response.ok) throw new Error('Base de referência indisponível')
-    return response.json() as Promise<ReferenceDataset>
-  }).catch(() => null)
-  return reference
+  return referenceLoader()
 }

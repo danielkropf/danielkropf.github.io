@@ -45,12 +45,17 @@ export function resolveRoleWeightMatrixKey(roleId: string, roleName: string) {
   const phase = parts[0] === 'OOP' ? 'OOP' : 'IP'
   const group = parts[1] ?? ''
   const suffix = matrixSuffix(roleName)
-  const keys = Object.keys(ROLE_WEIGHT_MATRIX).filter(key => key.startsWith(`${phase}_`) && key.endsWith(`_${suffix}`))
   const preferred = GROUP_PREFIXES[group] ?? []
+
+  // Resolve the canonical identity exactly before considering any fallback.
+  // A suffix-only search makes `Wing Back` match `Inside Wing Back`, because
+  // `IP_WB_INSIDE_WING_BACK` also ends with `_WING_BACK`.
   for (const prefix of preferred) {
-    const match = keys.find(key => key.startsWith(`${phase}_${prefix}_`))
-    if (match) return match
+    const candidate = `${phase}_${prefix}_${suffix}`
+    if (Object.prototype.hasOwnProperty.call(ROLE_WEIGHT_MATRIX, candidate)) return candidate
   }
+
+  const keys = Object.keys(ROLE_WEIGHT_MATRIX).filter(key => key.startsWith(`${phase}_`) && key.endsWith(`_${suffix}`))
   return keys.length === 1 ? keys[0] : null
 }
 

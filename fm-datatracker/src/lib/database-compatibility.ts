@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { describeDbError, isMissingRpcError } from './db-error'
 
-export const REQUIRED_DATABASE_SCHEMA = '202608280002'
+export const REQUIRED_DATABASE_SCHEMA = '202608280003'
 const STALE_RECHECK_MS = 30_000
 
 export type DatabaseCapabilities = {
@@ -12,6 +12,7 @@ export type DatabaseCapabilities = {
   diagnosticsTable: boolean
   diagnosticsBucket: boolean
   diagnosticsReservations: boolean
+  diagnosticsServerRetention: boolean
   diagnosticsUpload: boolean
 }
 
@@ -30,6 +31,7 @@ const NO_CAPABILITIES: DatabaseCapabilities = {
   diagnosticsTable: false,
   diagnosticsBucket: false,
   diagnosticsReservations: false,
+  diagnosticsServerRetention: false,
   diagnosticsUpload: false,
 }
 
@@ -66,6 +68,7 @@ export function parseDatabaseCompatibilityInfo(value: unknown): DatabaseCompatib
   }
 
   const source = value.capabilities
+  const diagnosticsServerRetention = capability(source, 'diagnostics_server_retention')
   const capabilities: DatabaseCapabilities = {
     importRpc: capability(source, 'import_rpc'),
     deleteImportRpc: capability(source, 'delete_import_rpc'),
@@ -74,7 +77,11 @@ export function parseDatabaseCompatibilityInfo(value: unknown): DatabaseCompatib
     diagnosticsTable: capability(source, 'diagnostics_table'),
     diagnosticsBucket: capability(source, 'diagnostics_bucket'),
     diagnosticsReservations: capability(source, 'diagnostics_reservations'),
-    diagnosticsUpload: capability(source, 'diagnostics_upload'),
+    diagnosticsServerRetention,
+    // Diagnostic upload is only safe when the server-side retention contract is
+    // actually active. Keep the rest of the application compatible if retention
+    // is temporarily unavailable, but fail closed for new private .fm uploads.
+    diagnosticsUpload: capability(source, 'diagnostics_upload') && diagnosticsServerRetention,
   }
   const missingCore = [
     capabilities.importRpc ? null : 'import RPC',

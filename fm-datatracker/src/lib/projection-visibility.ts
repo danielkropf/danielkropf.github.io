@@ -10,5 +10,5 @@ export const PROJECTION_DISPLAY_MAX_AGE = 29
  */
 export function shouldDisplayProjectionForAge(age: number | null | undefined) {
   if (age === null || age === undefined) return true
-  return Number.isFinite(age) && age <= PROJECTION_DISPLAY_MAX_AGE
+  return Number.isFinite(age) && age < PROJECTION_DISPLAY_MAX_AGE + 1
 }

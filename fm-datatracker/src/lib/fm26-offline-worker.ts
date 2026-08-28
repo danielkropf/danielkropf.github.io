@@ -1,6 +1,8 @@
-type Request = { id: string; bytes: ArrayBuffer; fileName: string }
+export {}
+
+type FmWorkerRequest = { id: string; bytes: ArrayBuffer; fileName: string }
 type WorkerScope = {
-  onmessage: ((event: MessageEvent<Request>) => void) | null
+  onmessage: ((event: MessageEvent<FmWorkerRequest>) => void) | null
   postMessage: (message: unknown) => void
 }
 
@@ -29,9 +31,6 @@ scope.onmessage = event => {
 
       stage = 'carregando os módulos do leitor .fm'
       scope.postMessage({ id, type: 'status', status: 'Worker .fm iniciado; carregando módulos do leitor…' })
-      // Keep the worker bootstrap itself dependency-free. If one of the reader modules
-      // cannot be evaluated in a Worker/Vite runtime, the dynamic import rejects here
-      // and we can report the actual error instead of losing it in Worker.onerror.
       const { readFmSaveBytes } = await import('./fm26-offline-normalizer')
 
       stage = 'abrindo o arquivo .fm'
@@ -46,7 +45,6 @@ scope.onmessage = event => {
       )
 
       stage = 'enviando o resultado normalizado para a interface'
-      // The normalized rows include their own auditable raw player data. Do not clone the full parsed save back to the UI thread.
       scope.postMessage({
         id,
         type: 'result',

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { invalidateSaveData } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
@@ -6,6 +6,7 @@ import { ImportPanel } from '../features/imports/ImportPanel'
 import { canonicalFieldKey, displayFmPositions, normalizedDate, normalizedFoot, normalizedText, positionsMatch } from '../lib/fm-comparison'
 import { deleteFmImportSafe, stampLatestImportVersion } from '../lib/import-management'
 import { importVersionState, normalizeAppVersion } from '../lib/import-version'
+import { createLatestSaveRequestGuard } from '../lib/latest-save-request'
 import type { ImportRecord } from '../types/domain'
 
 type ImportsPageProps = { mode?: 'import' | 'history' }
@@ -123,53 +124,96 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
   const [rawRows, setRawRows] = useState<RawSnapshot[]>([])
   const [loadingRaw, setLoadingRaw] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const historyRequestGuard = useRef(createLatestSaveRequestGuard())
+  const rawRequestGuard = useRef(createLatestSaveRequestGuard())
+  const selectedIdRef = useRef<string | null>(selected?.id ?? null)
+  selectedIdRef.current = selected?.id ?? null
   const compatibilityWarnings = useMemo(() => items.filter(item => {
     const state = importVersionState(importAppVersion(item), __APP_VERSION__)
     return state === 'older' || state === 'unknown'
   }).length, [items])
 
-  async function load() {
-    if (!supabase || !selected) return
-    const { data, error } = await supabase.from('imports').select('*').eq('save_id', selected.id).order('created_at', { ascending: false })
+  async function load(saveId: string) {
+    if (!supabase) return
+    const token = historyRequestGuard.current.begin(saveId)
+    const { data, error } = await supabase.from('imports').select('*').eq('save_id', saveId).order('created_at', { ascending: false })
+    if (!historyRequestGuard.current.isCurrent(token) || selectedIdRef.current !== saveId) return
     if (error) { setMessage(`Não foi possível carregar o histórico: ${error.message}`); return }
     setItems((data ?? []) as VersionedImportRecord[])
   }
-  useEffect(() => { if (mode === 'history') void load() }, [mode, selected?.id])
+  useEffect(() => {
+    const saveId = selected?.id
+    if (mode !== 'history' || !saveId) {
+      historyRequestGuard.current.invalidate()
+      setItems([])
+      return
+    }
+    void load(saveId)
+    return () => historyRequestGuard.current.invalidate()
+  }, [mode, selected?.id])
+
+  useEffect(() => {
+    rawRequestGuard.current.invalidate()
+    setRawItem(null)
+    setRawRows([])
+    setLoadingRaw(false)
+  }, [selected?.id])
 
   async function remove(item: VersionedImportRecord) {
     if (!selected || deletingId) return
+    const saveId = selected.id
     if (!window.confirm(`Excluir permanentemente a importação “${item.original_filename}” de ${item.snapshot_date}? Os snapshots e estatísticas criados por ela também serão removidos.`)) return
     setMessage(''); setDeletingId(item.id)
     try {
-      await deleteFmImportSafe(selected.id, item.id)
-      invalidateSaveData(selected.id)
+      await deleteFmImportSafe(saveId, item.id)
+      invalidateSaveData(saveId)
+      if (selectedIdRef.current !== saveId) return
       if (rawItem?.id === item.id) { setRawItem(null); setRawRows([]) }
-      await load()
-      setMessage('Importação excluída.')
+      await load(saveId)
+      if (selectedIdRef.current === saveId) setMessage('Importação excluída.')
     } catch (error) {
-      setMessage(`Não foi possível excluir a importação: ${error instanceof Error ? error.message : 'falha desconhecida'}`)
+      if (selectedIdRef.current === saveId) {
+        setMessage(`Não foi possível excluir a importação: ${error instanceof Error ? error.message : 'falha desconhecida'}`)
+      }
     } finally {
       setDeletingId(null)
     }
   }
 
   async function openRaw(item: VersionedImportRecord) {
-    if (!supabase) return
+    if (!supabase || !selected) return
+    const saveId = selected.id
+    const token = rawRequestGuard.current.begin(saveId)
     setRawItem(item); setRawRows([]); setLoadingRaw(true)
-    const { data, error } = await supabase.from('player_snapshots').select('id,raw_data,normalized_data,players(fm_player_id,current_name)').eq('import_id', item.id)
+    const { data, error } = await supabase
+      .from('player_snapshots')
+      .select('id,raw_data,normalized_data,players(fm_player_id,current_name)')
+      .eq('save_id', saveId)
+      .eq('import_id', item.id)
+    if (!rawRequestGuard.current.isCurrent(token) || selectedIdRef.current !== saveId) return
     setLoadingRaw(false)
     if (error) { setMessage(`Não foi possível carregar os dados brutos: ${error.message}`); setRawItem(null); return }
     setRawRows((data ?? []) as RawSnapshot[])
   }
 
+  function closeRaw() {
+    rawRequestGuard.current.invalidate()
+    setRawItem(null)
+    setRawRows([])
+    setLoadingRaw(false)
+  }
+
   async function imported() {
     if (!selected) return
-    invalidateSaveData(selected.id)
+    const saveId = selected.id
+    invalidateSaveData(saveId)
     try {
-      await stampLatestImportVersion(selected.id, __APP_VERSION__)
-      setMessage('')
+      await stampLatestImportVersion(saveId, __APP_VERSION__)
+      if (selectedIdRef.current === saveId) setMessage('')
     } catch (error) {
-      setMessage(`Importação concluída, mas não foi possível registrar a versão do DataTracker: ${error instanceof Error ? error.message : 'falha desconhecida'}`)
+      if (selectedIdRef.current === saveId) {
+        setMessage(`Importação concluída, mas não foi possível registrar a versão do DataTracker: ${error instanceof Error ? error.message : 'falha desconhecida'}`)
+      }
     }
   }
 
@@ -180,7 +224,7 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
     <div className="table-wrap"><table><thead><tr><th>Data</th><th>Arquivo</th><th>Fonte</th><th>Versão</th><th>Linhas</th><th>Status</th><th aria-label="Ações" /></tr></thead><tbody>{items.map(item => <tr key={item.id} className="import-history-row" onClick={() => void openRaw(item)} tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRaw(item) } }}><td>{item.snapshot_date}</td><td>{item.original_filename}</td><td>{sourceLabel(item.original_filename)}</td><td><ImportVersion item={item} /></td><td>{item.row_count}</td><td><span className="status">{item.status}</span></td><td><button className="ghost import-delete" disabled={deletingId !== null} onClick={event => { event.stopPropagation(); void remove(item) }} title={`Excluir ${item.original_filename}`} aria-label={`Excluir ${item.original_filename}`}>{deletingId === item.id ? '…' : '🗑'}</button></td></tr>)}</tbody></table></div>
     {message && <p className={message.startsWith('Não foi') ? 'warning' : 'notice'}>{message}</p>}
     {!items.length && <p>Nenhum import confirmado.</p>}
-    {rawItem && <RawImportInspector item={rawItem} rows={rawRows} onClose={() => setRawItem(null)} />}
+    {rawItem && <RawImportInspector item={rawItem} rows={rawRows} onClose={closeRaw} />}
     {rawItem && loadingRaw && <div className="settings-overlay raw-import-overlay"><div className="raw-import-loading">Carregando dados brutos…</div></div>}
   </section>
 

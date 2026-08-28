@@ -1,19 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSaves } from '../features/saves/SaveContext'
+import { createLatestSaveRequestGuard } from '../lib/latest-save-request'
+
+const EMPTY_QUALITY = { players: 0, active: 0, imports: 0, withoutSnapshots: 0, unknownType: 0 }
 
 export function QualityPage() {
   const { selected } = useSaves()
-  const [data, setData] = useState({ players: 0, active: 0, imports: 0, withoutSnapshots: 0, unknownType: 0 })
+  const [data, setData] = useState(EMPTY_QUALITY)
   const [error, setError] = useState('')
+  const requestGuard = useRef(createLatestSaveRequestGuard())
 
   useEffect(() => {
-    if (!supabase || !selected) return
+    if (!supabase || !selected?.id) {
+      requestGuard.current.invalidate()
+      setData(EMPTY_QUALITY)
+      return
+    }
+
+    const saveId = selected.id
+    const token = requestGuard.current.begin(saveId)
     setError('')
+
     void Promise.all([
-      supabase.from('players').select('id,is_active,player_snapshots(id)').eq('save_id', selected.id),
-      supabase.from('imports').select('id,file_type').eq('save_id', selected.id),
+      supabase.from('players').select('id,is_active,player_snapshots(id)').eq('save_id', saveId),
+      supabase.from('imports').select('id,file_type').eq('save_id', saveId),
     ]).then(([playersResult, importsResult]) => {
+      if (!requestGuard.current.isCurrent(token)) return
       if (playersResult.error || importsResult.error) {
         setError(playersResult.error?.message ?? importsResult.error?.message ?? 'Falha ao carregar auditoria.')
         return
@@ -27,7 +40,12 @@ export function QualityPage() {
         withoutSnapshots: players.filter(player => !player.player_snapshots?.length).length,
         unknownType: imports.filter(item => item.file_type === 'unknown').length,
       })
+    }).catch(cause => {
+      if (!requestGuard.current.isCurrent(token)) return
+      setError(cause instanceof Error ? cause.message : 'Falha inesperada ao carregar auditoria.')
     })
+
+    return () => requestGuard.current.invalidate(token)
   }, [selected?.id])
 
   return <>
