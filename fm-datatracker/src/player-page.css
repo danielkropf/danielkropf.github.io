@@ -1,1 +1,19 @@
-.player-page>.title-row>div:first-child{display:flex;align-items:center;gap:.75rem;min-width:0}.player-page>.title-row .back-button{flex:0 0 auto;padding:.55rem .8rem;border:1px solid #b9f35b;border-radius:6px;background:#132219;color:#b9f35b;font-weight:800}.player-page>.title-row .back-button:hover{background:#b9f35b;color:#10190f}.player-page>.title-row h1{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.player-page-body{display:flex;flex-direction:column;overflow:hidden!important}.player-summary-grid{flex:0 0 auto}.feet-info span{display:grid;grid-template-columns:auto 1fr auto 1fr;align-items:center;gap:.3rem}.feet-info span b{padding:.12rem .25rem;border-radius:3px;background:#29313b;color:#b9f35b;font-size:.62rem}.feet-info span strong{font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.player-attributes-panel{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;border-color:#56616c!important;background:#111a20!important}.player-attributes-panel>header{flex:0 0 auto;padding:.15rem .2rem .55rem;border-bottom:1px solid #3d4852}.player-attribute-groups{flex:1;min-height:0;align-items:stretch}.player-attribute-groups>section{display:flex;min-height:0;flex-direction:column}.player-attribute-groups h3{flex:0 0 auto;border-color:#56616c!important}.player-attribute-row{flex:1;min-height:25px;align-items:center;padding:.28rem .4rem!important;border-color:#38434d!important;background:#202832;font-size:.79rem!important}.player-attribute-row:nth-child(odd){background:#29313b}.player-attribute-row b{font-size:.88rem}.player-attribute-row small{font-size:.76rem}.player-attribute-row span{color:#e4e9ec}@media(max-width:1100px){.player-page-body{overflow:auto!important}.player-attributes-panel{flex:none;overflow:visible}.player-attribute-row{min-height:28px}}@media(max-width:700px){.player-page>.title-row>div:first-child{gap:.4rem}.player-page>.title-row .back-button{padding:.45rem .55rem}.feet-info span{grid-template-columns:auto 1fr}}
+.player-page>.title-row>div:first-child{display:flex;align-items:center;gap:var(--dt-space-3);min-width:0}
+.player-page>.title-row .back-button{flex:0 0 auto;min-height:var(--dt-control-compact-height);padding:0 var(--dt-space-3);font-weight:600}
+.player-page>.title-row h1{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player-page-body{display:flex;flex-direction:column;overflow:hidden!important}
+.player-summary-grid{flex:0 0 auto}
+.feet-info span{display:grid;grid-template-columns:auto 1fr auto 1fr;align-items:center;gap:var(--dt-space-1)}
+.feet-info span b{padding:2px 4px;border-radius:var(--dt-radius-badge);background:var(--dt-surface-3);color:var(--dt-lime);font-size:var(--dt-type-micro)}
+.feet-info span strong{font-size:var(--dt-type-small);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player-attributes-panel{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.player-attributes-panel>header{flex:0 0 auto;padding:var(--dt-space-1) var(--dt-space-1) var(--dt-space-2);border-bottom:1px solid var(--dt-border)}
+.player-attribute-groups{flex:1;min-height:0;align-items:stretch}
+.player-attribute-groups>section{display:flex;min-height:0;flex-direction:column}
+.player-attribute-groups h3{flex:0 0 auto;border-color:var(--dt-border-strong)!important}
+.player-attribute-row{flex:1;min-height:25px;align-items:center;padding:var(--dt-space-1) var(--dt-space-2)!important;border-color:var(--dt-border)!important;background:var(--dt-surface-2);font-size:var(--dt-type-small)!important}
+.player-attribute-row b{font-size:var(--dt-type-body);font-weight:700}
+.player-attribute-row small{font-size:var(--dt-type-caption)}
+.player-attribute-row span{color:var(--dt-text-2)}
+@media(max-width:1100px){.player-page-body{overflow:auto!important}.player-attributes-panel{flex:none;overflow:visible}.player-attribute-row{min-height:28px}}
+@media(max-width:700px){.player-page>.title-row>div:first-child{gap:var(--dt-space-2)}.player-page>.title-row .back-button{padding-inline:var(--dt-space-2)}.feet-info span{grid-template-columns:auto 1fr}}

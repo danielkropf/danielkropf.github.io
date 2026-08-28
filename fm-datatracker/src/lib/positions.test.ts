@@ -39,4 +39,18 @@ describe('ordenação por posição', () => {
     expect(canPlayPosition(['D', 'WB (L)'], 'D (C)')).toBe(false)
     expect(canPlayPosition(['D', 'WB (L)'], 'D (R)')).toBe(false)
   })
+
+  it('normaliza códigos compactos usados na tabela de elenco', () => {
+    expect(positionCapabilities(['DC', 'WBR', 'MC', 'AMC'])).toEqual([
+      { family: 'D', sides: 'C' },
+      { family: 'WB', sides: 'R' },
+      { family: 'M', sides: 'C' },
+      { family: 'AM', sides: 'C' },
+    ])
+    expect(canPlayPosition(['DC'], 'D (C)')).toBe(true)
+    expect(canPlayPosition(['DC'], 'D (R)')).toBe(false)
+    expect(canPlayPosition(['DR', 'WBR'], 'D (R)')).toBe(true)
+    expect(canPlayPosition(['MC', 'AMC'], 'M (C)')).toBe(true)
+    expect(canPlayPosition(['MC', 'AMC'], 'AM (C)')).toBe(true)
+  })
 })

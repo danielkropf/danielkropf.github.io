@@ -6,12 +6,16 @@ type QuickAttribute={attribute_key:string;attribute_label:string;value:number;ca
 type QuickPlayer={current_name:string;nationality:string|null}
 type QuickSnapshot={positions:string[];age:number|null;club:string|null;preferred_foot?:string|null;height?:number|null;player_attributes:QuickAttribute[]}
 
+function PersonIcon({size=16}:{size?:number}){
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="3.25" stroke="currentColor" strokeWidth="1.75"/><path d="M5.5 19c.45-3.35 2.75-5 6.5-5s6.05 1.65 6.5 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/></svg>
+}
+
 export function PlayerPeek({player,snapshot}:{player:QuickPlayer;snapshot:QuickSnapshot}){
   const[anchor,setAnchor]=useState<{top:number;left:number}|null>(null)
   const show=()=>setAnchor({left:window.innerWidth/2,top:window.innerHeight/2})
   const stop=(event:MouseEvent<HTMLButtonElement>)=>event.stopPropagation()
   return <span className="player-peek-wrap">
-    <button className="player-peek" aria-label={`Prévia de ${player.current_name}`} onClick={stop} onMouseEnter={show} onMouseLeave={()=>setAnchor(null)} onFocus={show} onBlur={()=>setAnchor(null)}>♟</button>
+    <button type="button" className="player-peek" aria-label={`Prévia de ${player.current_name}`} onClick={stop} onMouseEnter={show} onMouseLeave={()=>setAnchor(null)} onFocus={show} onBlur={()=>setAnchor(null)}><PersonIcon/></button>
     {anchor&&createPortal(<PlayerTooltip player={player} snapshot={snapshot} anchor={anchor}/>,document.body)}
   </span>
 }
@@ -20,7 +24,7 @@ function PlayerTooltip({player,snapshot,anchor}:{player:QuickPlayer;snapshot:Qui
   const groups=['technical','mental','physical','goalkeeping'] as const
   const labels={technical:'Técnico',mental:'Mental',physical:'Físico',goalkeeping:'Goleiro'}
   return <aside className="fm-player-tooltip fm-player-tooltip-portal" style={{top:anchor.top,left:anchor.left}}>
-    <header><div className="profile-silhouette">♟</div><div><h2>{player.current_name}</h2><p>{snapshot.positions.join(', ')} · {snapshot.age??'—'} anos</p><small>{snapshot.club??'—'} · {player.nationality??'—'} · {snapshot.height?`${snapshot.height} cm`:'—'} · {footLabel(snapshot.preferred_foot??null)}</small></div></header>
+    <header><div className="profile-silhouette"><PersonIcon size={22}/></div><div><h2>{player.current_name}</h2><p>{snapshot.positions.join(', ')} · {snapshot.age??'—'} anos</p><small>{snapshot.club??'—'} · {player.nationality??'—'} · {snapshot.height?`${snapshot.height} cm`:'—'} · {footLabel(snapshot.preferred_foot??null)}</small></div></header>
     <div className="fm-attribute-columns">{groups.map(group=><section key={group}><h3>{labels[group]}</h3>{snapshot.player_attributes.filter(attribute=>(ATTRIBUTE_LOOKUP[attribute.attribute_key]?.category??attribute.category)===group).sort((a,b)=>a.attribute_label.localeCompare(b.attribute_label)).map(attribute=><span key={attribute.attribute_key}>{attribute.attribute_label}<b className={attributeClass(attribute.value)}>{attribute.value}</b></span>)}</section>)}</div>
   </aside>
 }

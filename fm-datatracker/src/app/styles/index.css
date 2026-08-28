@@ -25,7 +25,14 @@
 @import '../../save-state.css';
 @import '../../potential.css';
 
-/* Canonical DS v1 shell is intentionally loaded after legacy modules. */
+/* Canonical DS v1 primitives intentionally win over historical page CSS.
+   Shadowed legacy declarations are removed as each surface is migrated in Phase 3. */
+@import './primitives.css';
+/* Shared dense-data pattern: Elenco first, Tactics/Scouting presets next. */
+@import './data-table.css';
+/* Visual QA cleanup for Phase 2 primitive leaks. */
+@import './phase-2-cleanup.css';
+/* Canonical shell remains above primitives for chrome-specific authority. */
 @import './shell.css';
 /* Responsive contracts must remain last so mobile/tablet geometry wins. */
 @import '../../responsive.css';

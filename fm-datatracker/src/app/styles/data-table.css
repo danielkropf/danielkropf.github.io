@@ -1,0 +1,192 @@
+/* FM DataTracker — canonical DataTable system.
+   Shared by dense player datasets; page presets may limit capabilities but must
+   not redefine the base table language. */
+.dt-table-shell{
+  position:relative;
+  min-width:0;
+  min-height:0;
+  overflow:auto;
+  border:1px solid var(--dt-border);
+  border-radius:var(--dt-radius-card);
+  background:var(--dt-surface-1);
+}
+.dt-table{
+  width:max-content;
+  min-width:0;
+  border-collapse:separate;
+  border-spacing:0;
+  table-layout:fixed;
+  background:var(--dt-surface-1);
+  color:var(--dt-text-1);
+  font-variant-numeric:tabular-nums;
+}
+.dt-table th,.dt-table td{
+  box-sizing:border-box;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  border:0;
+  border-bottom:1px solid var(--dt-border);
+  background:var(--dt-surface-1);
+}
+.dt-table th{
+  position:sticky;
+  top:0;
+  z-index:7;
+  height:40px;
+  padding:0 12px;
+  color:var(--dt-text-3);
+  background:var(--dt-surface-1);
+  font-size:var(--dt-type-caption);
+  font-weight:600;
+  letter-spacing:.04em;
+  text-align:left;
+  overflow:visible;
+}
+.dt-table td{
+  height:54px;
+  padding:0 12px;
+  color:var(--dt-text-1);
+  font-size:var(--dt-type-body);
+}
+.dt-table tbody tr:last-child td{border-bottom:0}
+.dt-table tbody tr{background:var(--dt-surface-1)}
+.dt-table tbody tr:hover td{background:var(--dt-surface-3)}
+.dt-table tbody tr.dt-table-selected td{
+  background:color-mix(in srgb,var(--dt-lime) 6%,var(--dt-surface-1));
+}
+.dt-table tbody tr.dt-table-selected td:first-child{
+  box-shadow:inset 3px 0 var(--dt-lime);
+}
+.dt-table-clickable{cursor:pointer}
+.dt-table-sort{
+  display:flex!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:8px!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  color:inherit!important;
+  box-shadow:none!important;
+  text-align:left!important;
+  letter-spacing:inherit!important;
+}
+.dt-table-sort:disabled{opacity:1!important;cursor:default!important}
+.dt-table-sort:not(:disabled):hover{color:var(--dt-text-1)!important}
+.dt-table-sort>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.dt-table-sort-indicator{flex:0 0 auto;color:var(--dt-lime);font-size:10px}
+.dt-table-reorderable{cursor:grab}
+.dt-table-reorderable:active{cursor:grabbing}
+.dt-table-is-reordering .dt-table-reorderable{transition:none!important}
+.dt-table-column-dragging{opacity:.48!important}
+.dt-table-drop-before:before,.dt-table-drop-after:after{
+  content:'';
+  position:absolute;
+  z-index:30;
+  top:4px;
+  bottom:4px;
+  width:2px;
+  border-radius:2px;
+  background:var(--dt-lime);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--dt-lime) 20%,transparent);
+  pointer-events:none;
+}
+.dt-table-drop-before:before{left:-1px}
+.dt-table-drop-after:after{right:-1px}
+.dt-table-drag-ghost{
+  position:fixed;
+  top:-1000px;
+  left:-1000px;
+  z-index:99999;
+  max-width:220px;
+  padding:8px 12px;
+  border:1px solid var(--dt-border-strong);
+  border-radius:var(--dt-radius-control);
+  background:var(--dt-surface-3);
+  color:var(--dt-text-1);
+  box-shadow:var(--dt-shadow-floating);
+  font:600 var(--dt-type-small)/1.2 var(--dt-font-family);
+  white-space:nowrap;
+}
+.dt-table-resizer{
+  position:absolute;
+  z-index:12;
+  top:6px;
+  right:-4px;
+  bottom:6px;
+  width:8px;
+  cursor:col-resize;
+}
+.dt-table-resizer:after{
+  content:'';
+  position:absolute;
+  top:0;
+  bottom:0;
+  left:3px;
+  width:1px;
+  background:var(--dt-border-strong);
+  opacity:0;
+  transition:opacity var(--dt-motion-fast) var(--dt-ease);
+}
+.dt-table-resizer:hover:after{opacity:1}
+.dt-table-frozen{
+  position:sticky!important;
+  z-index:3;
+  background:var(--dt-surface-1)!important;
+  background-clip:padding-box!important;
+}
+.dt-table th.dt-table-frozen{z-index:9}
+.dt-table tbody tr:hover .dt-table-frozen{background:var(--dt-surface-3)!important}
+.dt-table tbody tr.dt-table-selected .dt-table-frozen{
+  background:color-mix(in srgb,var(--dt-lime) 6%,var(--dt-surface-1))!important;
+}
+.dt-table-frozen-edge{
+  border-right:1px solid var(--dt-border-strong)!important;
+  box-shadow:8px 0 14px rgba(0,0,0,.18)!important;
+}
+.dt-table-state{
+  position:absolute;
+  z-index:20;
+  inset:40px 0 0;
+  display:grid;
+  min-height:160px;
+  place-items:center;
+  padding:24px;
+  background:color-mix(in srgb,var(--dt-surface-1) 92%,transparent);
+  color:var(--dt-text-2);
+  text-align:center;
+}
+.dt-table-empty{position:relative;inset:auto;min-height:160px}
+
+/* Elenco preset: preserve its dense width contract while adopting DataTable. */
+.squad-page>.dt-table-shell{flex:1;min-height:0;max-height:none}
+.squad-table.dt-table-shell{max-height:none}
+.squad-table .dt-table td:last-child{min-width:145px}
+.squad-table .squad-player-name-cell{display:flex;align-items:center;gap:8px;min-width:0}
+.squad-table .player-name{
+  min-width:0!important;
+  min-height:0!important;
+  height:auto!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  color:var(--dt-text-1)!important;
+  box-shadow:none!important;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:left;
+}
+.squad-table .player-name:hover{color:var(--dt-lime)!important;text-decoration:underline}
+.squad-table .role-score-cell,.squad-table .attribute-table-cell{overflow:visible}
+
+@media(max-width:900px){
+  .dt-table-shell{overflow:auto}
+  .dt-table td{height:52px}
+  .squad-page>.dt-table-shell{max-height:70vh}
+}

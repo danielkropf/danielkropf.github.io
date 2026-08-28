@@ -1,0 +1,322 @@
+/* FM DataTracker — Design System v1.0 — Phase 2 primitives.
+   This is the canonical presentation layer for shared UI primitives.
+   It intentionally loads after historical page CSS so migrated primitives win;
+   page-specific legacy rules should be removed during Phase 3 as each surface
+   is migrated. This file is not a screen-specific fix layer. */
+
+/* ---------- Focus / disabled ---------- */
+:where(button,a,input,select,textarea,summary,[tabindex]):focus-visible{
+  outline:2px solid var(--dt-lime)!important;
+  outline-offset:2px;
+  box-shadow:var(--dt-focus-ring)!important;
+}
+:where(button,input,select,textarea):disabled{opacity:.46;cursor:not-allowed}
+
+/* ---------- Buttons ---------- */
+button,.button{
+  border-radius:var(--dt-radius-card);
+  font-family:var(--dt-font-family);
+  font-weight:600;
+  box-shadow:none;
+}
+button:not(:disabled):hover,.button:hover{
+  box-shadow:none;
+}
+.ghost,.secondary,
+.manage-squads-button,
+.undo-planning-button,
+.filter-toggle,
+.reset-weights,
+.back-button{
+  border:1px solid var(--dt-border-strong)!important;
+  background:var(--dt-surface-2)!important;
+  color:var(--dt-text-1)!important;
+}
+.ghost:hover,.secondary:hover,
+.manage-squads-button:hover,
+.undo-planning-button:hover,
+.filter-toggle:hover,
+.reset-weights:hover,
+.back-button:hover{
+  border-color:#315842!important;
+  background:var(--dt-surface-3)!important;
+  color:var(--dt-text-1)!important;
+}
+.danger-button,.column-delete,.clear-planning-button{
+  border:1px solid color-mix(in srgb,var(--dt-danger) 42%,var(--dt-border))!important;
+  background:color-mix(in srgb,var(--dt-danger) 8%,var(--dt-surface-1))!important;
+  color:#ff8a8a!important;
+}
+.danger-button:not(:disabled):hover,.column-delete:hover,.clear-planning-button:not(:disabled):hover{
+  border-color:color-mix(in srgb,var(--dt-danger) 70%,var(--dt-border))!important;
+  background:color-mix(in srgb,var(--dt-danger) 13%,var(--dt-surface-2))!important;
+  color:#ffb0b0!important;
+}
+.close{
+  width:40px!important;
+  min-width:40px!important;
+  height:40px!important;
+  min-height:40px!important;
+  padding:0!important;
+  border:1px solid transparent!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:transparent!important;
+  color:var(--dt-text-2)!important;
+}
+.close:hover{border-color:var(--dt-border)!important;background:var(--dt-surface-2)!important;color:var(--dt-text-1)!important}
+
+/* ---------- Native inputs / selects ---------- */
+input:not([type='range']):not([type='checkbox']):not([type='radio']),textarea,select{
+  box-sizing:border-box;
+  min-height:var(--dt-control-height);
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-control)!important;
+  background-color:var(--dt-surface-2)!important;
+  color:var(--dt-text-1)!important;
+  font-size:var(--dt-type-body);
+  box-shadow:none!important;
+}
+input:not([type='range']):not([type='checkbox']):not([type='radio']),textarea{padding-inline:var(--dt-space-3)}
+input:not([type='range']):not([type='checkbox']):not([type='radio']):hover,textarea:hover,select:hover{
+  border-color:#315842!important;
+  background-color:var(--dt-surface-3)!important;
+}
+input:not([type='range']):not([type='checkbox']):not([type='radio']):focus,textarea:focus,select:focus{
+  outline:none;
+  border-color:var(--dt-lime)!important;
+  box-shadow:var(--dt-focus-ring)!important;
+}
+input::placeholder,textarea::placeholder{color:var(--dt-text-3)!important}
+select{
+  appearance:none;
+  -webkit-appearance:none;
+  padding-right:46px!important;
+  background-image:
+    linear-gradient(45deg,transparent 50%,var(--dt-lime) 50%),
+    linear-gradient(135deg,var(--dt-lime) 50%,transparent 50%),
+    linear-gradient(to left,var(--dt-surface-3),var(--dt-surface-3))!important;
+  background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%,100% 0!important;
+  background-size:5px 5px,5px 5px,40px 100%!important;
+  background-repeat:no-repeat!important;
+  cursor:pointer;
+}
+select option{background:var(--dt-surface-1);color:var(--dt-text-1)}
+
+/* ---------- Tabs / segmented controls ---------- */
+.tactic-tabs,.phase-switch,.phase-compact,.scoring-mode,.attribute-tabs{
+  gap:var(--dt-space-2)!important;
+}
+.tactic-tabs button,.phase-switch button,.phase-compact button,.scoring-mode button,.attribute-tabs button{
+  min-height:var(--dt-control-height);
+  padding:0 var(--dt-space-3)!important;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-control)!important;
+  background:transparent!important;
+  color:var(--dt-text-2)!important;
+  font-weight:600!important;
+  box-shadow:none!important;
+}
+.tactic-tabs button:hover,.phase-switch button:hover,.phase-compact button:hover,.scoring-mode button:hover,.attribute-tabs button:hover{
+  border-color:#315842!important;
+  background:var(--dt-surface-2)!important;
+  color:var(--dt-text-1)!important;
+}
+.tactic-tabs button.active,.phase-switch button.active,.phase-compact button.active,.scoring-mode button.active,.attribute-tabs button.active{
+  border-color:color-mix(in srgb,var(--dt-lime) 62%,var(--dt-border))!important;
+  background:color-mix(in srgb,var(--dt-lime) 7%,var(--dt-surface-1))!important;
+  color:var(--dt-lime)!important;
+  box-shadow:none!important;
+}
+.field-phase-switch button{min-width:40px;padding:0 var(--dt-space-3)!important}
+
+/* ---------- Chips / status pills ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:var(--dt-space-2);margin:var(--dt-space-4) 0 var(--dt-space-6)}
+.chip{
+  display:inline-flex;
+  min-height:30px;
+  align-items:center;
+  gap:var(--dt-space-1);
+  padding:0 var(--dt-space-3);
+  border:1px solid var(--dt-border);
+  border-radius:var(--dt-radius-pill);
+  background:var(--dt-surface-2);
+  color:var(--dt-text-2);
+  font-size:var(--dt-type-small);
+  font-weight:500;
+}
+.chip.ignored{border-color:color-mix(in srgb,var(--dt-warning) 28%,var(--dt-border));background:color-mix(in srgb,var(--dt-warning) 8%,var(--dt-surface-2));color:#ffd7a0}
+.planning-status{border-radius:var(--dt-radius-pill)!important;font-size:var(--dt-type-caption)!important;font-weight:600!important}
+
+/* ---------- Cards / panels ---------- */
+.card,.dt-card{
+  border:1px solid var(--dt-border)!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:var(--dt-surface-1)!important;
+  box-shadow:none!important;
+}
+.card{padding:var(--dt-card-padding-standard)}
+.squad-evaluation-bar,.scoring-toolbar{
+  border:1px solid var(--dt-border)!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:var(--dt-surface-1)!important;
+  box-shadow:none!important;
+}
+.card:hover{box-shadow:none}
+
+/* ---------- Page / section headers ---------- */
+.dashboard-heading h1,
+.screen-page>.title-row h1,
+.tactics-page>.title-row h1,
+.player-page>.title-row h1{
+  margin:0!important;
+  color:var(--dt-text-1)!important;
+  font-size:var(--dt-type-page)!important;
+  line-height:34px!important;
+  font-weight:700!important;
+  letter-spacing:-.02em!important;
+}
+.screen-page>.title-row,.tactics-page>.title-row,.player-page>.title-row{
+  min-height:40px;
+  margin-bottom:var(--dt-space-3)!important;
+  align-items:center!important;
+}
+.dashboard-heading p,.title-row p{color:var(--dt-text-2)}
+.dashboard-main-grid h2,.scoring-workspace-title h2,.role-table-title h2{
+  font-size:var(--dt-type-section)!important;
+  line-height:26px!important;
+  letter-spacing:-.01em!important;
+}
+
+/* ---------- Tables ---------- */
+.table-wrap{
+  border:1px solid var(--dt-border)!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:var(--dt-surface-1)!important;
+}
+table{background:var(--dt-surface-1)!important}
+th{
+  height:40px;
+  color:var(--dt-text-3)!important;
+  font-size:var(--dt-type-caption)!important;
+  font-weight:600!important;
+  letter-spacing:.04em!important;
+}
+td{border-bottom-color:var(--dt-border)!important;color:var(--dt-text-1)}
+tr.clickable:hover,.squad-table tbody tr.clickable:hover{background:var(--dt-surface-3)!important;box-shadow:none!important}
+.squad-table th,.squad-table td{border-bottom-color:var(--dt-border)!important}
+.squad-table tbody tr{background:var(--dt-surface-1)}
+.squad-table tbody tr:nth-child(even){background:var(--dt-surface-1)}
+
+/* ---------- Modals / floating surfaces ---------- */
+.settings-overlay,.overlay{background:var(--dt-overlay)!important}
+.settings-modal,.tactic-modal,.filter-modal,.squad-manager,.advanced-picker-modal,.planning-quick-view,.fm-player-tooltip{
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-hero)!important;
+  background:var(--dt-surface-1)!important;
+  color:var(--dt-text-1)!important;
+  box-shadow:var(--dt-shadow-modal)!important;
+}
+.settings-modal,.tactic-modal,.filter-modal,.squad-manager,.advanced-picker-modal{padding:var(--dt-space-6)}
+.settings-modal>header,.tactic-modal>header,.filter-modal>header,.advanced-picker-modal>header{
+  border-bottom-color:var(--dt-border)!important;
+}
+
+/* Player Peek behaves as a compact floating panel rather than a blue card. */
+.fm-player-tooltip{overflow:hidden!important}
+.fm-player-tooltip>header{
+  margin:0!important;
+  padding:var(--dt-space-3)!important;
+  border-bottom:1px solid var(--dt-border)!important;
+  background:var(--dt-surface-2)!important;
+}
+.fm-player-tooltip h2{font-size:var(--dt-type-section)!important;line-height:26px!important}
+.fm-player-tooltip p,.fm-player-tooltip small{color:var(--dt-text-2)!important}
+.fm-player-tooltip .profile-silhouette{background:var(--dt-surface-3)!important;color:var(--dt-text-1)!important}
+.fm-attribute-columns{padding:var(--dt-space-3)!important;gap:var(--dt-space-3)!important;background:var(--dt-surface-1)!important}
+.fm-attribute-columns section h3{margin:0 0 var(--dt-space-1)!important;padding-bottom:var(--dt-space-1)!important;border-bottom:1px solid var(--dt-border)!important;color:var(--dt-text-1)!important;font-size:var(--dt-type-small)!important}
+.fm-attribute-columns section span{border-bottom:1px solid var(--dt-border)!important;background:transparent!important;color:var(--dt-text-2)!important}
+
+/* ---------- Player page panels / data rows ---------- */
+.player-summary-grid>div{
+  border:1px solid var(--dt-border)!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:var(--dt-surface-1)!important;
+  box-shadow:none!important;
+}
+.player-summary-grid small{color:var(--dt-text-3)!important}
+.player-attributes-panel{
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-panel)!important;
+  background:var(--dt-surface-1)!important;
+  box-shadow:none!important;
+}
+.player-attributes-panel>header{border-bottom:1px solid var(--dt-border)!important;background:transparent!important}
+.player-attribute-groups h3{border-bottom-color:var(--dt-border-strong)!important;color:var(--dt-text-1)!important}
+.player-attribute-row,
+.player-attribute-row:nth-child(odd){
+  border-bottom:1px solid var(--dt-border)!important;
+  background:var(--dt-surface-2)!important;
+  color:var(--dt-text-1)!important;
+}
+.player-attribute-row:hover{background:var(--dt-surface-3)!important}
+.player-attribute-row span{color:var(--dt-text-2)!important}
+
+/* ---------- Compact sort/icon actions ---------- */
+.sort-button{
+  min-height:32px!important;
+  border:0!important;
+  background:transparent!important;
+  color:var(--dt-text-3)!important;
+  box-shadow:none!important;
+}
+.sort-button:hover{color:var(--dt-text-1)!important;text-shadow:none!important}
+.player-peek-wrap{
+  display:inline-flex!important;
+  flex:0 0 28px!important;
+  width:28px!important;
+  height:28px!important;
+  align-items:center!important;
+  justify-content:center!important;
+  vertical-align:middle;
+}
+.player-peek{
+  display:grid!important;
+  place-items:center!important;
+  width:28px!important;
+  min-width:28px!important;
+  height:28px!important;
+  min-height:28px!important;
+  padding:0!important;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:50%!important;
+  background:var(--dt-surface-2)!important;
+  color:var(--dt-lime)!important;
+  box-shadow:none!important;
+  line-height:1!important;
+}
+.player-peek svg{display:block;pointer-events:none}
+.player-peek:hover{border-color:#315842!important;background:var(--dt-surface-3)!important;transform:none!important;filter:none!important;box-shadow:none!important}
+.player-peek:active{transform:none!important}
+.squad-player-name-cell,.matrix-player-info,.planning-player-name,.planning-card-player-name{align-items:center!important}
+.squad-player-name-cell .player-peek-wrap,.planning-player .player-peek-wrap,.roster-player-card .player-peek-wrap,.planning-set-player-card .player-peek-wrap{order:-1;flex:0 0 28px!important}
+
+/* ---------- Future reusable score ring primitive ---------- */
+.dt-score-ring{
+  --dt-score-ring-color:var(--dt-score-none);
+  display:inline-grid;
+  width:44px;
+  height:44px;
+  place-items:center;
+  border:2px solid var(--dt-score-ring-color);
+  border-radius:50%;
+  background:var(--dt-surface-2);
+  color:var(--dt-text-1);
+  font-size:14px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+.dt-score-ring.score-high{--dt-score-ring-color:var(--dt-score-high)}
+.dt-score-ring.score-mid{--dt-score-ring-color:var(--dt-score-mid)}
+.dt-score-ring.score-low{--dt-score-ring-color:var(--dt-score-low)}
+
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
