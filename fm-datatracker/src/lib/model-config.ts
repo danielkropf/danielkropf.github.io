@@ -119,20 +119,21 @@ async function withBrowserFallbackLock<T>(key: string, task: () => Promise<T>): 
 }
 
 async function directPatchModelConfig(saveId: string, version: string, patch: ModelConfigPatch, name: string) {
-  if (!supabase) throw new Error('Banco Mestre não configurado.')
+  const client = supabase
+  if (!client) throw new Error('Banco Mestre não configurado.')
   return withBrowserFallbackLock(cacheKey(saveId, name), async () => {
-    const { data: authData, error: authError } = await supabase.auth.getUser()
+    const { data: authData, error: authError } = await client.auth.getUser()
     if (authError) throw new Error(describeDbError(authError).full)
     const user = authData.user
     if (!user) throw new Error('Sessão inválida.')
 
     // Match the RPC ownership check even on older schemas whose scoring_models
     // policy validated only owner_id.
-    const { data: ownedSave, error: saveError } = await supabase.from('saves').select('id').eq('id', saveId).eq('owner_id', user.id).maybeSingle()
+    const { data: ownedSave, error: saveError } = await client.from('saves').select('id').eq('id', saveId).eq('owner_id', user.id).maybeSingle()
     if (saveError) throw new Error(describeDbError(saveError).full)
     if (!ownedSave) throw new Error('Save não encontrado ou não pertence ao usuário autenticado.')
 
-    const { data: rows, error: readError } = await supabase.from('scoring_models').select('id,config').eq('owner_id', user.id).eq('save_id', saveId).eq('name', name).eq('is_active', true).order('created_at').limit(2)
+    const { data: rows, error: readError } = await client.from('scoring_models').select('id,config').eq('owner_id', user.id).eq('save_id', saveId).eq('name', name).eq('is_active', true).order('created_at').limit(2)
     if (readError) throw new Error(describeDbError(readError).full)
     if ((rows?.length ?? 0) > 1) throw new Error('Há mais de um Model Lab ativo para este save. O fallback recusou escolher um registro arbitrariamente; aplique a migration mais recente.')
 
@@ -140,12 +141,12 @@ async function directPatchModelConfig(saveId: string, version: string, patch: Mo
     const current = existing?.config && typeof existing.config === 'object' && !Array.isArray(existing.config) ? existing.config as ModelConfig : {}
     const config = { ...current, ...patch }
     if (existing?.id) {
-      const { data, error } = await supabase.from('scoring_models').update({ config, version, is_active: true }).eq('id', existing.id).eq('owner_id', user.id).eq('save_id', saveId).select('id,config').single()
+      const { data, error } = await client.from('scoring_models').update({ config, version, is_active: true }).eq('id', existing.id).eq('owner_id', user.id).eq('save_id', saveId).select('id,config').single()
       if (error) throw new Error(describeDbError(error).full)
       return { id: String(data.id), config: (data.config ?? config) as ModelConfig }
     }
 
-    const { data, error } = await supabase.from('scoring_models').insert({ owner_id: user.id, save_id: saveId, name, version, config, is_active: true }).select('id,config').single()
+    const { data, error } = await client.from('scoring_models').insert({ owner_id: user.id, save_id: saveId, name, version, config, is_active: true }).select('id,config').single()
     if (error) throw new Error(describeDbError(error).full)
     return { id: String(data.id), config: (data.config ?? config) as ModelConfig }
   })
