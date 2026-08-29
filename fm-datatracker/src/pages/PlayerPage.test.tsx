@@ -15,7 +15,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected }) }))
 vi.mock('../lib/supabase', () => ({
   supabase: {
-    from: vi.fn(() => {
+    from: vi.fn((table: string) => {
+      if (table === 'player_stats') {
+        const result = Promise.resolve({ data: [], error: null })
+        const builder = {
+          select: () => builder,
+          eq: () => builder,
+          order: () => builder,
+          then: result.then.bind(result),
+        }
+        return builder
+      }
+
       const query = mocks.queries.shift()
       if (!query) throw new Error('query mock ausente')
       const builder = {
