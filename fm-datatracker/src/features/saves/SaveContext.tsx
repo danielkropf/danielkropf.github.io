@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { supabase } from '../../lib/supabase'
 import { invalidateSaveData } from '../../lib/dataCache'
 import { discardModelConfigState } from '../../lib/model-config'
+import { loadSaveStructures } from '../../lib/longitudinal-service'
 import { sanitizeSquadTablePreferencesForSaveChange } from '../../lib/squad-table-preferences'
 import type { Save } from '../../types/domain'
 import { createSaveRefreshRequestGuard, resolveSaveRefresh } from './save-refresh'
@@ -53,11 +54,16 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     try {
       const result = await supabase.from('saves').select('*').eq('is_archived', false).order('created_at')
       if (!refreshGuard.current.isCurrent(token)) return
+
+      const rawData = result.error ? null : (result.data ?? []) as Save[]
+      const structuredData = rawData ? await loadSaveStructures(rawData) : null
+      if (!refreshGuard.current.isCurrent(token)) return
+
       const resolution = resolveSaveRefresh({
         currentSaves: savesRef.current,
         currentSelected: selectedRef.current,
         rememberedId: localStorage.getItem(ACTIVE_SAVE_KEY),
-        data: result.error ? null : result.data ?? [],
+        data: structuredData,
         error: result.error?.message ?? null,
       })
       setError(resolution.error)
@@ -82,9 +88,11 @@ export function SaveProvider({ children }: { children: ReactNode }) {
 
   async function create(input: NewSave) {
     if (!supabase) return 'Banco não configurado'
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return 'Sessão inválida'
-    const { error: createError } = await supabase.from('saves').insert({ ...input, owner_id: user.id, save_type: 'normal' })
+    const { error: createError } = await supabase.rpc('create_save_with_structure', {
+      p_name: input.name.trim(),
+      p_club_name: input.club_name.trim(),
+      p_country: input.country.trim() || null,
+    })
     if (createError) return createError.message
     await refresh()
     return null

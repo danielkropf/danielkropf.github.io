@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { describeDbError, isMissingRpcError } from './db-error'
 
-export const REQUIRED_DATABASE_SCHEMA = '202608280003'
+export const REQUIRED_DATABASE_SCHEMA = '202608290004'
 const STALE_RECHECK_MS = 30_000
 
 export type DatabaseCapabilities = {
@@ -14,6 +14,10 @@ export type DatabaseCapabilities = {
   diagnosticsReservations: boolean
   diagnosticsServerRetention: boolean
   diagnosticsUpload: boolean
+  longitudinalCore: boolean
+  longitudinalBackfill: boolean
+  longitudinalSaveStructure: boolean
+  longitudinalImports: boolean
 }
 
 export type DatabaseCompatibility = {
@@ -33,6 +37,10 @@ const NO_CAPABILITIES: DatabaseCapabilities = {
   diagnosticsReservations: false,
   diagnosticsServerRetention: false,
   diagnosticsUpload: false,
+  longitudinalCore: false,
+  longitudinalBackfill: false,
+  longitudinalSaveStructure: false,
+  longitudinalImports: false,
 }
 
 let cached: Promise<DatabaseCompatibility> | null = null
@@ -78,16 +86,21 @@ export function parseDatabaseCompatibilityInfo(value: unknown): DatabaseCompatib
     diagnosticsBucket: capability(source, 'diagnostics_bucket'),
     diagnosticsReservations: capability(source, 'diagnostics_reservations'),
     diagnosticsServerRetention,
-    // Diagnostic upload is only safe when the server-side retention contract is
-    // actually active. Keep the rest of the application compatible if retention
-    // is temporarily unavailable, but fail closed for new private .fm uploads.
     diagnosticsUpload: capability(source, 'diagnostics_upload') && diagnosticsServerRetention,
+    longitudinalCore: capability(source, 'longitudinal_core'),
+    longitudinalBackfill: capability(source, 'longitudinal_backfill'),
+    longitudinalSaveStructure: capability(source, 'longitudinal_save_structure'),
+    longitudinalImports: capability(source, 'longitudinal_imports'),
   }
   const missingCore = [
     capabilities.importRpc ? null : 'import RPC',
     capabilities.deleteImportRpc ? null : 'delete import RPC',
     capabilities.modelConfigPatch ? null : 'model config patch',
     capabilities.projections ? null : 'projections',
+    capabilities.longitudinalCore ? null : 'longitudinal core',
+    capabilities.longitudinalBackfill ? null : 'longitudinal backfill',
+    capabilities.longitudinalSaveStructure ? null : 'longitudinal save structure',
+    capabilities.longitudinalImports ? null : 'longitudinal imports',
   ].filter((item): item is string => Boolean(item))
   if (missingCore.length) {
     return {

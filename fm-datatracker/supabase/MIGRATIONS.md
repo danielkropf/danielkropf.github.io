@@ -1,55 +1,64 @@
 # Supabase migration/bootstrap notes
 
-## Production state reconciled through 2026-08-28
+## Production state reconciled through Phase 0A — 2026-08-29
 
-The production project `zuyvivzvicjuhphchhql` already has the historical versions marked as applied, after schema verification:
+Production project: `zuyvivzvicjuhphchhql`.
 
-- `202608150001 initial_schema`
-- `202608150002 import_rpc`
-- `202608230001 fm_reader_samples`
-- `202608250001 import_integrity`
-- `202608260001 model_config_compatibility`
-- `202608260002 model_config_integrity`
-- `202608260003 player_projections`
-- `20260827234211 database_integrity_hardening`
-- `20260827234421 database_integrity_fk_indexes`
-- `20260828060819 stabilization_capabilities_and_diagnostics`
-- `20260828170656 remove_redundant_fk_relationships`
-- `20260828170834 advance_schema_marker_after_fk_cleanup`
-- `20260828183337 stabilization_indexes_and_retention_infra`
-- `20260828183639 move_pg_net_out_of_public`
+The historical chain through `20260828183639 move_pg_net_out_of_public` is already reconciled and must not be replayed.
 
-Do **not** execute those historical SQL files again in production.
-
-## Phase 0A — Core Longitudinal Domain
-
-Approved domain contract: `FM DataTracker — Core Longitudinal Domain`.
-
-The next ordered migrations are:
+Phase 0A is now also versioned in GitHub and applied in production:
 
 - `20260829000100 core_longitudinal_base`
 - `20260829000101 core_longitudinal_history`
 - `20260829000102 core_longitudinal_security`
 
-They are intentionally additive. They create the normalized Club/SaveClub/Season/PlayerMembership/IntakeClass/SaveEvent foundation, preserve every legacy column/table, enable authenticated-only RLS/Data API access, and advance `datatracker_schema_info()` to schema marker `202608290001` with capability `longitudinal_core=true` only after the complete domain exists.
+The Supabase management API initially recorded current-time ledger IDs while applying those files. The ledger was reconciled immediately to the canonical filenames above after object verification. Production currently reports `schema_version=202608290001` and `longitudinal_core=true`.
 
-At package creation time these three Phase 0A migrations were validated as one transaction against the production Postgres 17 schema and rolled back successfully. They were **not applied to production**, because the GitHub integration could not version the files (`403 Resource not accessible by integration`). Preserve repository/database parity: commit these files first, then apply the same ordered migrations to production.
+## Phase 0 continuation
+
+Apply the remaining Phase 0 migrations strictly in filename order:
+
+- `20260829000200 core_longitudinal_backfill`
+  - covering indexes for the composite Phase 0A FKs;
+  - idempotent primary Club/SaveClub backfill;
+  - exact-label Seasons without invented dates;
+  - conservative historical PlayerMembership checkpoints;
+  - IntakeClass backfill only when every intake snapshot resolves to one Club.
+- `20260829000300 core_longitudinal_save_structure`
+  - `create_save_with_structure(...)` creates Save + primary Club + SaveClub in one transaction while keeping legacy `saves.club_name`.
+- `20260829000400 core_longitudinal_imports`
+  - import-completion trigger persists trusted Club/Membership/Season/IntakeClass facts;
+  - import deletion removes import-owned longitudinal evidence;
+  - import parser profile advances to `integrity-v2-longitudinal`.
+
+Application code accompanying these migrations requires schema `202608290004` plus explicit capabilities:
+`longitudinal_core`, `longitudinal_backfill`, `longitudinal_save_structure`, and `longitudinal_imports`.
+
+Do not deploy the application changes against a database that has not received the ordered migrations above.
+
+## Validation already performed before publication
+
+- Phase 0B data backfill executed twice inside one rolled-back production transaction.
+- Result on the current legacy smoke save: 2 Clubs, 1 active primary SaveClub, 194 membership checkpoints, no duplicate rows.
+- Primary legacy `FLU` remained `FLU`; confirmed Bayern contract evidence became a separate observed Club.
+- The hash of all 194 legacy `player_snapshots` was identical before and after the backfill dry-run.
+- Phase 0D transactional save creation was smoke-tested under an authenticated JWT context and produced synchronized Save + Club + SaveClub rows.
+- Phase 0E was exercised through the existing `import_fm_export` and `delete_fm_import` RPCs with normal, loan, intake and stats fixtures inside rollback.
+- Longitudinal cleanup removed the deleted intake evidence while preserving unrelated memberships.
 
 ## Fresh environment bootstrap
 
-1. Apply the canonical migration files in filename order from `supabase/migrations/`.
+1. Apply every canonical migration in `supabase/migrations/` in filename order.
 2. Deploy `supabase/functions/cleanup-fm-reader-samples/index.ts` with JWT verification enabled.
-3. Create two Vault secrets for that environment:
-   - `fm_datatracker_project_url`
-   - `fm_datatracker_anon_jwt`
-4. Run `supabase/ops/configure_diagnostic_retention.sql`.
-5. Invoke the Edge Function once and require HTTP 200.
-6. Check `public.datatracker_schema_info()` and require `diagnostics_server_retention=true`.
-7. After Phase 0A is applied, also require `longitudinal_core=true`.
-8. Run Supabase Security and Performance Advisors.
+3. Configure the diagnostic-retention Vault secrets and `supabase/ops/configure_diagnostic_retention.sql`.
+4. Require `public.datatracker_schema_info().schema_version >= 202608290004`.
+5. Require the four longitudinal capabilities listed above to be `true`.
+6. Run `supabase/ops/verify_phase0_longitudinal.sql`.
+7. Run Supabase Security and Performance Advisors.
+8. Run application typecheck, tests and build before release.
 
 ## Existing environment upgrade
 
-Do not use a blanket reset or replay. If an older environment has the same historical schema but a damaged ledger, verify the objects first and use `supabase migration repair --status applied <version>` (one verified version at a time) or the equivalent ledger repair supported by your administration tooling.
+Do not use blanket reset/replay. Apply only migrations not yet present in the environment ledger. If the schema already contains a verified historical effect but the ledger is damaged, repair that one ledger entry only after object verification.
 
-Never mark a historical migration applied merely because a later schema marker exists.
+Never mark a migration applied merely because a later schema marker exists.
