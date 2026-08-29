@@ -103,7 +103,7 @@ function readPlayerTableLayout(): PlayerTableLayout {
     const saved = JSON.parse(localStorage.getItem(TACTICS_TABLE_STORAGE_KEY) ?? 'null') as Partial<PlayerTableLayout> | null
     if (Array.isArray(saved?.columns) && saved!.columns.some(column => column.id === 'name')) {
       const columns = (saved!.columns as PlayerTableColumn[])
-        .filter(column => column.id !== 'positionScore' && column.key !== 'positionScore')
+        .filter(column => column.id !== 'positionScore' && (column.key as string | undefined) !== 'positionScore')
         .map(column => column.kind === 'data' && (column.key as string) === 'generalScore'
           ? { ...column, id: 'relativeScore', key: 'relativeScore' as PlayerDataKey, label: PLAYER_DATA_LABELS.relativeScore }
           : column)
