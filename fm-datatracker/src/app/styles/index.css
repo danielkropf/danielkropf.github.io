@@ -2,7 +2,6 @@
 @import '../../styles.css';
 @import '../../version.css';
 @import '../../planning.css';
-@import '../../tactics-fixes.css';
 @import '../../planning-interactions.css';
 @import '../../planning-v2.css';
 @import '../../planning-three-slots.css';
@@ -15,7 +14,6 @@
 @import '../../player-page-refinement.css';
 @import '../../planning-drag-preview.css';
 @import '../../score-badge.css';
-@import '../../tactics-refinement.css';
 @import '../../planning-position-colors.css';
 @import '../../interaction-ux.css';
 @import '../../pre-one-polish.css';
@@ -32,6 +30,8 @@
 @import './data-table.css';
 /* Visual QA cleanup for Phase 2 primitive leaks. */
 @import './phase-2-cleanup.css';
+/* Tactics is the first full Phase 3 surface migration after DataTable QA. */
+@import './tactics.css';
 /* Canonical shell remains above primitives for chrome-specific authority. */
 @import './shell.css';
 /* Responsive contracts must remain last so mobile/tablet geometry wins. */

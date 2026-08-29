@@ -67,3 +67,54 @@ html,body,#root{width:100%;max-width:100%;min-height:100%;overflow-x:hidden}
 }
 
 @media(pointer:coarse){button,summary,nav a,select{min-height:40px}.player-peek{min-width:28px!important;min-height:28px!important}.sort-button{min-height:36px}.depth-vacancy{min-height:44px}.floating-tooltip,.fm-player-tooltip-portal{display:none!important}}
+
+/* Tactics DS v1 — canonical responsive composition after the Phase 3 migration. */
+@media(max-width:1280px){
+  .tactics-ds-page .tactic-workspace{grid-template-columns:minmax(340px,36%) minmax(0,1fr)!important}
+  .tactics-ds-page .role-pair-head,.tactics-ds-page .role-pair-row{grid-template-columns:minmax(140px,.8fr) minmax(140px,.8fr) minmax(240px,1.45fr) 40px!important;min-width:660px}
+}
+
+@media(max-width:1024px){
+  .tactics-ds-page .tactic-topbar{grid-template-columns:minmax(0,1fr) auto!important;gap:var(--dt-space-2)!important}
+  .tactics-ds-page .tactic-workspace{grid-template-columns:minmax(320px,40%) minmax(0,1fr)!important;gap:var(--dt-space-2)!important}
+  .tactics-ds-page .tactic-toolbar{gap:var(--dt-space-1)!important}
+  .tactics-ds-page .tactic-tabs button{min-width:96px!important}
+  .tactics-ds-page .player-ranking-controls{flex-wrap:wrap!important;align-items:center!important}
+  .tactics-ds-page .tactics-position-filter{flex-basis:210px}
+  .tactics-ds-page .tactics-table-hint{flex:1 1 220px}
+  .tactics-ds-page .tactics-player-count{padding-bottom:0}
+}
+
+@media(max-width:900px){
+  .tactics-ds-page{overflow:auto!important}
+  .tactics-ds-page .tactics-title-row{min-height:40px;margin-bottom:var(--dt-space-2)!important}
+  .tactics-ds-page .tactics-title-row p{display:none}
+  .tactics-ds-page .tactic-topbar{grid-template-columns:1fr!important;grid-template-rows:auto auto!important;gap:var(--dt-space-2)!important;margin-bottom:var(--dt-space-2)!important}
+  .tactics-ds-page .tactic-tabs{grid-row:auto!important}
+  .tactics-ds-page .tactic-tabs button{flex:1 1 0!important;min-width:0!important}
+  .tactics-ds-page .tactic-workspace{grid-template-columns:1fr!important;grid-template-rows:minmax(360px,48dvh) minmax(360px,1fr)!important;gap:var(--dt-space-2)!important;overflow:visible!important}
+  .tactics-ds-page .football-pitch{width:100%!important;height:100%!important;max-height:none!important;justify-self:stretch!important;min-height:360px!important}
+  .tactics-ds-page .tactic-side-panel{min-height:360px!important;overflow:hidden!important}
+  .tactics-ds-page .role-summary.has-tactic{min-width:0!important}
+  .tactics-ds-page .player-ranking{min-width:0!important}
+  .tactics-ds-page .role-pair-head,.tactics-ds-page .role-pair-row{min-width:660px}
+  .tactics-ds-page .advanced-picker-modal{inset:12px!important;width:calc(100vw - 24px)!important;height:calc(100dvh - 24px)!important;max-width:none!important;max-height:none!important;transform:none!important}
+}
+
+@media(max-width:600px){
+  .tactics-ds-page .tactic-toolbar{display:grid!important;grid-template-columns:minmax(0,1fr) auto auto!important;align-items:end!important}
+  .tactics-ds-page .tactic-select-wrap{min-width:0}
+  .tactics-ds-page .tactic-toolbar button{font-size:var(--dt-type-small)!important;padding-inline:var(--dt-space-2)!important}
+  .tactics-ds-page .tactic-toolbar button::before{content:none!important}
+  .tactics-ds-page .tactic-delete-button{width:auto!important}
+  .tactics-ds-page .tactic-add-button{width:auto!important}
+  .tactics-ds-page .tactic-workspace{grid-template-rows:minmax(330px,44dvh) minmax(340px,1fr)!important}
+  .tactics-ds-page .player-ranking-controls{display:grid!important;grid-template-columns:1fr!important;align-items:start!important;gap:var(--dt-space-2)!important}
+  .tactics-ds-page .tactics-position-filter{width:100%;flex-basis:auto}
+  .tactics-ds-page .tactics-table-hint{display:none}
+  .tactics-ds-page .tactics-player-count{margin-left:0}
+  .tactics-ds-page .formation-grid,.tactics-ds-page .role-editor-layout{grid-template-columns:1fr!important}
+  .tactics-ds-page .mini-link-pitch{min-height:300px!important}
+  .tactics-ds-page .tactics-picker-toolbar{align-items:stretch!important;flex-direction:column!important}
+  .tactics-ds-page .tactics-picker-toolbar>span{padding-bottom:0}
+}

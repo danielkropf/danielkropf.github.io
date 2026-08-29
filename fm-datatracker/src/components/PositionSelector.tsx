@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 
 type PositionItem = { value: string; label: string }
 type PositionGroup = { label: string; className: string; slots: Array<PositionItem | null> }
@@ -18,6 +18,19 @@ const normalize = (value: string) => value.toUpperCase().replace(/[^A-Z]/g, '')
 export function canonicalPosition(value: string) {
   const normalized = normalize(value)
   return allPositions.find(position => normalize(position) === normalized) ?? value
+}
+
+function usePopoverDismiss(open: boolean, rootRef: RefObject<HTMLDivElement | null>, triggerRef: RefObject<HTMLButtonElement | null>, close: (returnFocus?: boolean) => void) {
+  useEffect(() => {
+    if (!open) return
+    const pointer = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as Node)) close(false) }
+    const focus = (event: FocusEvent) => { if (!rootRef.current?.contains(event.target as Node)) close(false) }
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); close(true) } }
+    window.addEventListener('pointerdown', pointer)
+    window.addEventListener('focusin', focus)
+    window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('pointerdown', pointer); window.removeEventListener('focusin', focus); window.removeEventListener('keydown', key) }
+  }, [open, rootRef, triggerRef, close])
 }
 
 export function PositionSelector({ selected, onChange, availablePositions, className = '', label = 'Todas as posições' }: {
@@ -45,16 +58,7 @@ export function PositionSelector({ selected, onChange, availablePositions, class
     if (returnFocus) queueMicrotask(() => triggerRef.current?.focus())
   }
 
-  useEffect(() => {
-    if (!open) return
-    const pointer = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as Node)) close(false) }
-    const focus = (event: FocusEvent) => { if (!rootRef.current?.contains(event.target as Node)) close(false) }
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); close(true) } }
-    window.addEventListener('pointerdown', pointer)
-    window.addEventListener('focusin', focus)
-    window.addEventListener('keydown', key)
-    return () => { window.removeEventListener('pointerdown', pointer); window.removeEventListener('focusin', focus); window.removeEventListener('keydown', key) }
-  }, [open])
+  usePopoverDismiss(open, rootRef, triggerRef, close)
 
   function togglePosition(position: string, checked: boolean) {
     const base = selected === null ? [...available] : [...selectedSet]

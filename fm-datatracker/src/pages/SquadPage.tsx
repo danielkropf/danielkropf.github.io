@@ -18,6 +18,7 @@ import{canPlayPosition}from'../lib/positions'
 import{loadCurrentPlayers,loadReferenceDataset}from'../lib/dataCache'
 import{useSaves}from'../features/saves/SaveContext'
 import{PlayerPeek}from'../components/PlayerPeek'
+import{PlanningStatusBadge}from'../components/PlanningStatusBadge'
 import type{PlayerRow}from'../types/domain'
 import{loadModelConfig}from'../lib/model-config'
 
@@ -38,11 +39,12 @@ const defaultColumnKeys:ColumnKey[]=['status','name','age','nationality','value'
 const columnLabels:Record<ColumnKey,string>={status:'Status',name:'Nome',age:'Idade',nationality:'Nacionalidade',value:'Valor',team:'Equipe',position:'Posições',height:'Altura',weight:'Peso',foot:'Pé preferido',contract:'Fim do contrato',snapshot:'Data do snapshot',score:'Nota geral',reference:'Nível de referência'}
 const generalColumns:TableColumn[]=allColumns.map(key=>({id:key,kind:'data',key,label:columnLabels[key]}))
 const defaultColumns:TableColumn[]=defaultColumnKeys.map(key=>({id:key,kind:'data',key,label:columnLabels[key]}))
-const columnWidths:Record<ColumnKey,number>={status:130,name:210,age:72,nationality:140,value:130,team:130,position:170,height:90,weight:85,foot:125,contract:125,snapshot:125,score:105,reference:180}
+const columnWidths:Record<ColumnKey,number>={status:130,name:210,age:72,nationality:140,value:130,team:130,position:170,height:90,weight:85,foot:125,contract:125,snapshot:125,score:196,reference:180}
 const roleColumn=(phase:TacticPhase,position:string,roleCode:string):TableColumn=>({id:`role|${phase}|${position}|${roleCode}`,kind:'role',phase,position,roleCode,label:`${phase} · ${position} · ${roleCode}`})
 const tacticColumn=(tactic:Tactic,ip:Assignment,oop:Assignment):TableColumn=>({id:`tactic|${tactic.id}|${ip.playerId}`,kind:'tacticRole',tacticId:tactic.id,linkId:ip.playerId,label:`${tactic.name} · ${ip.position} ${ip.roleCode} ↔ ${oop.position} ${oop.roleCode}`})
 const attributeColumn=(key:string,label:string):TableColumn=>({id:`attribute|${key}`,kind:'attribute',attributeKey:key,label})
-function defaultWidth(column:TableColumn){return column.kind==='data'?columnWidths[column.key!]:column.kind==='attribute'?105:column.kind==='tacticRole'?185:125}
+function defaultWidth(column:TableColumn){return column.kind==='data'?columnWidths[column.key!]:column.kind==='attribute'?105:column.kind==='tacticRole'||column.kind==='role'?196:125}
+function minimumColumnWidth(column:TableColumn){if(column.kind==='role'||column.kind==='tacticRole')return 196;if(column.kind==='data'&&column.key==='score')return 196;if(column.kind==='data'&&column.key==='reference')return 160;if(column.kind==='data'&&column.key==='status')return 56;if(column.kind==='data'&&column.key==='name')return 164;return 64}
 function readColumns():{columns:TableColumn[];frozenIndex:number;widths:Record<string,number>}{try{const saved=JSON.parse(localStorage.getItem('fm-datatracker:squad-table-v2')??'null');if(Array.isArray(saved?.columns)&&saved.columns.some((column:TableColumn)=>column.id==='name'))return{columns:saved.columns as TableColumn[],frozenIndex:Number.isInteger(saved.frozenIndex)?saved.frozenIndex:Math.max(0,saved.columns.findIndex((column:TableColumn)=>column.id==='name')),widths:saved.widths??{}}}catch{}return{columns:defaultColumns,frozenIndex:1,widths:{}}}
 
 export function SquadPage(){
@@ -88,7 +90,7 @@ export function SquadPage(){
   function removeColumn(index:number){if(columns[index]?.id==='name')return;const nextColumns=columns.filter((_,itemIndex)=>itemIndex!==index);setColumns(nextColumns);setFrozenIndex(boundary=>{if(boundary<0)return-1;const adjusted=index<=boundary?boundary-1:boundary,nameIndex=nextColumns.findIndex(column=>column.id==='name');return Math.min(nextColumns.length-1,Math.max(adjusted,nameIndex))});setColumnMenu(null)}
   function insertColumn(column:TableColumn){const index=columnMenu?.index??columns.length-1;setColumns(current=>[...current.slice(0,index+1),{...column,id:column.kind==='role'||column.kind==='tacticRole'?`${column.id}|${crypto.randomUUID()}`:column.id},...current.slice(index+1)]);setColumnMenu(null)}
   function moveColumn(from:number,to:number){if(from===to)return;setColumns(current=>{const next=[...current],item=next.splice(from,1)[0];next.splice(to,0,item);setFrozenIndex(boundary=>Math.max(boundary,next.findIndex(column=>column.id==='name')));return next})}
-  function resizeColumn(index:number,startX:number){const column=columns[index],start=widths[column.id]??defaultWidth(column),move=(event:PointerEvent)=>setWidths(current=>({...current,[column.id]:Math.max(64,start+event.clientX-startX)})),stop=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',stop)};window.addEventListener('pointermove',move);window.addEventListener('pointerup',stop)}
+  function setColumnWidth(column:TableColumn,width:number){setWidths(current=>({...current,[column.id]:width}))}
 
   return <div className="screen-page squad-page">
     <div className="title-row"><div><h1>{selected?.club_name}</h1>{(loading||isPending)&&<span className="background-loading" role="status">Atualizando elenco em segundo plano…</span>}</div><div className="squad-actions"><label>Referência<CustomSelect ariaLabel="País de referência" value={referenceCountry} options={referenceCountries.map(country=>({value:country,label:country}))} onChange={setReferenceCountry}/></label><label>Divisão<CustomSelect ariaLabel="Divisão de referência" value={String(referenceDivision)} options={referenceDivisions.map(division=>({value:String(division),label:`${division}ª divisão`}))} onChange={value=>setReferenceDivision(Number(value))}/></label><input className="search" placeholder="Buscar jogador" value={search} onChange={event=>setSearch(event.target.value)}/></div></div>
@@ -100,6 +102,8 @@ export function SquadPage(){
       rowKey={row=>row.player.id}
       renderCell={(row,column)=><SquadCellContent column={column} row={row} referenceCountry={referenceCountry} referenceDivision={referenceDivision} model={model} openPlayer={()=>navigate(`/players/${row.player.id}`)}/>}
       getColumnWidth={column=>widths[column.id]??defaultWidth(column)}
+      getColumnMinWidth={column=>minimumColumnWidth(column)}
+      getColumnMaxWidth={()=>640}
       sort={sort}
       onSort={changeSort}
       selectedRowKey={selectedPlayerId}
@@ -112,7 +116,7 @@ export function SquadPage(){
       getCellClassName={(_,column)=>column.kind==='role'||column.kind==='tacticRole'||column.key==='score'?'role-score-cell':column.kind==='attribute'?'attribute-table-cell':column.key==='name'?'frozen-player-name':undefined}
       renderHeaderLabel={column=><>{column.label}{column.key==='reference'?<Tooltip content="Usamos o maior percentil entre todas as linhas em que o jogador atua."><i className="metric-help" tabIndex={0} onClick={event=>event.stopPropagation()}>?</i></Tooltip>:null}</>}
       onHeaderContextMenu={(event,_,index)=>{event.preventDefault();setColumnMenu({x:event.clientX,y:event.clientY,index})}}
-      onColumnResizeStart={(event,_,index)=>resizeColumn(index,event.clientX)}
+      onColumnWidthChange={(column,width)=>setColumnWidth(column,width)}
       onColumnMove={moveColumn}
     />
     {columnMenu&&<ColumnContextMenu x={columnMenu.x} y={columnMenu.y} column={columns[columnMenu.index]} dataColumns={generalColumns.filter(column=>!columns.some(current=>current.kind==='data'&&current.key===column.key))} attributeColumns={ATTRIBUTE_CATALOG.filter(attribute=>!columns.some(current=>current.kind==='attribute'&&current.attributeKey===attribute.key)).map(attribute=>attributeColumn(attribute.key,attribute.label))} tactics={model.tactics??[]} insert={insertColumn} remove={()=>removeColumn(columnMenu.index)} freeze={()=>{setFrozenIndex(columnMenu.index);setColumnMenu(null)}} unfreeze={()=>{setFrozenIndex(-1);setColumnMenu(null)}}/>}
@@ -124,7 +128,7 @@ function SquadCellContent({column,row,referenceCountry,referenceDivision,model,o
   if(column.kind==='tacticRole'||column.kind==='role'){const score=row.columnScores[column.id]??null;let scoreKey='';if(column.kind==='role'&&column.phase&&column.position&&column.roleCode){scoreKey=functionProjectionKey([{phase:column.phase,position:column.position,roleCode:column.roleCode}])}else if(column.kind==='tacticRole'&&column.tacticId&&column.linkId){const tactic=model.tactics?.find(item=>item.id===column.tacticId),ip=tactic?.ipAssignments.find(item=>item.playerId===column.linkId),oop=tactic?.oopAssignments.find(item=>item.playerId===column.linkId)??ip;if(ip&&oop)scoreKey=functionProjectionKey([{phase:'IP',position:ip.position,roleCode:ip.roleCode},{phase:'OOP',position:oop.position,roleCode:oop.roleCode}])}return <ScoreWithProjection playerId={row.player.id} currentScore={score} snapshot={row.latest} scoreType="function" scoreKey={scoreKey} variant="inline" currentTitle="Nota atual nesta função" projectionTitle={'Projeção média nesta função no pico\nEstimativa do DataTracker; não é o CP do Football Manager.'}/>}
   if(column.kind==='attribute'){const attribute=row.latest?.player_attributes.find(item=>item.attribute_key===column.attributeKey);return <b>{attribute?.value??'—'}</b>}
   const key=column.key!
-  if(key==='status')return <span className={`planning-status ${row.status==='Não selecionado'?'unselected':'selected'}`}>{row.status}</span>
+  if(key==='status')return <PlanningStatusBadge status={row.status}/>
   if(key==='name')return <div className="squad-player-name-cell">{row.latest&&<PlayerPeek player={row.player} snapshot={row.latest}/>}<button className="player-name" onClick={event=>{event.stopPropagation();openPlayer()}}>{row.player.current_name}</button></div>
   if(key==='age')return <>{row.latest?.age??'—'}</>
   if(key==='nationality')return <>{row.player.nationality||'—'}</>

@@ -14,10 +14,10 @@ export const DATA_TABLE_PRESETS = {
   },
   tactics: {
     sorting: true,
-    resizing: false,
-    reordering: false,
-    freezing: false,
-    selection: true,
+    resizing: true,
+    reordering: true,
+    freezing: true,
+    selection: false,
   },
   scouting: {
     sorting: true,

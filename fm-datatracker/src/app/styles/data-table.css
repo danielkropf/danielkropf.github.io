@@ -185,8 +185,218 @@
 .squad-table .player-name:hover{color:var(--dt-lime)!important;text-decoration:underline}
 .squad-table .role-score-cell,.squad-table .attribute-table-cell{overflow:visible}
 
+/* Compact planning status shared by Elenco and Táticas. The cell stays dense;
+   the full destination is exposed on hover/focus without changing geometry. */
+.planning-status-badge{
+  display:inline-grid;
+  place-items:center;
+  width:32px;
+  min-width:32px;
+  height:22px;
+  min-height:22px;
+  padding:0;
+  border:1px solid var(--dt-border-strong);
+  border-radius:var(--dt-radius-pill);
+  background:var(--dt-surface-2);
+  color:var(--dt-text-2);
+  font-size:10px;
+  font-weight:700;
+  line-height:1;
+  letter-spacing:.02em;
+  cursor:help;
+}
+.planning-status-badge.is-selected{
+  border-color:color-mix(in srgb,var(--dt-success) 38%,var(--dt-border-strong));
+  background:color-mix(in srgb,var(--dt-success) 10%,var(--dt-surface-2));
+  color:#bdebc8;
+}
+.planning-status-badge.is-unselected{color:var(--dt-text-3)}
+.planning-status-badge:hover,.planning-status-badge:focus-visible{
+  border-color:color-mix(in srgb,var(--dt-lime) 48%,var(--dt-border-strong));
+  color:var(--dt-text-1);
+}
+.planning-status-tooltip{
+  position:fixed;
+  z-index:7600;
+  display:block;
+  padding:8px 10px;
+  border:1px solid var(--dt-border-strong);
+  border-radius:var(--dt-radius-card);
+  background:#0c1811;
+  color:var(--dt-text-1);
+  box-shadow:var(--dt-shadow-floating);
+  font-size:var(--dt-type-caption);
+  font-weight:500;
+  line-height:1.4;
+  white-space:normal;
+  pointer-events:none;
+}
+
 @media(max-width:900px){
   .dt-table-shell{overflow:auto}
   .dt-table td{height:52px}
   .squad-page>.dt-table-shell{max-height:70vh}
+}
+
+/* Shared header context menu + resizing feedback. Surfaces provide the
+   catalog/actions; DataTable owns geometry while all dense tables share this
+   flatter DS v1 floating-menu language. */
+body.dt-table-resizing,body.dt-table-resizing *{cursor:col-resize!important;user-select:none!important}
+.dt-table-resizer{right:-6px!important;width:12px!important;touch-action:none!important}
+body.dt-table-resizing .dt-table-resizer:after{opacity:1!important}
+
+.dt-table-context-menu,
+.squad-column-context,
+.context-submenu-portal{
+  position:fixed!important;
+  z-index:6200!important;
+  width:244px!important;
+  max-height:min(420px,calc(100vh - 24px))!important;
+  overflow:auto!important;
+  padding:6px!important;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:#0c1811!important;
+  box-shadow:var(--dt-shadow-floating)!important;
+  color:var(--dt-text-1)!important;
+}
+.context-submenu-portal{z-index:6210!important}
+.dt-table-context-title{
+  padding:7px 10px 8px;
+  overflow:hidden;
+  color:var(--dt-text-3);
+  font-size:var(--dt-type-micro);
+  font-weight:700;
+  letter-spacing:.06em;
+  text-overflow:ellipsis;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+.dt-table-context-menu button,
+.squad-column-context>button,
+.squad-column-context .context-branch>button,
+.context-submenu-portal>button,
+.context-submenu-portal .context-branch>button{
+  display:flex!important;
+  width:100%!important;
+  min-height:34px!important;
+  height:auto!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+  margin:0!important;
+  padding:6px 10px!important;
+  border:0!important;
+  border-radius:var(--dt-radius-control)!important;
+  background:transparent!important;
+  color:var(--dt-text-2)!important;
+  box-shadow:none!important;
+  font-size:var(--dt-type-small)!important;
+  font-weight:500!important;
+  line-height:1.2!important;
+  text-align:left!important;
+  transform:none!important;
+}
+.squad-column-context .context-branch>button,
+.context-submenu-portal .context-branch>button{justify-content:space-between!important}
+.squad-column-context .context-branch>button span:first-child,
+.context-submenu-portal .context-branch>button span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.squad-column-context .context-branch>button span:last-child,
+.context-submenu-portal .context-branch>button span:last-child{flex:0 0 auto;color:var(--dt-text-3);font-size:16px}
+.dt-table-context-menu button.has-separator{margin-top:5px!important;border-top:1px solid var(--dt-border)!important;border-radius:0 0 var(--dt-radius-control) var(--dt-radius-control)!important;padding-top:10px!important}
+.dt-table-context-menu button:not(:disabled):hover,
+.dt-table-context-menu button:not(:disabled):focus-visible,
+.squad-column-context button:not(:disabled):hover,
+.squad-column-context button:not(:disabled):focus-visible,
+.context-submenu-portal button:not(:disabled):hover,
+.context-submenu-portal button:not(:disabled):focus-visible{
+  border:0!important;
+  background:var(--dt-surface-3)!important;
+  color:var(--dt-text-1)!important;
+  filter:none!important;
+  transform:none!important;
+}
+.dt-table-context-menu button.is-danger{color:var(--dt-danger)!important}
+.dt-table-context-menu button:disabled,
+.squad-column-context button:disabled,
+.context-submenu-portal button:disabled{opacity:.42!important;cursor:not-allowed!important}
+.dt-table-context-check{display:grid;place-items:center;width:18px;color:var(--dt-lime);font-weight:800}
+.squad-column-context hr{
+  height:1px!important;
+  margin:5px 4px!important;
+  border:0!important;
+  background:var(--dt-border)!important;
+}
+.squad-column-context small,.context-submenu-portal small{display:block;padding:8px 10px;color:var(--dt-text-3);font-size:var(--dt-type-caption)}
+.context-branch{position:relative!important;margin:0!important;padding:0!important}
+
+/* PositionSelector returns to the original Elenco mental model: one vertical
+   sequence of football lines, three positional cells per line. Desktop is
+   compact enough to show every line without an internal scrollbar. */
+.dt-position-selector{position:relative;min-width:0}
+.dt-position-trigger{display:flex!important;width:100%!important;align-items:center!important;justify-content:space-between!important;gap:var(--dt-space-2)!important;text-align:left!important}
+.dt-position-menu{
+  position:absolute!important;
+  z-index:6100!important;
+  top:calc(100% + 5px)!important;
+  left:0!important;
+  display:grid!important;
+  grid-template-columns:1fr!important;
+  width:min(340px,calc(100vw - 32px))!important;
+  max-height:none!important;
+  overflow:visible!important;
+  gap:4px!important;
+  padding:8px!important;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:#0c1811!important;
+  box-shadow:var(--dt-shadow-floating)!important;
+}
+.dt-position-master{
+  display:flex!important;
+  min-height:34px!important;
+  align-items:center!important;
+  gap:var(--dt-space-2)!important;
+  margin:0 0 2px!important;
+  padding:0 var(--dt-space-3)!important;
+  border:1px solid var(--dt-border)!important;
+  border-radius:var(--dt-radius-control)!important;
+  background:var(--dt-surface-2)!important;
+  color:var(--dt-text-1)!important;
+  font-size:var(--dt-type-small)!important;
+  font-weight:600!important;
+}
+.dt-position-master input,.dt-position-group input{width:16px!important;height:16px!important;min-height:0!important;margin:0!important;accent-color:var(--dt-lime)}
+.dt-position-group{display:grid!important;gap:2px!important;min-width:0!important;margin:0!important;padding:0!important}
+.dt-position-group h4{margin:0!important;color:var(--dt-text-3)!important;font-size:9px!important;font-weight:700!important;line-height:12px!important;letter-spacing:.05em!important;text-transform:uppercase!important}
+.dt-position-group>div{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:4px!important}
+.dt-position-group label{
+  display:flex!important;
+  min-width:0!important;
+  min-height:30px!important;
+  align-items:center!important;
+  gap:6px!important;
+  margin:0!important;
+  padding:0 7px!important;
+  border:1px solid color-mix(in srgb,var(--line-color,var(--dt-border-strong)) 48%,var(--dt-border))!important;
+  border-radius:var(--dt-radius-control)!important;
+  background:color-mix(in srgb,var(--line-color,var(--dt-surface-2)) 9%,var(--dt-surface-2))!important;
+  color:var(--dt-text-2)!important;
+  box-shadow:none!important;
+  font-size:var(--dt-type-caption)!important;
+  font-weight:600!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+}
+.dt-position-group label:hover{border-color:color-mix(in srgb,var(--line-color,var(--dt-lime)) 72%,var(--dt-border-strong))!important;background:color-mix(in srgb,var(--line-color,var(--dt-surface-3)) 16%,var(--dt-surface-3))!important;color:var(--dt-text-1)!important}
+.dt-position-group label.is-unavailable{opacity:.36!important}
+.dt-position-spacer{min-height:30px}
+
+/* Disabled rows remain supported by the generic DataTable, but contextual
+   pickers should prefer semantic row states when the row is still selectable. */
+.dt-table-row-disabled td{opacity:.42!important;cursor:not-allowed!important}
+.dt-table-row-disabled:hover td{background:var(--dt-surface-1)!important}
+
+@media(max-width:760px){
+  .dt-position-menu{width:min(340px,calc(100vw - 24px))!important;max-height:calc(100vh - 120px)!important;overflow:auto!important}
 }
