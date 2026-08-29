@@ -167,6 +167,24 @@ export type Save = {
   structure?: SaveStructure
 }
 
+export type PlayerStat = {
+  id: string
+  player_id: string
+  save_id: string
+  import_id: string
+  snapshot_date: string
+  season: string | null
+  competition: string | null
+  team: string | null
+  minutes: number | null
+  appearances: number | null
+  starts: number | null
+  sub_appearances: number | null
+  raw_stats: Record<string, unknown>
+  normalized_stats: Record<string, unknown>
+  created_at: string
+}
+
 export type ImportType = 'squad'|'stats'|'intake'|'unknown'
 export type ImportPreview = { filename:string; fileType:ImportType; rowCount:number; delimiter:string; headers:string[]; ignoredColumns:string[]; warnings:string[]; rows:Record<string,string>[] }
 export type PlayerRow = { id:string; current_name:string; nationality:string|null; last_seen_date:string; is_active:boolean; player_snapshots:Array<{id:string;snapshot_date:string;age:number|null;club:string|null;squad:string|null;positions:string[];contract_expiry:string|null;preferred_foot?:string|null;height?:number|null;weight?:number|null;raw_data:Record<string,unknown>;normalized_data:Record<string,unknown>;player_attributes:Array<{attribute_key:string;attribute_label:string;value:number;category:string}>}> }

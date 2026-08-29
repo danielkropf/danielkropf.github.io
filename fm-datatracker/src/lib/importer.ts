@@ -4,10 +4,18 @@ import { ATTRIBUTE_CATALOG, ATTRIBUTE_LOOKUP } from './attributes'
 
 const ignoredForScoring=/^(ca|pa|ability|potential|current ability|potential ability)$/i
 export const normalizeHeader=(v:string)=>v.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')
-const aliases:Record<string,string>={name:'name',nome:'name',uid:'fm_player_id',id:'fm_player_id',dob:'date_of_birth',date_of_birth:'date_of_birth',nascimento:'date_of_birth',nat:'nationality',nationality:'nationality',nacionalidade:'nationality',club:'club',clube:'club',squad:'squad',team:'squad',age:'age',idade:'age',position:'positions',positions:'positions',posicao:'positions',contract_expires:'contract_expiry',contract_expiry:'contract_expiry',expires:'contract_expiry',minutes:'minutes',mins:'minutes',apps:'appearances',appearances:'appearances',goals:'goals',assists:'assists',height:'height',altura:'height',weight:'weight',peso:'weight',preferred_foot:'preferred_foot',preferredfoot:'preferred_foot',footedness:'preferred_foot',pe_preferido:'preferred_foot'}
+const aliases:Record<string,string>={
+  name:'name',nome:'name',uid:'fm_player_id',id:'fm_player_id',id_fm:'fm_player_id',fm_id:'fm_player_id',unique_id:'fm_player_id',
+  dob:'date_of_birth',date_of_birth:'date_of_birth',nascimento:'date_of_birth',nat:'nationality',nation:'nationality',nationality:'nationality',nacionalidade:'nationality',
+  club:'club',clube:'club',squad:'squad',team:'squad',age:'age',idade:'age',position:'positions',positions:'positions',posicao:'positions',
+  contract_expires:'contract_expiry',contract_expiry:'contract_expiry',expires:'contract_expiry',minutes:'minutes',mins:'minutes',
+  apps:'appearances',appearances:'appearances',starts:'starts',start:'starts',sub_appearances:'sub_appearances',sub_apps:'sub_appearances',subs:'sub_appearances',
+  season:'season',temporada:'season',competition:'competition',competicao:'competition',
+  goals:'goals',assists:'assists',height:'height',altura:'height',weight:'weight',peso:'weight',preferred_foot:'preferred_foot',preferredfoot:'preferred_foot',footedness:'preferred_foot',pe_preferido:'preferred_foot'
+}
 const attributes:Record<string,[string,string]>={pas:['passing','Passing'],passing:['passing','Passing'],tec:['technique','Technique'],technique:['technique','Technique'],dec:['decisions','Decisions'],decisions:['decisions','Decisions'],cmp:['composure','Composure'],composure:['composure','Composure'],pos:['positioning','Positioning'],positioning:['positioning','Positioning'],ant:['anticipation','Anticipation'],anticipation:['anticipation','Anticipation'],con:['concentration','Concentration'],concentration:['concentration','Concentration'],pac:['pace','Pace'],pace:['pace','Pace'],acc:['acceleration','Acceleration'],acceleration:['acceleration','Acceleration'],str:['strength','Strength'],strength:['strength','Strength'],jum:['jumping_reach','Jumping Reach'],jumping_reach:['jumping_reach','Jumping Reach'],fin:['finishing','Finishing'],finishing:['finishing','Finishing'],dri:['dribbling','Dribbling'],dribbling:['dribbling','Dribbling'],vis:['vision','Vision'],vision:['vision','Vision'],wor:['work_rate','Work Rate'],work_rate:['work_rate','Work Rate'],sta:['stamina','Stamina'],stamina:['stamina','Stamina'],tck:['tackling','Tackling'],tackling:['tackling','Tackling'],mar:['marking','Marking'],marking:['marking','Marking'],hea:['heading','Heading'],heading:['heading','Heading'],cro:['crossing','Crossing'],crossing:['crossing','Crossing'],ref:['reflexes','Reflexes'],reflexes:['reflexes','Reflexes'],han:['handling','Handling'],handling:['handling','Handling']}
 for(const attribute of ATTRIBUTE_CATALOG)attributes[attribute.key]??=[attribute.key,attribute.label]
-export function detectImportType(filename:string,headers:string[]):ImportType{const t=`${filename} ${headers.join(' ')}`.toLowerCase();if(/intake|youth/.test(t))return'intake';if(/stats|minutes|appearances|goals/.test(t))return'stats';if(/squad|position|club|age/.test(t))return'squad';return'unknown'}
+export function detectImportType(filename:string,headers:string[]):ImportType{const t=`${filename} ${headers.join(' ')}`.toLowerCase();if(/intake|youth/.test(t))return'intake';if(/stats|minutes|appearances|goals|avg rating|xg|xa/.test(t))return'stats';if(/squad|position|club|age/.test(t))return'squad';return'unknown'}
 function previewFromResult(result: Papa.ParseResult<Record<string,string>>,filename:string):ImportPreview{const headers=(result.meta.fields??[]).map(header=>header.replace(/^\uFEFF/,'').trim());const rows=result.data.map(row=>Object.fromEntries(Object.entries(row).map(([header,value])=>[header.replace(/^\uFEFF/,'').trim(),value])));const warnings=result.errors.map(e=>`Linha ${e.row??'?'}: ${e.message}`);const ignoredColumns=headers.filter(h=>ignoredForScoring.test(h));if(ignoredColumns.length)warnings.push(`${ignoredColumns.join(', ')} serão preservados, mas ignorados no scoring.`);return{filename,fileType:detectImportType(filename,headers),rowCount:rows.length,delimiter:result.meta.delimiter,headers,ignoredColumns,warnings,rows}}
 export function parseCsv(text:string,filename:string):ImportPreview{return previewFromResult(Papa.parse<Record<string,string>>(text.replace(/^\uFEFF/,''),{header:true,skipEmptyLines:'greedy',transformHeader:h=>h.trim()}),filename)}
 
@@ -15,10 +23,40 @@ export function parseCsv(text:string,filename:string):ImportPreview{return previ
 export function parseCsvFile(file:File):Promise<ImportPreview>{return new Promise((resolve,reject)=>{Papa.parse<Record<string,string>>(file,{header:true,skipEmptyLines:'greedy',worker:true,complete:result=>resolve(previewFromResult(result,file.name)),error:error=>reject(error)})})}
 const nameKeys=new Set(['name','nome','player','jogador','player_name','nome_do_jogador'])
 export const detectNameColumn=(headers:string[])=>headers.find(h=>nameKeys.has(normalizeHeader(h)))??''
-const value=(row:Record<string,string>,key:string)=>Object.entries(row).find(([h])=>{const n=normalizeHeader(h);return(key==='name'&&nameKeys.has(n))||(key==='fm_player_id'&&['uid','id','unique_id'].includes(n))||(key==='nationality'&&['nat','nation','nationality','nacionalidade'].includes(n))||(aliases[n]??n)===key})?.[1]?.trim()||null
+const value=(row:Record<string,string>,key:string)=>Object.entries(row).find(([h])=>{const n=normalizeHeader(h);return(key==='name'&&nameKeys.has(n))||(key==='fm_player_id'&&['uid','id','id_fm','fm_id','unique_id'].includes(n))||(key==='nationality'&&['nat','nation','nationality','nacionalidade'].includes(n))||(aliases[n]??n)===key})?.[1]?.trim()||null
 const num=(v:string|null)=>v&&Number.isFinite(Number(v.replace(',','.')))?Number(v.replace(',','.')):null
+export type AppearanceBreakdown={appearances:number|null;starts:number|null;sub_appearances:number|null}
+export function parseAppearances(raw:string|null,explicitStarts:string|null=null,explicitSubs:string|null=null):AppearanceBreakdown{
+  const starts=num(explicitStarts),subs=num(explicitSubs)
+  if(!raw)return{appearances:starts!==null&&subs!==null?starts+subs:null,starts,sub_appearances:subs}
+  const fm=raw.trim().match(/^(\d+(?:[.,]\d+)?)\s*\((\d+(?:[.,]\d+)?)\)$/)
+  if(fm){const fmStarts=num(fm[1]),fmSubs=num(fm[2]);const resolvedStarts=starts??fmStarts,resolvedSubs=subs??fmSubs;return{appearances:resolvedStarts!==null&&resolvedSubs!==null?resolvedStarts+resolvedSubs:null,starts:resolvedStarts,sub_appearances:resolvedSubs}}
+  const total=num(raw)
+  return{appearances:total,starts,sub_appearances:subs}
+}
 export function parseFmDate(raw:string|null){if(!raw||['n/a','-','unknown'].includes(raw.trim().toLowerCase()))return null;const iso=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);if(iso)return`${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`;const dmy=raw.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);if(!dmy)return null;return`${dmy[3]}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`}
-export function prepareRows(preview:ImportPreview,nameColumn?:string){return preview.rows.map(row=>{const name=(nameColumn?row[nameColumn]?.trim():null)||value(row,'name')||'';const attrs=Object.entries(row).flatMap(([header,raw])=>{const found=attributes[normalizeHeader(header)];const n=num(raw);const definition=found?ATTRIBUTE_LOOKUP[found[0]]:undefined;return found&&definition&&n!==null&&n>=1&&n<=20?[{attribute_key:found[0],attribute_label:found[1],value:n,source_column:header,category:definition.category}]:[]});const dob=parseFmDate(value(row,'date_of_birth'));const fm=value(row,'fm_player_id');const normalized=normalizeHeader(name);return{name,current_name:name,normalized_name:normalized,fm_player_id:fm,date_of_birth:dob,nationality:value(row,'nationality'),identity_key:fm?`fm:${fm}`:`bio:${normalized}:${dob??'unknown'}`,age:num(value(row,'age')),club:value(row,'club'),squad:value(row,'squad'),positions:(value(row,'positions')??'').split(/[,/]/).map(x=>x.trim()).filter(Boolean),preferred_foot:value(row,'preferred_foot'),height:num(value(row,'height')),weight:num(value(row,'weight')),contract_expiry:parseFmDate(value(row,'contract_expiry')),minutes:num(value(row,'minutes')),appearances:num(value(row,'appearances')),raw_data:row,normalized_data:Object.fromEntries(Object.entries(row).map(([k,v])=>[aliases[normalizeHeader(k)]??normalizeHeader(k),v])),attributes:attrs}}).filter(r=>r.name)}
+function normalizedKey(header:string,fileType:ImportType){const key=normalizeHeader(header);if(fileType==='stats'&&(key==='club'||key==='clube'||key==='team'))return'team';return aliases[key]??key}
+export function prepareRows(preview:ImportPreview,nameColumn?:string){return preview.rows.map(row=>{
+  const name=(nameColumn?row[nameColumn]?.trim():null)||value(row,'name')||''
+  const attrs=Object.entries(row).flatMap(([header,raw])=>{const found=attributes[normalizeHeader(header)];const n=num(raw);const definition=found?ATTRIBUTE_LOOKUP[found[0]]:undefined;return found&&definition&&n!==null&&n>=1&&n<=20?[{attribute_key:found[0],attribute_label:found[1],value:n,source_column:header,category:definition.category}]:[]})
+  const dob=parseFmDate(value(row,'date_of_birth')),fm=value(row,'fm_player_id'),normalized=normalizeHeader(name)
+  const minutes=num(value(row,'minutes'))
+  const appearances=parseAppearances(value(row,'appearances'),value(row,'starts'),value(row,'sub_appearances'))
+  const statTeam=preview.fileType==='stats'?(value(row,'club')??Object.entries(row).find(([header])=>normalizeHeader(header)==='team')?.[1]?.trim()??null):null
+  const season=preview.fileType==='stats'?value(row,'season'):null
+  const competition=preview.fileType==='stats'?value(row,'competition'):null
+  const normalizedData:Record<string,unknown>=Object.fromEntries(Object.entries(row).map(([k,v])=>[normalizedKey(k,preview.fileType),v]))
+  if(preview.fileType==='stats'){
+    normalizedData.team=statTeam
+    normalizedData.season=season
+    normalizedData.competition=competition
+    normalizedData.minutes=minutes
+    normalizedData.appearances=appearances.appearances
+    normalizedData.starts=appearances.starts
+    normalizedData.sub_appearances=appearances.sub_appearances
+  }
+  return{name,current_name:name,normalized_name:normalized,fm_player_id:fm,date_of_birth:dob,nationality:value(row,'nationality'),identity_key:fm?`fm:${fm}`:`bio:${normalized}:${dob??'unknown'}`,age:num(value(row,'age')),club:value(row,'club'),squad:value(row,'squad'),positions:(value(row,'positions')??'').split(/[,/]/).map(x=>x.trim()).filter(Boolean),preferred_foot:value(row,'preferred_foot'),height:num(value(row,'height')),weight:num(value(row,'weight')),contract_expiry:parseFmDate(value(row,'contract_expiry')),minutes,appearances:appearances.appearances,starts:appearances.starts,sub_appearances:appearances.sub_appearances,team:statTeam,season,competition,raw_data:row,normalized_data:normalizedData,attributes:attrs}
+}).filter(r=>r.name)}
 export function inferSnapshotYear(rows:ReturnType<typeof prepareRows>){const counts=new Map<number,number>();for(const row of rows){if(!row.date_of_birth||row.age===null)continue;const[dobYear,month,day]=row.date_of_birth.split('-').map(Number);const year=dobYear+Math.floor(row.age)+(month>1||day>1?1:0);if(year>=1900&&year<=2200)counts.set(year,(counts.get(year)??0)+1)}const ranked=[...counts].sort((a,b)=>b[1]-a[1]||a[0]-b[0]);return ranked[0]?.[0]??null}
 export async function fileHash(text:string){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('')}
 const digestHex=(digest:ArrayBuffer)=>[...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('')
