@@ -1,6 +1,6 @@
 # Supabase migration/bootstrap notes
 
-## Production state already reconciled on 2026-08-28
+## Production state reconciled through 2026-08-28
 
 The production project `zuyvivzvicjuhphchhql` already has the historical versions marked as applied, after schema verification:
 
@@ -11,11 +11,6 @@ The production project `zuyvivzvicjuhphchhql` already has the historical version
 - `202608260001 model_config_compatibility`
 - `202608260002 model_config_integrity`
 - `202608260003 player_projections`
-
-Do **not** execute those historical SQL files again in production.
-
-The production ledger also already contains:
-
 - `20260827234211 database_integrity_hardening`
 - `20260827234421 database_integrity_fk_indexes`
 - `20260828060819 stabilization_capabilities_and_diagnostics`
@@ -24,7 +19,21 @@ The production ledger also already contains:
 - `20260828183337 stabilization_indexes_and_retention_infra`
 - `20260828183639 move_pg_net_out_of_public`
 
-Therefore, once the two new migration files from this package are committed with those exact filenames, a normal future migration run should see them as already applied in production.
+Do **not** execute those historical SQL files again in production.
+
+## Phase 0A — Core Longitudinal Domain
+
+Approved domain contract: `FM DataTracker — Core Longitudinal Domain`.
+
+The next ordered migrations are:
+
+- `20260829000100 core_longitudinal_base`
+- `20260829000101 core_longitudinal_history`
+- `20260829000102 core_longitudinal_security`
+
+They are intentionally additive. They create the normalized Club/SaveClub/Season/PlayerMembership/IntakeClass/SaveEvent foundation, preserve every legacy column/table, enable authenticated-only RLS/Data API access, and advance `datatracker_schema_info()` to schema marker `202608290001` with capability `longitudinal_core=true` only after the complete domain exists.
+
+At package creation time these three Phase 0A migrations were validated as one transaction against the production Postgres 17 schema and rolled back successfully. They were **not applied to production**, because the GitHub integration could not version the files (`403 Resource not accessible by integration`). Preserve repository/database parity: commit these files first, then apply the same ordered migrations to production.
 
 ## Fresh environment bootstrap
 
@@ -36,7 +45,8 @@ Therefore, once the two new migration files from this package are committed with
 4. Run `supabase/ops/configure_diagnostic_retention.sql`.
 5. Invoke the Edge Function once and require HTTP 200.
 6. Check `public.datatracker_schema_info()` and require `diagnostics_server_retention=true`.
-7. Run Supabase Security and Performance Advisors.
+7. After Phase 0A is applied, also require `longitudinal_core=true`.
+8. Run Supabase Security and Performance Advisors.
 
 ## Existing environment upgrade
 
