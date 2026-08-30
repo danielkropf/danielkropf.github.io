@@ -130,3 +130,28 @@ export async function loadPlayerMembershipHistory(
     loanToClub: row.loan_to_club_id ? clubs.get(row.loan_to_club_id) ?? null : null,
   }))
 }
+
+export type PlayerEvolutionContextData = {
+  memberships: PlayerMembershipWithClubs[]
+  seasons: Season[]
+  diagnostic: string | null
+}
+
+export async function loadPlayerEvolutionContext(
+  saveId: string,
+  playerId: string,
+): Promise<PlayerEvolutionContextData> {
+  try {
+    const [memberships, seasons] = await Promise.all([
+      loadPlayerMembershipHistory(saveId, playerId),
+      loadSeasons(saveId),
+    ])
+    return { memberships, seasons, diagnostic: null }
+  } catch (cause) {
+    return {
+      memberships: [],
+      seasons: [],
+      diagnostic: cause instanceof Error ? cause.message : 'Falha desconhecida ao carregar contexto longitudinal do jogador.',
+    }
+  }
+}

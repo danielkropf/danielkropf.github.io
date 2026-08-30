@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlayerPage } from './PlayerPage'
 
 const mocks = vi.hoisted(() => ({
@@ -10,9 +10,13 @@ const mocks = vi.hoisted(() => ({
     filters: Array<[string, unknown]>
     result: Promise<{ data: unknown; error: { message: string } | null }>
   }>,
+  loadEvolutionContext: vi.fn(),
 }))
 
 vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected }) }))
+vi.mock('../lib/longitudinal-service', () => ({
+  loadPlayerEvolutionContext: (...args: unknown[]) => mocks.loadEvolutionContext(...args),
+}))
 vi.mock('../lib/supabase', () => ({
   supabase: {
     from: vi.fn((table: string) => {
@@ -38,6 +42,11 @@ vi.mock('../lib/supabase', () => ({
     }),
   },
 }))
+
+beforeEach(() => {
+  mocks.loadEvolutionContext.mockReset()
+  mocks.loadEvolutionContext.mockResolvedValue({ memberships: [], seasons: [], diagnostic: null })
+})
 
 afterEach(() => {
   cleanup()
@@ -104,6 +113,8 @@ describe('PlayerPage save isolation', () => {
 
     expect(filtersA).toEqual(expect.arrayContaining([['id', 'player-1'], ['save_id', 'save-a']]))
     expect(filtersB).toEqual(expect.arrayContaining([['id', 'player-1'], ['save_id', 'save-b']]))
+    expect(mocks.loadEvolutionContext).toHaveBeenCalledWith('save-a', 'player-1')
+    expect(mocks.loadEvolutionContext).toHaveBeenCalledWith('save-b', 'player-1')
   })
 
   it('mostra not-found em vez de loading infinito', async () => {
@@ -127,5 +138,23 @@ describe('PlayerPage save isolation', () => {
     expect(await screen.findByRole('heading', { name: 'Evolução' })).not.toBeNull()
     expect(screen.getByText('Baseline único')).not.toBeNull()
     expect(screen.getByText(/não fabrica tendência ou delta/i)).not.toBeNull()
+  })
+
+  it('expõe comparação entre quaisquer checkpoints quando há histórico', async () => {
+    mocks.selected = { id: 'save-a', name: 'A' }
+    mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [snapshot('s1', '2029-07-01'), snapshot('s2', '2030-07-01')]), error: null }) })
+    render(view())
+    expect(await screen.findByRole('heading', { name: 'Comparar checkpoints' })).not.toBeNull()
+    expect(screen.getByLabelText('Checkpoint inicial')).not.toBeNull()
+    expect(screen.getByLabelText('Checkpoint final')).not.toBeNull()
+  })
+
+  it('mantém a ficha utilizável quando o contexto longitudinal falha', async () => {
+    mocks.selected = { id: 'save-a', name: 'A' }
+    mocks.loadEvolutionContext.mockResolvedValue({ memberships: [], seasons: [], diagnostic: 'membership unavailable' })
+    mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [snapshot('s1', '2029-07-01')]), error: null }) })
+    render(view())
+    expect(await screen.findByText(/Contexto normalizado indisponível: membership unavailable/)).not.toBeNull()
+    expect(screen.getByRole('heading', { name: 'Jogador A' })).not.toBeNull()
   })
 })
