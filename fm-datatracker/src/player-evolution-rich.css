@@ -1,0 +1,29 @@
+/* Phase 2E — rich observed evolution UX. Uses DS v1 tokens only. */
+.player-evolution-range{display:flex;flex-direction:column;gap:var(--dt-space-2);padding:var(--dt-space-3);border:1px solid var(--dt-border);border-radius:var(--dt-radius-card);background:var(--dt-surface-2)}
+.player-evolution-range-header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--dt-space-3)}
+.player-evolution-range-header>div{min-width:0}
+.player-evolution-range-header h3{margin:0}
+.player-evolution-range-header p{margin:2px 0 0;color:var(--dt-text-3);font-size:var(--dt-type-small)}
+.player-evolution-range-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:var(--dt-space-2);align-items:end}
+.player-evolution-range-controls label{display:flex;flex-direction:column;gap:var(--dt-space-1);color:var(--dt-text-3);font-size:var(--dt-type-caption)}
+.player-evolution-range-controls select{width:100%;min-width:0}
+.player-evolution-range-reset{min-height:var(--dt-control-height)}
+.player-evolution-trend{display:flex;flex-direction:column;gap:var(--dt-space-2);padding:var(--dt-space-3);border:1px solid var(--dt-border);border-radius:var(--dt-radius-card);background:var(--dt-surface-2);overflow:hidden}
+.player-evolution-trend-header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--dt-space-3)}
+.player-evolution-trend-header h3{margin:0}
+.player-evolution-trend-header p{margin:2px 0 0;color:var(--dt-text-3);font-size:var(--dt-type-small)}
+.player-evolution-trend-chart{width:100%;height:auto;min-height:190px;display:block;overflow:visible}
+.player-evolution-trend-grid{stroke:var(--dt-border);stroke-width:1;vector-effect:non-scaling-stroke}
+.player-evolution-trend-axis-label{fill:var(--dt-text-3);font-size:11px;font-variant-numeric:tabular-nums}
+.player-evolution-trend-line{fill:none;stroke:var(--dt-lime);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.player-evolution-trend-point{fill:var(--dt-surface-1);stroke:var(--dt-lime);stroke-width:2;vector-effect:non-scaling-stroke}
+.player-evolution-trend-point:focus{outline:none;stroke:var(--dt-lime-hover);stroke-width:4}
+.player-evolution-trend-gap-note{margin:0;color:var(--dt-text-3);font-size:var(--dt-type-caption)}
+.player-evolution-period-change-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dt-space-3)}
+.player-evolution-period-change-grid>section{display:flex;flex-direction:column;gap:var(--dt-space-2);padding:var(--dt-space-3);border:1px solid var(--dt-border);border-radius:var(--dt-radius-card);background:var(--dt-surface-2)}
+.player-evolution-period-change-grid h3{margin:0}
+.player-evolution-detail-pagination{display:flex;align-items:center;justify-content:space-between;gap:var(--dt-space-2);padding-top:var(--dt-space-1)}
+.player-evolution-detail-pagination span{color:var(--dt-text-3);font-size:var(--dt-type-caption);font-variant-numeric:tabular-nums}
+.player-evolution-detail-pagination>div{display:flex;gap:var(--dt-space-2)}
+.player-evolution-detail-pagination button{min-height:var(--dt-control-compact-height)}
+@media(max-width:700px){.player-evolution-range-header,.player-evolution-trend-header{flex-direction:column}.player-evolution-range-controls,.player-evolution-period-change-grid{grid-template-columns:1fr}.player-evolution-detail-pagination{align-items:flex-start;flex-direction:column}.player-evolution-trend-chart{min-height:165px}}
