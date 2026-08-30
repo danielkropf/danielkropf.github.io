@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { PlayerMembershipWithClubs, SaveEvent } from '../types/domain'
 import { PlayerTrajectorySection } from './PlayerTrajectorySection'
+
+afterEach(cleanup)
 
 function membership(id: string, date: string, squad: string): PlayerMembershipWithClubs {
   return {
