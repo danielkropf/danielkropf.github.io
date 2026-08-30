@@ -6,6 +6,7 @@ import { ImportsPage } from '../pages/ImportsPage'
 import { ModelLabPage } from '../pages/ModelLabPage'
 import { PlanningPage } from '../pages/PlanningPage'
 import { SavesPage } from '../pages/SavesPage'
+import { PlayerComparisonPage } from '../pages/PlayerComparisonPage'
 import { PlayerPage } from '../pages/PlayerPage'
 import { SquadPage } from '../pages/SquadPage'
 import { TacticsPage } from '../pages/TacticsPage'
@@ -18,6 +19,7 @@ export function AppRoutes() {
     <Route path="/saves" element={<SavesPage />} />
     <Route path="/imports" element={<Protected><ImportsPage /></Protected>} />
     <Route path="/squad" element={<Protected><SquadPage /></Protected>} />
+    <Route path="/compare" element={<Protected><PlayerComparisonPage /></Protected>} />
     <Route path="/players/:id" element={<Protected><PlayerPage /></Protected>} />
     <Route path="/planning" element={<Protected><PlanningPage /></Protected>} />
     <Route path="/tactics" element={<Protected><TacticsPage /></Protected>} />

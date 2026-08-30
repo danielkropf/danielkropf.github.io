@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { AppVersion } from '../components/AppVersion'
 import { usePotential } from '../features/potential/PotentialContext'
 import { useSaves } from '../features/saves/SaveContext'
@@ -12,9 +12,12 @@ const navigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/planning', '
 
 export function AppShell() {
   const { saves, selected, select } = useSaves()
+  const location = useLocation()
   const potential = usePotential()
   const [settings, setSettings] = useState(false)
   useEffect(() => { if (selected) preloadSave(selected.id) }, [selected?.id])
+  const currentPlayerId = /^\/players\/([^/]+)$/.exec(location.pathname)?.[1] ?? null
+  const compareTo = currentPlayerId ? `/compare?a=${encodeURIComponent(currentPlayerId)}` : '/compare'
   const potentialTitle = potential.experimental
     ? `${potential.detail} O CP do Football Manager não é exibido.`
     : potential.available
@@ -26,7 +29,7 @@ export function AppShell() {
       <div className="brand"><span>FM</span><strong>DataTracker</strong></div>
       {saves.length > 0 && <div className="save-context">
         <span className="save-context-label">Save ativo</span>
-        <select className="save-select" aria-label="Save ativo" value={selected?.id ?? ''} onChange={event => {
+        <select className="save-select" aria-label="Save ativo" value={selected?.id ?? ''} onChange={(event: { target: { value: string } }) => {
           const save = saves.find(item => item.id === event.target.value)
           if (save) select(save)
         }}>
@@ -36,7 +39,7 @@ export function AppShell() {
       <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'is-disabled' : ''}`} aria-disabled={!potential.available} onClick={() => { if (potential.available) potential.setShowPotential(!potential.showPotential) }} title={potentialTitle} aria-pressed={potential.showPotential}>
         <span><b aria-hidden="true">↗</b> Mostrar potencial</span><span className="potential-switch" aria-hidden="true" />
       </button>
-      <nav>{navigation.map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}</nav>
+      <nav>{navigation.slice(0, 2).map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}<NavLink to={compareTo}>Comparar</NavLink>{navigation.slice(2).map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}</nav>
       <div className="sidebar-footer">
         <div className="sidebar-actions">
           <Link className="ghost sidebar-import" to="/imports">↥ Novo import</Link>

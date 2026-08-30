@@ -32,6 +32,8 @@
 @import './phase-2-cleanup.css';
 /* Tactics is the first full Phase 3 surface migration after DataTable QA. */
 @import './tactics.css';
+/* Analyzer comparison surface — Phase 1B. */
+@import './player-comparison.css';
 /* Canonical shell remains above primitives for chrome-specific authority. */
 @import './shell.css';
 /* Responsive contracts must remain last so mobile/tablet geometry wins. */
