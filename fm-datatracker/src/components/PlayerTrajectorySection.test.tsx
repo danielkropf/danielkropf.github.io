@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { PlayerMembershipWithClubs, SaveEvent } from '../types/domain'
 import { PlayerTrajectorySection } from './PlayerTrajectorySection'
@@ -49,7 +49,7 @@ describe('PlayerTrajectorySection', () => {
       membership('b', '2030-06-01', 'Numancia'),
     ]} />)
 
-    expect(screen.getAllByText('Numancia')).toHaveLength(2)
+    expect(within(screen.getByRole('list', { name: 'Vínculos observados' })).getAllByText('Numancia')).toHaveLength(2)
     expect(screen.getByText('Nenhuma mudança ou evento confirmado')).toBeTruthy()
   })
 })
