@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   worker: { format: 'es' },
   define: {
-    __APP_VERSION__: JSON.stringify(packageJson.version),
+    __APP_VERSION__: JSON.stringify(packageJson.displayVersion ?? packageJson.version),
     __BUILD_ID__: JSON.stringify(process.env.VITE_BUILD_ID?.slice(0, 7) || 'local'),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },

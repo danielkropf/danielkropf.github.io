@@ -1,7 +1,8 @@
 {
   "name": "fm-datatracker",
   "private": true,
-  "version": "0.27.1",
+  "version": "0.27.1-b",
+  "displayVersion": "0.27.1b",
   "type": "module",
   "scripts": {
     "dev": "vite",

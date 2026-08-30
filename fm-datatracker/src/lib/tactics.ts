@@ -14,10 +14,10 @@ export const PITCH_NODES:PitchNode[]=[
 export const IP_ROLES:Record<string,RoleOption[]>={
   GK:[['GK','Goalkeeper'],['NNGK','No-Nonsense Goalkeeper'],['BPGK','Ball-Playing Goalkeeper']],
   CB:[['CB','Centre-Back'],['BPCB','Ball-Playing Centre-Back'],['NNCB','No-Nonsense Centre-Back'],['ACB','Advanced Centre-Back'],['OCB','Overlapping Centre-Back']],
-  FB:[['FB','Full Back'],['IFB','Inside Full-Back'],['PWB','Playmaking Wing-Back']],
+  FB:[['FB','Full Back'],['WB','Wing Back'],['IFB','Inside Full-Back'],['IWB','Inside Wing-Back'],['PWB','Playmaking Wing-Back']],
   WB:[['WB','Wing Back'],['IWB','Inside Wing-Back'],['PWB','Playmaking Wing-Back'],['AWB','Advanced Wing-Back']],
   DM:[['DM','Defensive Midfielder'],['DLP','Deep-Lying Playmaker'],['HB','Half Back'],['B2BM','Box-To-Box Midfielder'],['B2BP','Box-To-Box Playmaker']],
-  CM:[['CM','Central Midfielder'],['MP','Midfield Playmaker'],['WCM','Wide Central Midfielder']],
+  CM:[['CM','Central Midfielder'],['MP','Midfield Playmaker'],['AP','Advanced Playmaker'],['AM','Attacking Midfielder'],['CHM','Channel Midfielder'],['WCM','Wide Central Midfielder']],
   WM:[['WM','Wide Midfielder'],['W','Winger'],['IW','Inside Winger'],['PW','Playmaking Winger']],
   AM:[['AM','Attacking Midfielder'],['AP','Advanced Playmaker'],['CHM','Channel Midfielder'],['FR','Free Role'],['SS','Second Striker']],
   W:[['W','Winger'],['IW','Inside Winger'],['IF','Inside Forward'],['PW','Playmaking Winger'],['WF','Wide Forward']],
