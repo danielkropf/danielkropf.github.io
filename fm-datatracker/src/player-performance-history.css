@@ -1,0 +1,31 @@
+.player-performance-history-panel{display:grid;gap:18px;padding:22px;min-width:0}
+.player-performance-history-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.player-performance-history-header h2{margin:3px 0 0}
+.player-performance-career-summary{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2fr);gap:16px;align-items:stretch;padding:16px;border:1px solid var(--border-subtle,#293445);border-radius:12px;background:var(--surface-raised,rgba(255,255,255,.025))}
+.player-performance-career-summary>div:first-child{display:grid;align-content:center;gap:5px}
+.player-performance-career-summary>div:first-child>small,.player-performance-season header small{color:var(--text-muted,#8d99aa)}
+.player-performance-career-summary>div:first-child>strong{font-size:1.1rem}
+.player-performance-career-summary>div:first-child>span{color:var(--text-secondary,#adb7c5);font-size:.82rem;line-height:1.45}
+.player-performance-totals{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.player-performance-totals>div{display:grid;gap:3px;align-content:center;min-width:0;padding:10px;border:1px solid var(--border-subtle,#293445);border-radius:9px;background:var(--surface-panel,#111821)}
+.player-performance-totals small{color:var(--text-muted,#8d99aa);font-size:.72rem}
+.player-performance-totals strong{font-size:1rem}
+.player-performance-sample span{color:var(--text-secondary,#adb7c5);font-size:.75rem}
+.player-performance-history-warning{margin:0;padding:10px 12px;border:1px solid rgba(239,180,68,.34);border-radius:9px;background:rgba(239,180,68,.07);color:var(--text-secondary,#c8d0db);font-size:.82rem;line-height:1.45}
+.player-performance-season-list{display:grid;gap:14px}
+.player-performance-season{display:grid;gap:12px;padding:16px;border:1px solid var(--border-subtle,#293445);border-radius:12px;background:var(--surface-raised,rgba(255,255,255,.02))}
+.player-performance-season>header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.player-performance-season>header h3{margin:2px 0 0;font-size:1.05rem}
+.player-performance-season>header>span{color:var(--text-muted,#8d99aa);font-size:.76rem}
+.player-performance-context-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.player-performance-history-context{display:grid;gap:10px;padding:13px;border:1px solid var(--border-subtle,#293445);border-radius:10px;background:var(--surface-panel,#111821);min-width:0}
+.player-performance-history-context.is-partial{border-style:dashed}
+.player-performance-history-context>header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.player-performance-history-context>header>div{display:grid;gap:2px;min-width:0}
+.player-performance-history-context>header strong{overflow-wrap:anywhere}
+.player-performance-history-context>header small,.player-performance-history-context>header>span,.player-performance-history-meta{color:var(--text-muted,#8d99aa);font-size:.72rem}
+.player-performance-history-context .stat-basics{grid-template-columns:repeat(4,minmax(0,1fr))}
+.player-performance-history-context .stat-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.player-performance-history-meta{line-height:1.4}
+@media (max-width:1000px){.player-performance-career-summary{grid-template-columns:1fr}.player-performance-totals{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:700px){.player-performance-history-header,.player-performance-season>header{align-items:flex-start;flex-direction:column}.player-performance-totals{grid-template-columns:repeat(2,minmax(0,1fr))}.player-performance-history-context .stat-basics,.player-performance-history-context .stat-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}

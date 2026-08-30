@@ -7,10 +7,13 @@ import { basePositionScores, generalScoreForSnapshot } from '../lib/base-positio
 import { explainBasePositionScore } from '../lib/score-explanation'
 import { loadPlayerStats, statContextLabel, statMetricEntries, statsSample } from '../lib/player-stats'
 import { loadPlayerEvolutionContext, type PlayerEvolutionContextData } from '../lib/longitudinal-service'
+import { loadPlayerSaveEvents, type PlayerSaveEventData } from '../lib/player-trajectory-service'
 import { loadReferenceDataset } from '../lib/dataCache'
 import { generalReferencePercentile, generalReferenceScoresByFamily, normalizeCountry, referenceLevel, type ReferenceDataset } from '../lib/reference'
 import { ScoreBadge } from '../components/ScoreBadge'
 import { PlayerEvolutionSection } from '../components/PlayerEvolutionSection'
+import { PlayerPerformanceHistorySection } from '../components/PlayerPerformanceHistorySection'
+import { PlayerTrajectorySection } from '../components/PlayerTrajectorySection'
 import type { PlayerStat } from '../types/domain'
 
 type Attribute = { attribute_key: string; attribute_label: string; value: number; category: string }
@@ -42,7 +45,7 @@ type Player = {
 }
 type LoadState =
   | { status: 'loading' }
-  | { status: 'data'; player: Player; stats: PlayerStat[]; reference: ReferenceDataset | null; evolutionContext: PlayerEvolutionContextData }
+  | { status: 'data'; player: Player; stats: PlayerStat[]; reference: ReferenceDataset | null; evolutionContext: PlayerEvolutionContextData; saveEvents: PlayerSaveEventData }
   | { status: 'not-found' }
   | { status: 'error'; message: string }
 
@@ -73,13 +76,14 @@ export function PlayerPage() {
     const client = supabase
 
     void (async () => {
-      const [playerResult, stats, reference, evolutionContext] = await Promise.all([
+      const [playerResult, stats, reference, evolutionContext, saveEvents] = await Promise.all([
         client.from('players')
           .select('id,fm_player_id,current_name,nationality,date_of_birth,first_seen_date,last_seen_date,is_active,player_snapshots:player_snapshots!player_snapshots_player_save_fkey(id,snapshot_date,age,club,squad,positions,preferred_foot,height,weight,contract_expiry,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))')
           .eq('id', id).eq('save_id', selected.id).maybeSingle(),
         loadPlayerStats(selected.id, id),
         loadReferenceDataset().catch(() => null),
         loadPlayerEvolutionContext(selected.id, id),
+        loadPlayerSaveEvents(selected.id, id),
       ])
       if (!active) return
       if (playerResult.error) { setState({ status: 'error', message: playerResult.error.message }); return }
@@ -87,7 +91,7 @@ export function PlayerPage() {
       if (!isPlayer(playerResult.data)) { setState({ status: 'error', message: 'O Banco Mestre retornou uma ficha de jogador em formato inesperado.' }); return }
 
       const player: Player = { ...playerResult.data, player_snapshots: [...playerResult.data.player_snapshots].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date)) }
-      setState({ status: 'data', player, stats, reference, evolutionContext })
+      setState({ status: 'data', player, stats, reference, evolutionContext, saveEvents })
       setIndex(Math.max(0, player.player_snapshots.length - 1))
     })().catch(cause => { if (active) setState({ status: 'error', message: cause instanceof Error ? cause.message : 'Falha inesperada ao carregar a ficha do jogador.' }) })
 
@@ -98,6 +102,7 @@ export function PlayerPage() {
   const stats = state.status === 'data' ? state.stats : []
   const reference = state.status === 'data' ? state.reference : null
   const evolutionContext = state.status === 'data' ? state.evolutionContext : null
+  const saveEvents = state.status === 'data' ? state.saveEvents : null
   const snapshots = player?.player_snapshots ?? []
   const current = snapshots[index]
   const compareIndex = useMemo(() => compareMode === 'previous' ? Math.max(0, index - 1) : compareMode === 'oldest' ? 0 : Number(compareMode), [compareMode, index])
@@ -146,6 +151,14 @@ export function PlayerPage() {
         memberships={evolutionContext?.memberships}
         seasons={evolutionContext?.seasons}
         contextDiagnostic={evolutionContext?.diagnostic}
+      />
+
+      <PlayerPerformanceHistorySection stats={stats} />
+
+      <PlayerTrajectorySection
+        memberships={evolutionContext?.memberships}
+        events={saveEvents?.events}
+        eventsDiagnostic={saveEvents?.diagnostic}
       />
 
       <section className="card player-attributes-panel"><header><div><span className="eyebrow">ATRIBUTOS</span><h2>{current.snapshot_date}</h2></div><label>Comparar com<select value={compareMode} disabled={snapshots.length <= 1} onChange={event => setCompareMode(event.target.value)}><option value="previous">Snapshot anterior</option><option value="oldest">Primeiro snapshot</option>{snapshots.map((snapshot, snapshotIndex) => <option value={snapshotIndex} key={snapshot.id}>{snapshot.snapshot_date}</option>)}</select></label></header><div className="player-attribute-groups">{(['technical', 'mental', 'physical', 'goalkeeping'] as const).map(category => <section key={category}><h3>{{ technical: 'Técnico', mental: 'Mental', physical: 'Físico', goalkeeping: 'Goleiro' }[category]}</h3>{ATTRIBUTE_CATALOG.filter(attribute => attribute.category === category).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')).map(definition => { const attribute = current.player_attributes.find(item => item.attribute_key === definition.key); const old = comparison?.player_attributes.find(item => item.attribute_key === definition.key); const delta = attribute && old ? attribute.value - old.value : null; return <div className="player-attribute-row" key={definition.key}><span>{attribute?.attribute_label ?? definition.label}</span><b className={attribute ? attributeClass(attribute.value) : ''}>{attribute?.value ?? '—'}</b><small className={delta && delta > 0 ? 'up' : delta && delta < 0 ? 'down' : ''}>{delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : ''}${delta}`}</small></div> })}</section>)}</div></section>
