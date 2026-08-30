@@ -49,7 +49,7 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done })
   return { promise, resolve }
 }
-function player(id: string, name: string) {
+function player(id: string, name: string, snapshots: unknown[] = []) {
   return {
     id,
     fm_player_id: null,
@@ -59,7 +59,24 @@ function player(id: string, name: string) {
     first_seen_date: '2026-01-01',
     last_seen_date: '2026-01-01',
     is_active: true,
-    player_snapshots: [],
+    player_snapshots: snapshots,
+  }
+}
+function snapshot(id: string, date: string) {
+  return {
+    id,
+    snapshot_date: date,
+    age: 20,
+    club: 'Numancia',
+    squad: 'First Team',
+    positions: ['M (C)'],
+    preferred_foot: null,
+    height: null,
+    weight: null,
+    contract_expiry: null,
+    raw_data: {},
+    normalized_data: {},
+    player_attributes: [],
   }
 }
 function view() {
@@ -101,5 +118,14 @@ describe('PlayerPage save isolation', () => {
     mocks.queries.push({ filters: [], result: Promise.resolve({ data: null, error: { message: 'permission denied' } }) })
     render(view())
     expect(await screen.findByText(/permission denied/)).not.toBeNull()
+  })
+
+  it('integra a área Evolução sem fabricar delta com um único snapshot', async () => {
+    mocks.selected = { id: 'save-a', name: 'A' }
+    mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [snapshot('s1', '2029-07-01')]), error: null }) })
+    render(view())
+    expect(await screen.findByRole('heading', { name: 'Evolução' })).not.toBeNull()
+    expect(screen.getByText('Baseline único')).not.toBeNull()
+    expect(screen.getByText(/não fabrica tendência ou delta/i)).not.toBeNull()
   })
 })

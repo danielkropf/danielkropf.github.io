@@ -9,6 +9,7 @@ import { loadPlayerStats, statContextLabel, statMetricEntries, statsSample } fro
 import { loadReferenceDataset } from '../lib/dataCache'
 import { generalReferencePercentile, generalReferenceScoresByFamily, normalizeCountry, referenceLevel, type ReferenceDataset } from '../lib/reference'
 import { ScoreBadge } from '../components/ScoreBadge'
+import { PlayerEvolutionSection } from '../components/PlayerEvolutionSection'
 import type { PlayerStat } from '../types/domain'
 
 type Attribute = { attribute_key: string; attribute_label: string; value: number; category: string }
@@ -136,6 +137,8 @@ export function PlayerPage() {
           <p className="performance-contract">Confidence indica somente o tamanho da amostra em minutos. Ainda não existe PerformanceScore aprovado, portanto nenhuma estatística é misturada à nota atual.</p>
         </article>
       </section>
+
+      <PlayerEvolutionSection snapshots={snapshots} />
 
       <section className="card player-attributes-panel"><header><div><span className="eyebrow">ATRIBUTOS</span><h2>{current.snapshot_date}</h2></div><label>Comparar com<select value={compareMode} disabled={snapshots.length <= 1} onChange={event => setCompareMode(event.target.value)}><option value="previous">Snapshot anterior</option><option value="oldest">Primeiro snapshot</option>{snapshots.map((snapshot, snapshotIndex) => <option value={snapshotIndex} key={snapshot.id}>{snapshot.snapshot_date}</option>)}</select></label></header><div className="player-attribute-groups">{(['technical', 'mental', 'physical', 'goalkeeping'] as const).map(category => <section key={category}><h3>{{ technical: 'Técnico', mental: 'Mental', physical: 'Físico', goalkeeping: 'Goleiro' }[category]}</h3>{ATTRIBUTE_CATALOG.filter(attribute => attribute.category === category).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')).map(definition => { const attribute = current.player_attributes.find(item => item.attribute_key === definition.key); const old = comparison?.player_attributes.find(item => item.attribute_key === definition.key); const delta = attribute && old ? attribute.value - old.value : null; return <div className="player-attribute-row" key={definition.key}><span>{attribute?.attribute_label ?? definition.label}</span><b className={attribute ? attributeClass(attribute.value) : ''}>{attribute?.value ?? '—'}</b><small className={delta && delta > 0 ? 'up' : delta && delta < 0 ? 'down' : ''}>{delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : ''}${delta}`}</small></div> })}</section>)}</div></section>
     </div> : <p>Este jogador ainda não possui snapshots.</p>}
