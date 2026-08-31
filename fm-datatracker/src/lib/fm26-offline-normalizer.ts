@@ -28,6 +28,7 @@ export type OfflinePlayerRow = {
 export type OfflineFmRead = {
   raw: UnknownRecord
   players: OfflinePlayerRow[]
+  tactics: UnknownRecord[]
   diagnostics: UnknownRecord
   snapshot_date: string | null
   snapshot_date_precision: 'day' | 'year' | null
@@ -67,6 +68,14 @@ const POSITIONAL_ABILITY_KEYS: Record<string, string> = {
   AML: 'attacking_midfielder_left', AMC: 'attacking_midfielder_central', AMR: 'attacking_midfielder_right', ST: 'striker',
 }
 
+function resolvedHumanTactics(humans: unknown[]): UnknownRecord[] {
+  return humans.flatMap((value, manager_index) => {
+    const human = record(value), tactic = record(human.tactic)
+    if (tactic.resolved !== true) return []
+    return [{ ...tactic, manager_index, manager_name: stringOrNull(record(human.manager).display_name), human_eid: numberOrNull(human.human_eid), human_record_offset: numberOrNull(human.human_record_offset), root_team_id: numberOrNull(record(human.human_club).root_team_id) }]
+  })
+}
+
 /**
  * Converts the proven offline result into the site-facing player shape.
  * Raw structures stay attached so unresolved fields and all stat/contract contexts remain auditable.
@@ -75,6 +84,7 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
   const raw = record(rawResult)
   const humans = Array.isArray(raw.human_managers) ? raw.human_managers : []
   const players: OfflinePlayerRow[] = []
+  const tactics = resolvedHumanTactics(humans)
 
   for (const humanValue of humans) {
     const human = record(humanValue)
@@ -203,7 +213,7 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
     age: exactDate ? ageAt(player.date_of_birth, exactDate) : null,
   }))
   const diagnostics = record(raw.humans_summary)
-  return { raw, players: playersWithAge, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null }
+  return { raw, players: playersWithAge, tactics, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null }
 }
 
 export async function readFmSaveBytes(bytes: Uint8Array, fileName = 'save.fm', onStatus?: (status: string) => void): Promise<OfflineFmRead> {

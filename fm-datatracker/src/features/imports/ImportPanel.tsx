@@ -4,18 +4,21 @@ import { detectNameColumn, filesHash, inferSnapshotYear, isValidIsoDate, normali
 import { matchImportRows, mergeValidatedRows, type PreparedImportRow } from '../../lib/import-match'
 import { normalizedDate, normalizedFoot, normalizedText, positionsMatch } from '../../lib/fm-comparison'
 import { uploadDiagnosticSample } from '../../lib/diagnostic-upload'
+import { loadModelConfig, patchModelConfig } from '../../lib/model-config'
+import { buildImportedFmTactic, mergeImportedFmTactic, type FmTacticImportPlan } from '../../lib/fm26-tactic-import'
 import { supabase } from '../../lib/supabase'
 import type { ImportPreview, ImportType } from '../../types/domain'
 import { useSaves } from '../saves/SaveContext'
 
 type PreparedRow = PreparedImportRow
-type OfflineRead = { players: PreparedRow[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null }
+type OfflineRead = { players: PreparedRow[]; tactics?: unknown[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null }
 type ComparisonDifference = { player: string; field: string; csv: string; fm: string }
 type DataComparison = {
   matched: number; csvTotal: number; fmTotal: number; coverage: number; valid: boolean; csvOnly: number; fmOnly: number; ambiguous: number
   checkedFields: number; matchingFields: number; divergentFields: number; unavailableFields: string[]; missingValues: number; dataCoverage: number; samples: string[]; differences: ComparisonDifference[]
 }
 
+const TACTIC_MODEL_VERSION = '2.9.0'
 const comparable = (value: string | null | undefined) => normalizedText(value)
 const comparableNumber = (value: unknown) => {
   const match = String(value ?? '').replace(',', '.').match(/-?\d+(?:\.\d+)?/)
@@ -254,7 +257,9 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
         const year = read.snapshot_date.slice(0, 4)
         setSnapshotDate(current => current.startsWith(`${year}-`) ? current : '')
       } else setSnapshotDate('')
-      setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. Informe dia e mês antes de confirmar; 01/01 não será usado como data inventada.` : ' A data exata do save ainda não foi localizada pelo leitor; informe a data manualmente antes de confirmar.'}`)
+      const tacticCount = read.tactics?.length ?? 0
+      const tacticStatus = tacticCount === 1 ? ' 1 tática resolvida.' : tacticCount > 1 ? ` ${tacticCount} táticas resolvidas; a seleção automática ficará bloqueada.` : ' Nenhuma tática resolvida com segurança.'
+      setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${tacticStatus}${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. Informe dia e mês antes de confirmar; 01/01 não será usado como data inventada.` : ' A data exata do save ainda não foi localizada pelo leitor; informe a data manualmente antes de confirmar.'}`)
     } catch (error) { setFmStatus(`Não foi possível ler o arquivo .fm: ${errorMessage(error)}`) }
     finally { setLoadingFm(false) }
   }
@@ -287,6 +292,23 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
     finally { setSendingDiagnostics(false) }
   }
 
+  async function persistTacticPlan(plan: FmTacticImportPlan | null) {
+    if (!selected || !plan) return { changed: false, note: '' }
+    if (plan.status === 'none') return { changed: false, note: 'Nenhuma tática resolvida foi integrada em Táticas.' }
+    if (plan.status === 'blocked') return { changed: false, note: `Tática .fm não integrada automaticamente: ${plan.diagnostic}` }
+    try {
+      const current = await loadModelConfig(selected.id)
+      const merged = mergeImportedFmTactic(current.tactics, current.fm_tactic_sources, plan.tactic, plan.source)
+      if (merged.status === 'blocked') return { changed: false, note: `Tática .fm não integrada automaticamente: ${merged.diagnostic}` }
+      const patch: Record<string, unknown> = { tactics: merged.tactics, fm_tactic_sources: merged.sources }
+      if (typeof current.selected_tactic_id !== 'string' || !current.selected_tactic_id) patch.selected_tactic_id = plan.tactic.id
+      await patchModelConfig(selected.id, TACTIC_MODEL_VERSION, patch)
+      return { changed: true, note: `Tática "${plan.tactic.name}" ${merged.action === 'created' ? 'adicionada' : 'atualizada'} em Táticas com origem .fm preservada.` }
+    } catch (error) {
+      return { changed: false, note: `Tática .fm não integrada automaticamente: ${errorMessage(error)}` }
+    }
+  }
+
   async function confirm() {
     if (!selected || !canConfirm) return
     setSaving(true); setMessage('')
@@ -297,19 +319,33 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       if (importMode === 'fm-beta') warnings.push('Leitura .fm em beta: campos podem estar vazios ou incorretos.')
       if (importMode === 'csv-only') warnings.push('Importação CSV: recursos que dependem do arquivo .fm ficam indisponíveis.')
       if (importMode === 'csv-fallback') warnings.push('A validação CSV × .fm não foi suficiente; os dados do .fm não foram usados nesta importação.')
+
+      const files = [csvFile, fmFile].filter((file): file is File => Boolean(file))
+      const importFileHash = await filesHash(files)
+      const fmFileHash = fmFile ? await filesHash([fmFile]) : null
+      const tacticPlan: FmTacticImportPlan | null = fmFile && fmRead && fmFileHash
+        ? comparison && !comparison.valid
+          ? { status: 'blocked', code: 'fm_validation_failed', diagnostic: 'A validação CSV × .fm foi recusada; por segurança, a tática desse .fm também não será vinculada automaticamente ao save.' }
+          : buildImportedFmTactic(fmRead.tactics ?? [], { fileHash: fmFileHash, fileName: fmFile.name, snapshotDate })
+        : null
+      if (tacticPlan?.status === 'blocked') warnings.push(`Tática .fm não integrada automaticamente: ${tacticPlan.diagnostic}`)
+
       const { data, error } = await supabase.rpc('import_fm_export', {
         p_save_id: selected.id, p_filename: [csvFile?.name, fmFile?.name].filter(Boolean).join(' + '),
-        p_file_hash: await filesHash([csvFile, fmFile].filter((file): file is File => Boolean(file))), p_file_type: effectiveType,
+        p_file_hash: importFileHash, p_file_type: effectiveType,
         p_snapshot_date: snapshotDate, p_delimiter: preview?.delimiter ?? ',',
         p_rows: importRows, p_warnings: warnings,
       })
       if (error) throw error
       const result = data as { duplicate?: boolean } | null
+      const tacticOutcome = await persistTacticPlan(tacticPlan)
+      const tacticSuffix = tacticOutcome.note ? ` ${tacticOutcome.note}` : ''
       if (result?.duplicate) {
-        setMessage('Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.')
+        setMessage(`Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.${tacticSuffix}`)
+        if (tacticOutcome.changed) onImported?.()
         return
       }
-      setMessage(importMode === 'validated' ? 'Importação concluída: CSV e .fm foram validados juntos.' : 'Importação concluída.')
+      setMessage(`${importMode === 'validated' ? 'Importação concluída: CSV e .fm foram validados juntos.' : 'Importação concluída.'}${tacticSuffix}`)
       onImported?.()
     } catch (error) { setMessage(`Falha na persistência: ${errorMessage(error)}`) }
     finally { setSaving(false) }
@@ -318,7 +354,7 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const detectedSummary = preview
     ? `${preview.headers.length} dados do CSV · ${csvRows.length} jogadores reconhecidos`
     : 'Aguardando CSV para detectar dados.'
-  const fmSummary = fmRead ? `${fmRows.length} jogadores · atributos, posições e dados de save` : 'Aguardando arquivo .fm.'
+  const fmSummary = fmRead ? `${fmRows.length} jogadores · ${fmRead.tactics?.length ?? 0} tática(s) resolvida(s) · atributos, posições e dados de save` : 'Aguardando arquivo .fm.'
   const sourceLabel = csvFile && fmFile ? 'CSV + .fm' : fmFile ? '.fm' : csvFile ? 'CSV' : 'Aguardando arquivos'
 
   return <section className="import-panel">

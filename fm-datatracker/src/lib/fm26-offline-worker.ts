@@ -50,6 +50,7 @@ scope.onmessage = event => {
         type: 'result',
         result: {
           players: result.players,
+          tactics: result.tactics,
           diagnostics: result.diagnostics,
           snapshot_date: result.snapshot_date,
           snapshot_date_precision: result.snapshot_date_precision,
