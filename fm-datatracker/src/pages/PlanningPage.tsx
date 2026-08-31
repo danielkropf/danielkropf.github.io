@@ -21,6 +21,17 @@ import { functionProjectionKey } from '../lib/projection-player'
 import { positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
 import {
+  activePlanningClubs,
+  patchClubPlanning,
+  patchClubTacticId,
+  primaryPlanningClubId,
+  promoteLegacyPrimaryPlanning,
+  promoteLegacyPrimaryTacticId,
+  resolveClubPlanning,
+  resolveClubTacticId,
+  resolvePlanningClubId,
+} from '../lib/multiclub-planning'
+import {
   canGroupAdjacentPlanningSets,
   groupAdjacentPlanningSets,
   layoutsFor,
@@ -61,7 +72,14 @@ type Planning = FlexiblePlanning & { groups: Group[] }
 type Assignment = { playerId: string; nodeId: string; position: string; roleId?: string; roleCode: string; roleName: string }
 type Pair = { ip: Assignment; oop: Assignment }
 type Tactic = { id: string; name: string; ipAssignments: Assignment[]; oopAssignments: Assignment[]; roles?: { id: string; name: string; weights: Record<string, number> }[] }
-type Config = Record<string, unknown> & { planning?: Planning; tactics?: Tactic[]; selected_tactic_id?: string | null; role_weight_overrides?: Record<string, Record<string, number>> }
+type Config = Record<string, unknown> & {
+  planning?: Planning
+  planning_by_club?: Record<string, Planning>
+  tactics?: Tactic[]
+  selected_tactic_id?: string | null
+  selected_tactic_id_by_club?: Record<string, string | null>
+  role_weight_overrides?: Record<string, Record<string, number>>
+}
 type DragItem = { type: 'player'; id: string }
 type Menu = { x: number; y: number; playerId: string }
 type Familiarity = PlanningFamiliarity
@@ -72,6 +90,14 @@ const transferGroups: Group[] = [{ id: 'loan', name: 'Empréstimo' }, { id: 'sal
 const EMPTY_ROLE_OVERRIDES: Record<string, Record<string, number>> = {}
 const defaults = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }, ...transferGroups], slotAssignments: {}, setLayouts: {} })
 const canPlay = canPlayPosition
+const planningClubStorageKey = (saveId: string) => `fm-datatracker:planning-club:${saveId}`
+
+function normalizePlanning(raw: (Planning & { assignments?: Record<string, string> }) | undefined): Planning {
+  const base: Planning = raw
+    ? { ...defaults(), groups: raw.groups ?? defaults().groups, slotAssignments: raw.slotAssignments ?? {}, setLayouts: raw.setLayouts ?? {} }
+    : defaults()
+  return { ...base, groups: [...base.groups, ...transferGroups.filter(required => !base.groups.some(group => group.id === required.id))] }
+}
 
 function modelDiagnostic(result: { diagnostic?: string | null }) { return result.diagnostic ?? '' }
 
@@ -81,6 +107,7 @@ export function PlanningPage() {
   const [players, setPlayers] = useState<Player[]>([])
   const [reference, setReference] = useState<ReferenceDataset | null>(null)
   const [config, setConfig] = useState<Config>({ planning: defaults() })
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null)
   const [undoPlanning, setUndoPlanning] = useState<Planning | null>(null)
   const [status, setStatus] = useState('Carregando…')
   const [saveDetail, setSaveDetail] = useState('')
@@ -106,6 +133,10 @@ export function PlanningPage() {
   const [isPending, startTransition] = useTransition()
   const loaded = useRef(false)
 
+  const planningClubs = useMemo(() => activePlanningClubs(selected?.structure?.trackedClubs ?? []), [selected?.structure?.trackedClubs])
+  const primaryClubId = useMemo(() => primaryPlanningClubId(selected?.structure?.trackedClubs ?? []), [selected?.structure?.trackedClubs])
+  const selectedClub = planningClubs.find(item => item.club_id === selectedClubId) ?? null
+
   const saveStatus = (next: string, detail?: string) => { setStatus(next); setSaveDetail(detail ?? '') }
 
   useEffect(() => { void loadReferenceDataset().then(setReference) }, [])
@@ -129,11 +160,24 @@ export function PlanningPage() {
       startTransition(() => {
         setPlayers(cached as unknown as Player[])
         const existing = modelConfig as Config
-        const old = existing.planning as (Planning & { assignments?: Record<string, string> }) | undefined
-        const loadedPlanning: Planning = old ? { ...defaults(), groups: old.groups ?? defaults().groups, slotAssignments: old.slotAssignments ?? {}, setLayouts: old.setLayouts ?? {} } : defaults()
-        const next: Planning = { ...loadedPlanning, groups: [...loadedPlanning.groups, ...transferGroups.filter(required => !loadedPlanning.groups.some(group => group.id === required.id))] }
-        setConfig({ ...existing, planning: next })
-        setSelectedGroup(next.groups[0]?.id ?? '')
+        const tracked = selected.structure?.trackedClubs ?? []
+        const primaryId = primaryPlanningClubId(tracked)
+        const remembered = typeof window === 'undefined' ? null : localStorage.getItem(planningClubStorageKey(selected.id))
+        const nextClubId = resolvePlanningClubId(tracked, remembered)
+        const promotedPlanning = promoteLegacyPrimaryPlanning(existing, primaryId)
+        const planningByClub = Object.fromEntries(Object.entries(promotedPlanning).map(([clubId, raw]) => [clubId, normalizePlanning(raw as Planning)]))
+        const selectedPlanning = nextClubId
+          ? normalizePlanning(resolveClubPlanning({ ...existing, planning_by_club: planningByClub }, nextClubId, primaryId, defaults))
+          : normalizePlanning(existing.planning)
+        const selectedTacticByClub = promoteLegacyPrimaryTacticId(existing, primaryId)
+        const legacyPlanning = primaryId && planningByClub[primaryId] ? planningByClub[primaryId] : normalizePlanning(existing.planning)
+        setConfig({ ...existing, planning: legacyPlanning, planning_by_club: planningByClub, selected_tactic_id_by_club: selectedTacticByClub })
+        setSelectedClubId(nextClubId)
+        if (typeof window !== 'undefined') {
+          if (nextClubId) localStorage.setItem(planningClubStorageKey(selected.id), nextClubId)
+          else localStorage.removeItem(planningClubStorageKey(selected.id))
+        }
+        setSelectedGroup(selectedPlanning.groups[0]?.id ?? '')
         loaded.current = true
         saveStatus('✓ Salvo')
         setLoading(false)
@@ -151,8 +195,13 @@ export function PlanningPage() {
 
   useEffect(() => {
     if (!loaded.current || !selected || !supabase) return
-    scheduleModelConfigPatch(selected.id, '2.9.0', { planning: config.planning ?? defaults() }, saveStatus)
-  }, [config.planning, selected?.id])
+    const patch: Record<string, unknown> = {
+      planning_by_club: config.planning_by_club ?? {},
+      selected_tactic_id_by_club: config.selected_tactic_id_by_club ?? {},
+    }
+    if (config.planning !== undefined) patch.planning = config.planning
+    scheduleModelConfigPatch(selected.id, '2.9.0', patch, saveStatus)
+  }, [config.planning, config.planning_by_club, config.selected_tactic_id_by_club, selected?.id])
 
   useEffect(() => {
     const close = () => setMenu(null)
@@ -160,10 +209,11 @@ export function PlanningPage() {
     return () => window.removeEventListener('click', close)
   }, [])
 
-  const planning = config.planning ?? defaults()
+  const planning = selectedClubId ? resolveClubPlanning(config, selectedClubId, primaryClubId, defaults) : config.planning ?? defaults()
   const assignmentIndex = useMemo(() => derivePlanningAssignmentIndex(planning.slotAssignments), [planning.slotAssignments])
   const tactics = config.tactics ?? []
-  const tactic = tactics.find(item => item.id === config.selected_tactic_id) ?? tactics[0]
+  const scopedTacticId = selectedClubId ? resolveClubTacticId(config, selectedClubId, primaryClubId, tactics.map(item => item.id)) : config.selected_tactic_id ?? null
+  const tactic = tactics.find(item => item.id === scopedTacticId) ?? (!selectedClubId || selectedClubId === primaryClubId ? tactics[0] : undefined)
   const pairs: Pair[] = useMemo(() => tactic ? tactic.ipAssignments.map(ip => ({ ip, oop: tactic.oopAssignments.find(oop => oop.playerId === ip.playerId) ?? ip })) : [], [tactic])
   const slotDescriptors: TacticSlotDescriptor[] = useMemo(() => pairs.map(pair => ({ id: pair.ip.playerId, position: pair.ip.position, oopPosition: pair.oop.position })), [pairs])
   const pairBySlot = useMemo(() => new Map(pairs.map(pair => [pair.ip.playerId, pair])), [pairs])
@@ -248,9 +298,39 @@ export function PlanningPage() {
     const next = fn(previous)
     if (next === previous) return
     setUndoPlanning(previous)
-    setConfig(current => ({ ...current, planning: next }))
+    setConfig(current => selectedClubId
+      ? { ...current, ...patchClubPlanning(current, selectedClubId, primaryClubId, next) }
+      : { ...current, planning: next })
   }
-  function undo() { if (!undoPlanning) return; setConfig(current => ({ ...current, planning: undoPlanning })); setUndoPlanning(null) }
+  function undo() {
+    if (!undoPlanning) return
+    const previous = undoPlanning
+    setConfig(current => selectedClubId
+      ? { ...current, ...patchClubPlanning(current, selectedClubId, primaryClubId, previous) }
+      : { ...current, planning: previous })
+    setUndoPlanning(null)
+  }
+  function changePlanningClub(clubId: string) {
+    if (!selected || clubId === selectedClubId || !planningClubs.some(item => item.club_id === clubId)) return
+    const nextPlanning = resolveClubPlanning(config, clubId, primaryClubId, defaults)
+    setSelectedClubId(clubId)
+    localStorage.setItem(planningClubStorageKey(selected.id), clubId)
+    setSelectedGroup(nextPlanning.groups[0]?.id ?? '')
+    setUndoPlanning(null)
+    setExpandedSets(new Set())
+    setFocusedSetId(null)
+    setPositionFilters(null)
+  }
+  function selectClubTactic(id: string) {
+    setExpandedSets(new Set())
+    setFocusedSetId(null)
+    if (!selectedClubId) {
+      setConfig(current => ({ ...current, selected_tactic_id: id }))
+      void persistPatch({ selected_tactic_id: id })
+      return
+    }
+    setConfig(current => ({ ...current, ...patchClubTacticId(current, selectedClubId, primaryClubId, id) }))
+  }
   function changeGroup(direction: number) { if (!planning.groups.length) return; const next = (currentGroupIndex + direction + planning.groups.length) % planning.groups.length; setSelectedGroup(planning.groups[next].id); setExpandedSets(new Set()); setFocusedSetId(null) }
   function addGroup() { if (!newGroup.trim()) return; update(value => ({ ...value, groups: [...value.groups, { id: crypto.randomUUID(), name: newGroup.trim() }] })); setNewGroup('') }
   function renameGroup(id: string, name: string) { update(value => ({ ...value, groups: value.groups.map(group => group.id === id ? { ...group, name } : group) })) }
@@ -313,7 +393,12 @@ export function PlanningPage() {
     if (!selected) return
     try {
       const result = await retryModelConfigPatch(selected.id, saveStatus)
-      if (!result) await persistPatch({ planning: config.planning ?? defaults(), selected_tactic_id: config.selected_tactic_id ?? null })
+      if (!result) await persistPatch({
+        planning: config.planning ?? defaults(),
+        planning_by_club: config.planning_by_club ?? {},
+        selected_tactic_id: config.selected_tactic_id ?? null,
+        selected_tactic_id_by_club: config.selected_tactic_id_by_club ?? {},
+      })
     } catch { /* status is already updated by the shared persistence layer */ }
   }
 
@@ -323,10 +408,11 @@ export function PlanningPage() {
   }
 
   return <div className="screen-page planning-page planning-flex-page">
-    <div className="title-row planning-title-row"><div><h1>Planejamento</h1>{(loading || isPending) && <span className="background-loading" role="status">Carregando em segundo plano…</span>}</div><SaveState status={status} detail={saveDetail} onRetry={status.startsWith('⚠') ? () => void retrySave() : undefined} /></div>
+    <div className="title-row planning-title-row"><div><h1>Planejamento{selectedClub && planningClubs.length > 1 ? ` · ${selectedClub.club.name}` : ''}</h1>{(loading || isPending) && <span className="background-loading" role="status">Carregando em segundo plano…</span>}</div><SaveState status={status} detail={saveDetail} onRetry={status.startsWith('⚠') ? () => void retrySave() : undefined} /></div>
 
     <section className="planning-matrix-toolbar planning-aligned-toolbar planning-flex-toolbar">
-      <CustomSelect className="tactic-custom-select" ariaLabel="Tática selecionada" value={tactic?.id ?? ''} options={tactics.map(item => ({ value: item.id, label: item.name }))} placeholder={tactics.length ? 'Tática' : 'Nenhuma tática criada'} disabled={!tactics.length || isTransferGroup} disabledReason={isTransferGroup ? 'Táticas não se aplicam a grupos de mercado' : !tactics.length ? 'Nenhuma tática criada' : undefined} onChange={id => { setConfig(current => ({ ...current, selected_tactic_id: id })); setExpandedSets(new Set()); setFocusedSetId(null); void persistPatch({ selected_tactic_id: id }) }} />
+      {planningClubs.length > 1 && <CustomSelect className="tactic-custom-select" ariaLabel="Clube do planejamento" value={selectedClubId ?? ''} options={planningClubs.map(item => ({ value: item.club_id, label: item.tracking_role === 'primary' ? `${item.club.name} · Principal` : item.club.name }))} placeholder="Clube" onChange={changePlanningClub} />}
+      <CustomSelect className="tactic-custom-select" ariaLabel="Tática selecionada" value={tactic?.id ?? ''} options={tactics.map(item => ({ value: item.id, label: item.name }))} placeholder={tactics.length ? 'Tática' : 'Nenhuma tática criada'} disabled={!tactics.length || isTransferGroup} disabledReason={isTransferGroup ? 'Táticas não se aplicam a grupos de mercado' : !tactics.length ? 'Nenhuma tática criada' : undefined} onChange={selectClubTactic} />
       <div className="squad-pagination planning-group-selector"><button onClick={() => changeGroup(-1)} disabled={planning.groups.length < 2}>‹</button><strong>{currentGroup?.name ?? 'Nenhum elenco'}</strong><span>{planning.groups.length ? `${currentGroupIndex + 1} de ${planning.groups.length}` : '0 de 0'}</span><button onClick={() => changeGroup(1)} disabled={planning.groups.length < 2}>›</button></div>
       <label className={`coverage-toggle ${isTransferGroup || !tactic ? 'is-disabled' : ''}`} title={isTransferGroup ? 'Coberturas não se aplicam a grupos de mercado' : !tactic ? 'Crie uma tática para visualizar coberturas' : undefined}><input type="checkbox" checked={showCoverages} disabled={isTransferGroup || !tactic} onChange={event => setShowCoverages(event.target.checked)} /><span>Mostrar coberturas</span></label>
       <div className="planning-flex-actions">
