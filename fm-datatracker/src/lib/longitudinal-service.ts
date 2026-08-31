@@ -35,6 +35,35 @@ export async function loadTrackedClubs(saveId: string): Promise<TrackedClub[]> {
   })
 }
 
+export async function loadClubCatalog(saveId: string): Promise<Club[]> {
+  const result = await client().from('clubs').select('*').eq('save_id', saveId).order('name')
+  if (result.error) throw new Error(dbError(result.error))
+  return (result.data ?? []) as Club[]
+}
+
+export async function trackSaveClub(saveId: string, clubId: string): Promise<void> {
+  const { error } = await client().rpc('track_save_club', { p_save_id: saveId, p_club_id: clubId })
+  if (error) throw new Error(dbError(error))
+}
+
+export async function createTrackedClub(saveId: string, input: { name: string; country?: string | null }): Promise<void> {
+  const { error } = await client().rpc('create_tracked_club', {
+    p_save_id: saveId,
+    p_name: input.name.trim(),
+    p_country: input.country?.trim() || null,
+  })
+  if (error) throw new Error(dbError(error))
+}
+
+export async function setTrackedClubActive(saveId: string, clubId: string, active: boolean): Promise<void> {
+  const { error } = await client().rpc('set_tracked_club_active', {
+    p_save_id: saveId,
+    p_club_id: clubId,
+    p_is_active: active,
+  })
+  if (error) throw new Error(dbError(error))
+}
+
 export async function loadSeasons(saveId: string): Promise<Season[]> {
   const result = await client().from('seasons').select('*').eq('save_id', saveId).order('ordinal').order('label')
   if (result.error) throw new Error(dbError(result.error))
