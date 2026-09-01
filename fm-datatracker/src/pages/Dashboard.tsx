@@ -131,6 +131,11 @@ export function Dashboard() {
         </div>
       </article>
     </section>
+    <section className="dashboard-roadmap">
+      <Link className="card" to="/network"><span className="eyebrow">REDE</span><strong>Profundidade multiclube</strong><small>Necessidades táticas, pool global e destinos planejados.</small></Link>
+      <Link className="card" to="/academy"><span className="eyebrow">ACADEMIA</span><strong>Turmas de formação</strong><small>Compare gerações sem perder a fotografia de entrada.</small></Link>
+      <Link className="card" to="/history"><span className="eyebrow">HISTÓRIA</span><strong>Linha do tempo do save</strong><small>Eventos factuais com proveniência explícita.</small></Link>
+    </section>
   </div>
 }
 

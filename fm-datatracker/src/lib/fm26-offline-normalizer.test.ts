@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { normalizeOfflineFmResult } from './fm26-offline-normalizer'
 
 describe('FM26 offline result normalizer', () => {
+  it('reports whether a human manager club was structurally resolved', () => {
+    const safe = normalizeOfflineFmResult({ human_managers: [{ human_club: { root_team_id: 679 }, players: [] }] })
+    const unsafe = normalizeOfflineFmResult({ human_managers: [{ human_club: {}, players: [] }] })
+    expect(safe.diagnostics).toMatchObject({ human_manager_count: 1, resolved_human_club_count: 1 })
+    expect(unsafe.diagnostics).toMatchObject({ human_manager_count: 1, resolved_human_club_count: 0 })
+  })
+
   it('keeps every decoded stat and maps the validated player fields without runtime data', () => {
     const result = normalizeOfflineFmResult({ save: { current_date: '2025-01-01' }, parser: { version: '0.22.0' }, humans_summary: { total_players_across_human_clubs: 1 }, human_managers: [{ manager: { display_name: 'Manager' }, players: [{ uid: 92039023, eid: 12630, display_name: 'Joshua Kimmich', identity_link_confidence: 'high', birth_date: '1995-02-08', nation: 'Germany', height_cm: 177, positions: { DM: 20, MC: 18 }, feet: { left: 14, right: 20 }, attributes_1_20: { Passing: 18, Stamina: 17, Teamwork: 16, 'Punching Tendency': 11 }, statistics: { minutes: 1234, goals: 3, contexts: [{ minutes: 900 }] }, tactic: { slot: 4, ip: { position: 'DM' } }, contract_team_id: 679, contract_offset: 1234, contract_team_name: 'FC Bayern München', contract_team_name_resolution: { status: 'confirmed', team_id: 679, team_key: 913 }, roster_group: { label: 'Principal', team_id: 1993, team_name: 'FC Bayern München II', team_name_resolution: { status: 'confirmed', team_id: 1993, team_key: 103286 } } }] }] })
     expect(result).toMatchObject({ snapshot_date: '2025-01-01', snapshot_date_precision: 'day' })

@@ -1,15 +1,17 @@
 {
   "name": "fm-datatracker",
   "private": true,
-  "version": "0.28.1",
-  "displayVersion": "0.28.1",
+  "version": "0.29.0",
+  "displayVersion": "0.29.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:version": "node scripts/check-version-sync.mjs",
+    "validate": "npm run check:version && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

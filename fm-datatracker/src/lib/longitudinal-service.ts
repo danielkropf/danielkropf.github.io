@@ -7,12 +7,97 @@ import type {
   Save,
   SaveClub,
   Season,
+  IntakeClass,
+  IntakeClassMember,
+  SaveEvent,
   TrackedClub,
 } from '../types/domain'
 
 function client() {
   if (!supabase) throw new Error('Banco Mestre não configurado.')
   return supabase
+}
+
+export type IntakeArchiveMember = IntakeClassMember & {
+  player: { id: string; current_name: string; is_active: boolean } | null
+  latestSnapshot: { snapshot_date: string; age: number | null; club: string | null; squad: string | null; positions: string[] } | null
+}
+export type IntakeArchiveClass = IntakeClass & { club: Club | null; season: Season | null; members: IntakeArchiveMember[] }
+
+export async function loadIntakeArchive(saveId: string): Promise<IntakeArchiveClass[]> {
+  const db = client()
+  const [classesResult, membersResult, clubsResult, seasonsResult] = await Promise.all([
+    db.from('intake_classes').select('*').eq('save_id', saveId).order('intake_date', { ascending: false }).order('label'),
+    db.from('intake_class_members').select('*').eq('save_id', saveId),
+    db.from('clubs').select('*').eq('save_id', saveId),
+    db.from('seasons').select('*').eq('save_id', saveId),
+  ])
+  for (const result of [classesResult, membersResult, clubsResult, seasonsResult]) if (result.error) throw new Error(dbError(result.error))
+  const classes = (classesResult.data ?? []) as IntakeClass[]
+  const members = (membersResult.data ?? []) as IntakeClassMember[]
+  const playerIds = [...new Set(members.map(member => member.player_id))]
+  const playersResult = playerIds.length
+    ? await db.from('players').select('id,current_name,is_active,player_snapshots:player_snapshots!player_snapshots_player_save_fkey(snapshot_date,age,club,squad,positions)').eq('save_id', saveId).in('id', playerIds).order('snapshot_date', { referencedTable: 'player_snapshots', ascending: false }).limit(1, { referencedTable: 'player_snapshots' })
+    : { data: [], error: null }
+  if (playersResult.error) throw new Error(dbError(playersResult.error))
+  const clubs = new Map(((clubsResult.data ?? []) as Club[]).map(row => [row.id, row]))
+  const seasons = new Map(((seasonsResult.data ?? []) as Season[]).map(row => [row.id, row]))
+  type PlayerResult = { id: string; current_name: string; is_active: boolean; player_snapshots: IntakeArchiveMember['latestSnapshot'][] }
+  const players = new Map(((playersResult.data ?? []) as unknown as PlayerResult[]).map(row => [row.id, row]))
+  const membersByClass = new Map<string, IntakeClassMember[]>()
+  for (const member of members) membersByClass.set(member.intake_class_id, [...(membersByClass.get(member.intake_class_id) ?? []), member])
+  return classes.map(row => ({
+    ...row,
+    club: clubs.get(row.club_id) ?? null,
+    season: row.season_id ? seasons.get(row.season_id) ?? null : null,
+    members: (membersByClass.get(row.id) ?? []).map(member => {
+      const player = players.get(member.player_id) ?? null
+      return { ...member, player: player ? { id: player.id, current_name: player.current_name, is_active: player.is_active } : null, latestSnapshot: player?.player_snapshots?.[0] ?? null }
+    }),
+  }))
+}
+
+export async function createManualIntakeClass(saveId: string, clubId: string, label: string, intakeDate: string | null) {
+  const db = client()
+  const { data: auth, error: authError } = await db.auth.getUser()
+  if (authError || !auth.user) throw new Error(authError ? dbError(authError) : 'Sessão inválida.')
+  const normalized = label.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')
+  const classKey = `manual:${clubId}:${intakeDate ?? normalized}`
+  const { error } = await db.from('intake_classes').insert({ save_id: saveId, owner_id: auth.user.id, club_id: clubId, class_key: classKey, label: label.trim(), intake_date: intakeDate, source_kind: 'manual', provenance: { created_by: 'fm-datatracker', version: '0.29.0' } })
+  if (error) throw new Error(dbError(error))
+}
+
+export type SaveHistoryEvent = SaveEvent & { club: Club | null; season: Season | null; player: { id: string; current_name: string } | null; intakeClass: IntakeClass | null }
+
+export async function loadSaveHistory(saveId: string): Promise<SaveHistoryEvent[]> {
+  const db = client()
+  const [eventsResult, clubsResult, seasonsResult] = await Promise.all([
+    db.from('save_events').select('*').eq('save_id', saveId).order('event_date', { ascending: false }).order('created_at', { ascending: false }),
+    db.from('clubs').select('*').eq('save_id', saveId),
+    db.from('seasons').select('*').eq('save_id', saveId),
+  ])
+  for (const result of [eventsResult, clubsResult, seasonsResult]) if (result.error) throw new Error(dbError(result.error))
+  const eventRows = (eventsResult.data ?? []) as SaveEvent[]
+  const playerIds = [...new Set(eventRows.map(row => row.player_id).filter((value): value is string => Boolean(value)))]
+  const classIds = [...new Set(eventRows.map(row => row.intake_class_id).filter((value): value is string => Boolean(value)))]
+  const [playersResult, classesResult] = await Promise.all([
+    playerIds.length ? db.from('players').select('id,current_name').eq('save_id', saveId).in('id', playerIds) : Promise.resolve({ data: [], error: null }),
+    classIds.length ? db.from('intake_classes').select('*').eq('save_id', saveId).in('id', classIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  for (const result of [playersResult, classesResult]) if (result.error) throw new Error(dbError(result.error))
+  const clubs = new Map(((clubsResult.data ?? []) as Club[]).map(row => [row.id, row]))
+  const seasons = new Map(((seasonsResult.data ?? []) as Season[]).map(row => [row.id, row]))
+  const players = new Map(((playersResult.data ?? []) as Array<{ id: string; current_name: string }>).map(row => [row.id, row]))
+  const classes = new Map(((classesResult.data ?? []) as IntakeClass[]).map(row => [row.id, row]))
+  return eventRows.map(row => ({ ...row, club: row.club_id ? clubs.get(row.club_id) ?? null : null, season: row.season_id ? seasons.get(row.season_id) ?? null : null, player: row.player_id ? players.get(row.player_id) ?? null : null, intakeClass: row.intake_class_id ? classes.get(row.intake_class_id) ?? null : null }))
+}
+
+export async function createManualSaveEvent(saveId: string, input: { eventDate: string; clubId?: string | null; title: string; detail?: string | null }) {
+  const db = client()
+  const { data: auth, error: authError } = await db.auth.getUser()
+  if (authError || !auth.user) throw new Error(authError ? dbError(authError) : 'Sessão inválida.')
+  const { error } = await db.from('save_events').insert({ save_id: saveId, owner_id: auth.user.id, event_type: 'manual_fact', event_date: input.eventDate, club_id: input.clubId ?? null, source_kind: 'manual', provenance: { created_by: 'fm-datatracker', version: '0.29.0' }, payload: { title: input.title.trim(), detail: input.detail?.trim() || null } })
+  if (error) throw new Error(dbError(error))
 }
 
 function dbError(error: { message?: string; details?: string; hint?: string } | null | undefined) {

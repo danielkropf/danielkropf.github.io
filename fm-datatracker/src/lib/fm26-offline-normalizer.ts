@@ -212,7 +212,11 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
     ...player,
     age: exactDate ? ageAt(player.date_of_birth, exactDate) : null,
   }))
-  const diagnostics = record(raw.humans_summary)
+  const diagnostics = {
+    ...record(raw.humans_summary),
+    human_manager_count: humans.length,
+    resolved_human_club_count: humans.filter(value => numberOrNull(record(record(value).human_club).root_team_id) !== null).length,
+  }
   return { raw, players: playersWithAge, tactics, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null }
 }
 

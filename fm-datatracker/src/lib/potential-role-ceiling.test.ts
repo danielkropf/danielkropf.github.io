@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ATTRIBUTE_CATALOG } from './attributes'
-import { canonicalRoleDefaultWeights, pairedRoleScore } from './role-scoring'
+import { canonicalRoleDefaultWeights, pairedRoleScore, roleScore } from './role-scoring'
 import { IP_ROLES, OOP_ROLES } from './tactics'
 import type { LoadedPotentialRoleCeilingModel, PotentialRoleCeilingManifest } from './potential-role-ceiling-model'
 import { POTENTIAL_INDIVIDUAL_ROLE_CATALOG, potentialRoleCeilingForSnapshot, potentialRoleComboFromProjectionKey } from './potential-role-ceiling'
@@ -69,15 +69,35 @@ describe('PlausibleCareerCeilingRoleScore v1.1', () => {
     expect(groups.reduce((sum, group) => sum + IP_ROLES[group].length * OOP_ROLES[group].length, 0)).toBe(171)
   })
 
-  it('resolves same-group and mixed canonical identities, but rejects single-phase keys', () => {
+  it('resolves same-group, mixed and single-phase canonical identities', () => {
     expect(potentialRoleComboFromProjectionKey('IP:D(C):BPCB|OOP:D(C):SCB')?.identity).toBe('IP:CB|Ball-Playing Centre-Back > OOP:CB|Stopping Centre-Back')
     expect(potentialRoleComboFromProjectionKey('IP:M(C):CHM|OOP:M(C):WCCM')?.legacyComboId).not.toBeNull()
     const mixed = potentialRoleComboFromProjectionKey('IP:M(C):AP|OOP:DM(C):DM')
     expect(mixed?.identity).toBe('IP:CM|Advanced Playmaker > OOP:DM|Defensive Midfielder')
-    expect(mixed?.ip.id).toBe(24)
-    expect(mixed?.oop.id).toBe(60)
+    expect(mixed?.ip?.id).toBe(24)
+    expect(mixed?.oop?.id).toBe(60)
     expect(mixed?.legacyComboId).toBeNull()
-    expect(potentialRoleComboFromProjectionKey('IP:M(C):CM')).toBeNull()
+    expect(potentialRoleComboFromProjectionKey('IP:M(C):CM')?.identity).toBe('IP:CM|Central Midfielder')
+    expect(potentialRoleComboFromProjectionKey('OOP:DM(C):DM')?.identity).toBe('OOP:DM|Defensive Midfielder')
+  })
+
+  it('returns a potential for one individual phase', () => {
+    const snapshot = trustedGkSnapshot()
+    const weights = canonicalRoleDefaultWeights('IP-CM-AP', 'Advanced Playmaker')
+    const current = roleScore(snapshot.player_attributes, weights)
+    const result = potentialRoleCeilingForSnapshot({ snapshot, currentRoleScore: current, scoreKey: 'IP:M(C):AP', loadedModel: loadedModel(1.25) })
+    expect(result.status).toBe('AVAILABLE')
+    expect(result.ipFunctionId).toBe(24)
+    expect(result.oopFunctionId).toBeNull()
+    expect(result.plausibleCareerCeilingRoleScore).toBeCloseTo(current! + 1.25, 10)
+  })
+
+  it('uses the validated young edge instead of hiding under-16 players', () => {
+    const snapshot = { ...trustedGkSnapshot(), normalized_data: { ...trustedGkSnapshot().normalized_data, birth_date: '2021-01-01' }, snapshot_date: '2036-01-01' }
+    const current = canonicalGkScore(snapshot)
+    const result = potentialRoleCeilingForSnapshot({ snapshot, currentRoleScore: current, scoreKey: 'IP:GK:GK|OOP:GK:GK', loadedModel: loadedModel() })
+    expect(result.status).toBe('AVAILABLE')
+    expect(result.supportStatus).toBe('YOUTH_EDGE_EXTRAPOLATION')
   })
 
   it('returns a ceiling above the current canonical RoleScore and never above 20', () => {

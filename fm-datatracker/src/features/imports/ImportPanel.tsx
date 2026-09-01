@@ -183,7 +183,10 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const exactFmDate = fmRead?.snapshot_date_precision === 'day' ? fmRead.snapshot_date ?? null : null
   const confirmedFmYear = fmRead?.snapshot_date_precision === 'year' && fmRead.snapshot_date ? fmRead.snapshot_date.slice(0, 4) : null
   const snapshotDateValid = isValidIsoDate(snapshotDate) && (!confirmedFmYear || snapshotDate.startsWith(`${confirmedFmYear}-`))
-  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid)
+  const fmIdentityRequired = importMode === 'fm-beta' || importMode === 'validated'
+  const resolvedHumanClubCount = comparableNumber(fmRead?.diagnostics?.resolved_human_club_count) ?? 0
+  const fmIdentitySafe = !fmIdentityRequired || resolvedHumanClubCount > 0
+  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid && fmIdentitySafe)
 
   async function chooseCsv(file: File | undefined) {
     if (!file) return
@@ -259,7 +262,9 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       } else setSnapshotDate('')
       const tacticCount = read.tactics?.length ?? 0
       const tacticStatus = tacticCount === 1 ? ' 1 tática resolvida.' : tacticCount > 1 ? ` ${tacticCount} táticas resolvidas; a seleção automática ficará bloqueada.` : ' Nenhuma tática resolvida com segurança.'
-      setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${tacticStatus}${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. Informe dia e mês antes de confirmar; 01/01 não será usado como data inventada.` : ' A data exata do save ainda não foi localizada pelo leitor; informe a data manualmente antes de confirmar.'}`)
+      const clubCount = comparableNumber(read.diagnostics?.resolved_human_club_count) ?? 0
+      const clubStatus = clubCount > 0 ? ` ${clubCount} clube(s) de human manager resolvido(s).` : ' Clube do human manager não resolvido; importação direta do .fm ficará bloqueada para evitar atribuição ao save errado.'
+      setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${tacticStatus}${clubStatus}${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. Informe dia e mês antes de confirmar; 01/01 não será usado como data inventada.` : ' A data exata do save ainda não foi localizada pelo leitor; informe a data manualmente antes de confirmar.'}`)
     } catch (error) { setFmStatus(`Não foi possível ler o arquivo .fm: ${errorMessage(error)}`) }
     finally { setLoadingFm(false) }
   }
@@ -314,6 +319,7 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
     setSaving(true); setMessage('')
     try {
       if (!supabase) throw new Error('Banco mestre não configurado.')
+      if (!fmIdentitySafe) throw new Error('O clube do human manager não foi resolvido com segurança. A importação .fm foi bloqueada para proteger a identidade do save.')
       if (!snapshotDateValid) throw new Error(confirmedFmYear ? `Informe uma data completa de ${confirmedFmYear} antes de confirmar.` : 'Informe uma data completa e válida antes de confirmar.')
       const warnings = [...(preview?.warnings ?? [])]
       if (importMode === 'fm-beta') warnings.push('Leitura .fm em beta: campos podem estar vazios ou incorretos.')

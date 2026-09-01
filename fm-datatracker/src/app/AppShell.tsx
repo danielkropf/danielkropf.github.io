@@ -9,7 +9,7 @@ import { SettingsModal } from './SettingsModal'
 import { preloadSave } from '../lib/dataCache'
 import { flushAllModelConfigPatches } from '../lib/model-config'
 
-const navigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/planning', 'Planejamento'], ['/tactics', 'Táticas'], ['/scoring', 'Pontuação & Funções']] as const
+const navigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/planning', 'Planejamento'], ['/network', 'Rede'], ['/academy', 'Academia'], ['/history', 'História'], ['/tactics', 'Táticas'], ['/scoring', 'Pontuação & Funções']] as const
 
 export function AppShell() {
   const { saves, selected, select } = useSaves()

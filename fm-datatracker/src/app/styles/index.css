@@ -22,6 +22,7 @@
 @import '../../saves-management.css';
 @import '../../save-state.css';
 @import '../../potential.css';
+@import '../../roadmap-modules.css';
 
 /* Canonical DS v1 primitives intentionally win over historical page CSS.
    Shadowed legacy declarations are removed as each surface is migrated in Phase 3. */
