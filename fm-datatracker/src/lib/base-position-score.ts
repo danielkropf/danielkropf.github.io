@@ -118,4 +118,3 @@ export function generalScoreForReference(player: ReferencePlayer, attributeKeys:
 
 export const generalBasePositionScore = generalScoreForSnapshot
 export const generalBasePositionScoreForReference = generalScoreForReference
-

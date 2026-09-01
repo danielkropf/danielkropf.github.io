@@ -275,6 +275,17 @@ export async function flushModelConfigPatch(saveId: string, name = 'Model Lab') 
   }
 }
 
+/** Best-effort lifecycle flush for every queued Model Lab autosave. */
+export async function flushAllModelConfigPatches() {
+  const keys = [...new Set([...pendingPatches.keys(), ...dirtyPatches.keys()])]
+  const results = await Promise.allSettled(keys.map(key => {
+    const separator = key.indexOf(':')
+    if (separator < 1) return Promise.resolve(null)
+    return flushModelConfigPatch(key.slice(0, separator), key.slice(separator + 1))
+  }))
+  return results
+}
+
 export async function retryModelConfigPatch(saveId: string, onStatus?: SaveStatus, name = 'Model Lab') {
   const key = cacheKey(saveId, name)
   const meta = dirtyMeta.get(key)

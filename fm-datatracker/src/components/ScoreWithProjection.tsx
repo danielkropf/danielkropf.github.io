@@ -21,7 +21,6 @@ type Props = {
   currentTitle?: string
   projectionTitle?: string
 }
-
 const ROLE_CEILING_TOOLTIP = 'Potencial na função: melhor RoleScore plausível em um cenário positivo de desenvolvimento, calibrado em trajetórias reais. Os tetos IP e OOP são estimados separadamente e unidos pela média geométrica. Não é a evolução mais provável, não possui horizonte fixo e não representa o PA/CP do Football Manager.'
 const GENERAL_CEILING_TOOLTIP = 'Potencial geral: melhor Nota Geral plausível em um cenário positivo de carreira. O modelo considera PA/headroom, idade, perfil completo de atributos e posições-base atuais elegíveis; o resultado nunca fica abaixo do melhor teto-base calculado pelo Potencial na função. Não é a evolução mais provável, não possui horizonte fixo e não representa o PA/CP do Football Manager.'
 
@@ -86,4 +85,3 @@ export function ScoreWithProjection({
     </>}
   </span>
 }
-

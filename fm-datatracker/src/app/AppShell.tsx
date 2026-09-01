@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { AppRoutes } from './AppRoutes'
 import { SettingsModal } from './SettingsModal'
 import { preloadSave } from '../lib/dataCache'
+import { flushAllModelConfigPatches } from '../lib/model-config'
 
 const navigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/planning', 'Planejamento'], ['/tactics', 'Táticas'], ['/scoring', 'Pontuação & Funções']] as const
 
@@ -16,6 +17,17 @@ export function AppShell() {
   const potential = usePotential()
   const [settings, setSettings] = useState(false)
   useEffect(() => { if (selected) preloadSave(selected.id) }, [selected?.id])
+  useEffect(() => {
+    const flush = () => { void flushAllModelConfigPatches() }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+      flush()
+    }
+  }, [])
   const currentPlayerId = /^\/players\/([^/]+)$/.exec(location.pathname)?.[1] ?? null
   const compareTo = currentPlayerId ? `/compare?a=${encodeURIComponent(currentPlayerId)}` : '/compare'
   const potentialTitle = potential.available
@@ -34,7 +46,7 @@ export function AppShell() {
           {saves.map(save => <option key={save.id} value={save.id}>{save.name}</option>)}
         </select>
       </div>}
-      <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'is-disabled' : ''}`} aria-disabled={!potential.available} onClick={() => { if (potential.available) potential.setShowPotential(!potential.showPotential) }} title={potentialTitle} aria-pressed={potential.showPotential}>
+      <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'has-load-error' : ''}`} onClick={() => potential.setShowPotential(!potential.showPotential)} title={potentialTitle} aria-pressed={potential.showPotential}>
         <span><b aria-hidden="true">↗</b> Mostrar potencial</span><span className="potential-switch" aria-hidden="true" />
       </button>
       <nav>{navigation.slice(0, 2).map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}<NavLink to={compareTo}>Comparar</NavLink>{navigation.slice(2).map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}</nav>
@@ -51,4 +63,3 @@ export function AppShell() {
     {settings && <SettingsModal close={() => setSettings(false)} />}
   </div>
 }
-

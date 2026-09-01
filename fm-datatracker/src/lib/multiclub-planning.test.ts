@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   activePlanningClubs,
+  derivePlanningClubIndex,
+  movePlayerAcrossClubPlans,
   patchClubPlanning,
   patchClubTacticId,
   primaryPlanningClubId,
@@ -72,5 +74,19 @@ describe('multiclub planning config', () => {
     const config = { selected_tactic_id: 'removed', selected_tactic_id_by_club: { 'club-a': 'removed', 'club-b': 't2' } }
     expect(resolveClubTacticId(config, 'club-a', 'club-a', ['t2'])).toBeNull()
     expect(sanitizeClubTacticSelections(config, ['t2'])).toEqual({ selected_tactic_id: null, selected_tactic_id_by_club: { 'club-a': null, 'club-b': 't2' } })
+  })
+
+  it('detects cross-club duplicates and moves one identity atomically between plans', () => {
+    const a = { slotAssignments: { principal: { slot: ['player-a', 'shared'] } } }
+    const b = { slotAssignments: { base: { slot: ['shared', 'player-b'] } } }
+    const index = derivePlanningClubIndex({ 'club-a': a, 'club-b': b })
+    expect(index.clubByPlayer).toEqual({ 'player-a': 'club-a', 'player-b': 'club-b' })
+    expect(index.conflicts.shared).toEqual(['club-a', 'club-b'])
+
+    const target = { slotAssignments: { base: { slot: ['player-b', 'player-a'] } } }
+    const moved = movePlayerAcrossClubPlans({ 'club-a': a, 'club-b': b }, 'club-b', 'player-a', target)
+    expect(moved['club-a'].slotAssignments).toEqual({ principal: { slot: ['shared'] } })
+    expect(moved['club-b']).toBe(target)
+    expect(derivePlanningClubIndex(moved).clubByPlayer['player-a']).toBe('club-b')
   })
 })

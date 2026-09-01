@@ -30,9 +30,11 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
   const [ceilingModel, setCeilingModel] = useState<LoadedPotentialRoleCeilingModel | null>(null)
   const [ceilingStatus, setCeilingStatus] = useState<PotentialContextValue['ceilingStatus']>('idle')
   const [ceilingDetail, setCeilingDetail] = useState('Potencial na função ainda não carregado.')
+  const [ceilingLoadAttempt, setCeilingLoadAttempt] = useState(0)
   const [generalCeilingModel, setGeneralCeilingModel] = useState<LoadedPotentialGeneralCeilingModel | null>(null)
   const [generalCeilingStatus, setGeneralCeilingStatus] = useState<PotentialContextValue['generalCeilingStatus']>('idle')
   const [generalCeilingDetail, setGeneralCeilingDetail] = useState('Potencial geral ainda não carregado.')
+  const [generalCeilingLoadAttempt, setGeneralCeilingLoadAttempt] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -62,7 +64,7 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
       setCeilingDetail(error instanceof Error ? error.message : 'Não foi possível carregar o modelo de Potencial na função.')
     })
     return () => { active = false }
-  }, [showPotential, ceilingModel])
+  }, [showPotential, ceilingModel, ceilingLoadAttempt])
 
   useEffect(() => {
     if (!showPotential || generalCeilingModel || generalCeilingStatus === 'loading') return
@@ -80,19 +82,20 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
       setGeneralCeilingDetail(error instanceof Error ? error.message : 'Não foi possível carregar o modelo de Potencial geral.')
     })
     return () => { active = false }
-  }, [showPotential, generalCeilingModel])
+  }, [showPotential, generalCeilingModel, generalCeilingLoadAttempt])
 
   const available = ceilingStatus !== 'invalid' || generalCeilingStatus !== 'invalid'
   const experimental = false
   const setShowPotential = (value: boolean) => {
-    if (value && !available) return
     if (value && ceilingStatus === 'invalid') {
       setCeilingStatus('idle')
       setCeilingDetail('Nova tentativa de carregar Potencial na função será realizada.')
+      setCeilingLoadAttempt(current => current + 1)
     }
     if (value && generalCeilingStatus === 'invalid') {
       setGeneralCeilingStatus('idle')
       setGeneralCeilingDetail('Nova tentativa de carregar Potencial geral será realizada.')
+      setGeneralCeilingLoadAttempt(current => current + 1)
     }
     setShowPotentialState(value)
     try { localStorage.setItem(`${BASE_KEY}:${ownerKey}`, String(value)) } catch { /* local preference remains in memory */ }
@@ -104,7 +107,7 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
     available,
     loading: ceilingStatus === 'loading' || generalCeilingStatus === 'loading',
     experimental,
-    detail: generalCeilingStatus === 'invalid' && ceilingStatus === 'invalid' ? `${generalCeilingDetail} ${ceilingDetail}` : IDLE_DETAIL,
+    detail: generalCeilingStatus === 'invalid' && ceilingStatus === 'invalid' ? `${generalCeilingDetail} ${ceilingDetail} Desative e ative para tentar novamente.` : IDLE_DETAIL,
     ceilingModel,
     ceilingStatus,
     ceilingDetail,

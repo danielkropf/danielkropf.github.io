@@ -137,6 +137,14 @@ export async function loadPlayerMembershipHistory(
 
   if (membershipsResult.error) throw new Error(dbError(membershipsResult.error))
   const memberships = (membershipsResult.data ?? []) as PlayerMembership[]
+  return hydrateMembershipClubs(saveId, memberships)
+}
+
+async function hydrateMembershipClubs(
+  saveId: string,
+  memberships: PlayerMembership[],
+): Promise<PlayerMembershipWithClubs[]> {
+  const db = client()
   const clubIds = [...new Set(memberships.flatMap(row => [
     row.current_club_id,
     row.owner_club_id,
@@ -158,6 +166,35 @@ export async function loadPlayerMembershipHistory(
     loanFromClub: row.loan_from_club_id ? clubs.get(row.loan_from_club_id) ?? null : null,
     loanToClub: row.loan_to_club_id ? clubs.get(row.loan_to_club_id) ?? null : null,
   }))
+}
+
+/**
+ * Loads only memberships explicitly linked to the supplied current snapshots.
+ * The caller remains responsible for resolving duplicates/conflicts per
+ * snapshot; this function intentionally does not choose a factual row.
+ */
+export async function loadPlanningMemberships(
+  saveId: string,
+  snapshotIds: string[],
+): Promise<PlayerMembershipWithClubs[]> {
+  const db = client()
+  const ids = [...new Set(snapshotIds.filter(Boolean))]
+  if (!ids.length) return []
+
+  const memberships: PlayerMembership[] = []
+  const chunkSize = 400
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    const result = await db
+      .from('player_memberships')
+      .select('*')
+      .eq('save_id', saveId)
+      .in('source_snapshot_id', ids.slice(index, index + chunkSize))
+      .order('observed_date')
+      .order('created_at')
+    if (result.error) throw new Error(dbError(result.error))
+    memberships.push(...((result.data ?? []) as PlayerMembership[]))
+  }
+  return hydrateMembershipClubs(saveId, memberships)
 }
 
 export type PlayerEvolutionContextData = {

@@ -13,6 +13,15 @@ export type ClubScopedPlanningConfig<TPlanning> = {
   selected_tactic_id_by_club?: Record<string, string | null>
 }
 
+export type AssignableClubPlanning = {
+  slotAssignments: Record<string, Record<string, string[]>>
+}
+
+export type PlanningClubIndex = {
+  clubByPlayer: Record<string, string>
+  conflicts: Record<string, string[]>
+}
+
 function hasOwn(object: object, key: string) {
   return Object.prototype.hasOwnProperty.call(object, key)
 }
@@ -124,4 +133,50 @@ export function sanitizeClubTacticSelections<TPlanning>(
     selected_tactic_id: legacy && valid.has(legacy) ? legacy : null,
     selected_tactic_id_by_club: selectedByClub,
   }
+}
+
+function withoutPlayer<TPlanning extends AssignableClubPlanning>(planning: TPlanning, playerId: string): TPlanning {
+  return {
+    ...planning,
+    slotAssignments: Object.fromEntries(Object.entries(planning.slotAssignments).map(([groupId, rows]) => [
+      groupId,
+      Object.fromEntries(Object.entries(rows).map(([setId, ids]) => [setId, ids.filter(id => id !== playerId)])),
+    ])),
+  }
+}
+
+export function derivePlanningClubIndex<TPlanning extends AssignableClubPlanning>(
+  planningByClub: Record<string, TPlanning>,
+): PlanningClubIndex {
+  const candidates = new Map<string, Set<string>>()
+  for (const [clubId, planning] of Object.entries(planningByClub)) {
+    for (const playerId of Object.values(planning.slotAssignments).flatMap(rows => Object.values(rows).flat())) {
+      if (!playerId) continue
+      const clubs = candidates.get(playerId) ?? new Set<string>()
+      clubs.add(clubId)
+      candidates.set(playerId, clubs)
+    }
+  }
+
+  const clubByPlayer: Record<string, string> = {}
+  const conflicts: Record<string, string[]> = {}
+  for (const [playerId, clubs] of candidates) {
+    const values = [...clubs].sort()
+    if (values.length === 1) clubByPlayer[playerId] = values[0]
+    else conflicts[playerId] = values
+  }
+  return { clubByPlayer, conflicts }
+}
+
+/** Makes a player unique across club plans without changing unrelated state. */
+export function movePlayerAcrossClubPlans<TPlanning extends AssignableClubPlanning>(
+  planningByClub: Record<string, TPlanning>,
+  targetClubId: string,
+  playerId: string,
+  targetPlanning: TPlanning,
+): Record<string, TPlanning> {
+  return Object.fromEntries(Object.entries({ ...planningByClub, [targetClubId]: targetPlanning }).map(([clubId, planning]) => [
+    clubId,
+    clubId === targetClubId ? planning : withoutPlayer(planning, playerId),
+  ]))
 }

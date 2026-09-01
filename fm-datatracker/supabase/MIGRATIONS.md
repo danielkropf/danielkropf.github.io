@@ -58,6 +58,18 @@ Release ordering for Phase 3A:
 4. Confirm `datatracker_schema_info().schema_version = 202608300001` and `multiclub_tracking_management=true`, then run Security and Performance Advisors.
 5. Run a real Saves-page smoke: track a known Club, create a manual Club, deactivate/reactivate the same tracked Club, reload, and confirm the primary Club cannot be deactivated.
 
+## Import RPC timeout hotfix
+
+Applied in production and now mirrored canonically:
+
+- `20260831043351 extend_import_fm_export_timeout`
+  - sets `statement_timeout='60s'` only on `public.import_fm_export(uuid,text,text,date,text,text,jsonb,jsonb)`;
+  - preserves `SECURITY INVOKER`, grants and the global timeout of the `authenticated` role;
+  - prevents the known J1-sized atomic import from being cancelled by the previous 8-second role timeout;
+  - is a functional timeout exception, not a substitute for later import-performance optimization.
+
+Fresh environments must apply this migration after `20260830000100`. Existing production already has the matching ledger entry and must not replay it.
+
 ## Validation contract
 
 After applying Phase 1A:
