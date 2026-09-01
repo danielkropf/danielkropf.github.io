@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
-import { loadProjectionReference, resetProjectionReferenceCache, type ProjectionReference, type ProjectionReferenceState } from '../../lib/projection-reference'
+import { loadPotentialRoleCeilingModel, type LoadedPotentialRoleCeilingModel } from '../../lib/potential-role-ceiling-model'
+import { loadPotentialGeneralCeilingModel, type LoadedPotentialGeneralCeilingModel } from '../../lib/potential-general-ceiling-model'
 
 type PotentialContextValue = {
   showPotential: boolean
@@ -9,18 +10,29 @@ type PotentialContextValue = {
   loading: boolean
   experimental: boolean
   detail: string
-  reference: ProjectionReference | null
+  ceilingModel: LoadedPotentialRoleCeilingModel | null
+  ceilingStatus: 'idle' | 'loading' | 'ready' | 'invalid'
+  ceilingDetail: string
+  generalCeilingModel: LoadedPotentialGeneralCeilingModel | null
+  generalCeilingStatus: 'idle' | 'loading' | 'ready' | 'invalid'
+  generalCeilingDetail: string
 }
 
 const PotentialContext = createContext<PotentialContextValue | null>(null)
 const BASE_KEY = 'fm-datatracker:show-potential'
-const IDLE_DETAIL = 'Projection v2.1 será carregada ao ativar Mostrar potencial.'
+const IDLE_DETAIL = 'Potencial geral e Potencial na função serão carregados ao ativar Mostrar potencial.'
+const CEILING_MANIFEST = `${import.meta.env.BASE_URL}reference/potential-role-ceiling.fm26-v1_1.manifest.json`
+const GENERAL_CEILING_MANIFEST = `${import.meta.env.BASE_URL}reference/potential-general-ceiling.fm26-v2.manifest.json`
 
 export function PotentialProvider({ children }: { children: ReactNode }) {
   const [ownerKey, setOwnerKey] = useState('anonymous')
   const [showPotential, setShowPotentialState] = useState(false)
-  const [referenceState, setReferenceState] = useState<ProjectionReferenceState | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [ceilingModel, setCeilingModel] = useState<LoadedPotentialRoleCeilingModel | null>(null)
+  const [ceilingStatus, setCeilingStatus] = useState<PotentialContextValue['ceilingStatus']>('idle')
+  const [ceilingDetail, setCeilingDetail] = useState('Potencial na função ainda não carregado.')
+  const [generalCeilingModel, setGeneralCeilingModel] = useState<LoadedPotentialGeneralCeilingModel | null>(null)
+  const [generalCeilingStatus, setGeneralCeilingStatus] = useState<PotentialContextValue['generalCeilingStatus']>('idle')
+  const [generalCeilingDetail, setGeneralCeilingDetail] = useState('Potencial geral ainda não carregado.')
 
   useEffect(() => {
     let active = true
@@ -35,36 +47,53 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!showPotential || referenceState?.reference || referenceState?.status === 'missing' || referenceState?.status === 'invalid') return
+    if (!showPotential || ceilingModel || ceilingStatus === 'loading') return
     let active = true
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
-    let attempt = 0
-    const load = () => {
-      setLoading(true)
-      if (attempt > 0) resetProjectionReferenceCache()
-      void loadProjectionReference().then(state => {
-        if (!active) return
-        setReferenceState(state)
-        setLoading(false)
-        if (state.status === 'missing' && attempt < 2) {
-          attempt += 1
-          retryTimer = setTimeout(load, 1200 * attempt)
-          return
-        }
-        if (state.status === 'missing' || state.status === 'invalid') {
-          setShowPotentialState(false)
-          try { localStorage.setItem(`${BASE_KEY}:${ownerKey}`, 'false') } catch { /* preference stays in memory */ }
-        }
-      })
-    }
-    load()
-    return () => { active = false; if (retryTimer) clearTimeout(retryTimer) }
-  }, [showPotential, ownerKey])
+    setCeilingStatus('loading')
+    setCeilingDetail('Carregando modelo validado de Potencial na função…')
+    void loadPotentialRoleCeilingModel(CEILING_MANIFEST).then(model => {
+      if (!active) return
+      setCeilingModel(model)
+      setCeilingStatus('ready')
+      setCeilingDetail(`Potencial na função · ${model.manifest.potentialModelVersion}`)
+    }).catch(error => {
+      if (!active) return
+      setCeilingStatus('invalid')
+      setCeilingDetail(error instanceof Error ? error.message : 'Não foi possível carregar o modelo de Potencial na função.')
+    })
+    return () => { active = false }
+  }, [showPotential, ceilingModel])
 
-  const available = referenceState ? referenceState.status !== 'missing' && referenceState.status !== 'invalid' : true
-  const experimental = referenceState?.status === 'experimental'
+  useEffect(() => {
+    if (!showPotential || generalCeilingModel || generalCeilingStatus === 'loading') return
+    let active = true
+    setGeneralCeilingStatus('loading')
+    setGeneralCeilingDetail('Carregando modelo validado de Potencial geral…')
+    void loadPotentialGeneralCeilingModel(GENERAL_CEILING_MANIFEST).then(model => {
+      if (!active) return
+      setGeneralCeilingModel(model)
+      setGeneralCeilingStatus('ready')
+      setGeneralCeilingDetail(`Potencial geral · ${model.manifest.potentialModelVersion}`)
+    }).catch(error => {
+      if (!active) return
+      setGeneralCeilingStatus('invalid')
+      setGeneralCeilingDetail(error instanceof Error ? error.message : 'Não foi possível carregar o modelo de Potencial geral.')
+    })
+    return () => { active = false }
+  }, [showPotential, generalCeilingModel])
+
+  const available = ceilingStatus !== 'invalid' || generalCeilingStatus !== 'invalid'
+  const experimental = false
   const setShowPotential = (value: boolean) => {
     if (value && !available) return
+    if (value && ceilingStatus === 'invalid') {
+      setCeilingStatus('idle')
+      setCeilingDetail('Nova tentativa de carregar Potencial na função será realizada.')
+    }
+    if (value && generalCeilingStatus === 'invalid') {
+      setGeneralCeilingStatus('idle')
+      setGeneralCeilingDetail('Nova tentativa de carregar Potencial geral será realizada.')
+    }
     setShowPotentialState(value)
     try { localStorage.setItem(`${BASE_KEY}:${ownerKey}`, String(value)) } catch { /* local preference remains in memory */ }
   }
@@ -73,11 +102,16 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
     showPotential,
     setShowPotential,
     available,
-    loading,
+    loading: ceilingStatus === 'loading' || generalCeilingStatus === 'loading',
     experimental,
-    detail: referenceState?.detail ?? IDLE_DETAIL,
-    reference: referenceState?.reference ?? null,
-  }), [showPotential, available, loading, experimental, ownerKey, referenceState])
+    detail: generalCeilingStatus === 'invalid' && ceilingStatus === 'invalid' ? `${generalCeilingDetail} ${ceilingDetail}` : IDLE_DETAIL,
+    ceilingModel,
+    ceilingStatus,
+    ceilingDetail,
+    generalCeilingModel,
+    generalCeilingStatus,
+    generalCeilingDetail,
+  }), [showPotential, available, experimental, ceilingModel, ceilingStatus, ceilingDetail, generalCeilingModel, generalCeilingStatus, generalCeilingDetail])
 
   return <PotentialContext.Provider value={value}>{children}</PotentialContext.Provider>
 }

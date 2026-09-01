@@ -18,11 +18,9 @@ export function AppShell() {
   useEffect(() => { if (selected) preloadSave(selected.id) }, [selected?.id])
   const currentPlayerId = /^\/players\/([^/]+)$/.exec(location.pathname)?.[1] ?? null
   const compareTo = currentPlayerId ? `/compare?a=${encodeURIComponent(currentPlayerId)}` : '/compare'
-  const potentialTitle = potential.experimental
-    ? `${potential.detail} O CP do Football Manager não é exibido.`
-    : potential.available
-      ? 'Mostra a projeção média estimada pelo DataTracker. O CP do Football Manager não é exibido.'
-      : potential.detail
+  const potentialTitle = potential.available
+    ? 'Mostra os melhores scores plausíveis em um cenário positivo de carreira, na Nota Geral e por função. Não é a evolução mais provável e o PA/CP do Football Manager não é exibido.'
+    : potential.detail
 
   return <div className="shell">
     <aside>
@@ -53,3 +51,4 @@ export function AppShell() {
     {settings && <SettingsModal close={() => setSettings(false)} />}
   </div>
 }
+

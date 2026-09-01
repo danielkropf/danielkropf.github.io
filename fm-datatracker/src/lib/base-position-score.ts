@@ -8,6 +8,9 @@ export type BasePositionScoreResult = {
   position: string
   scoreKey: string
   family: ProjectionFamily
+  group: BasePositionGroup
+  roleCode: string
+  roleName: string
   score: number
 }
 
@@ -19,11 +22,13 @@ export type GeneralScoreSnapshot = {
   player_attributes: AttributeValue[]
 }
 
-type BaseDefinition = {
+export type BasePositionGroup = 'GK' | 'CB' | 'FB' | 'WB' | 'DM' | 'CM' | 'WM' | 'AM' | 'W' | 'ST'
+
+export type BaseDefinition = {
   position: string
   scoreKey: string
   family: ProjectionFamily
-  group: 'GK' | 'CB' | 'FB' | 'WB' | 'DM' | 'CM' | 'WM' | 'AM' | 'W' | 'ST'
+  group: BasePositionGroup
   roleCode: string
   roleName: string
 }
@@ -77,7 +82,7 @@ export function basePositionScores(snapshot: GeneralScoreSnapshot): BasePosition
     if (seen.has(key)) continue
     const score = scoreDefinition(snapshot.player_attributes, definition)
     if (score === null) continue
-    candidates.push({ position: definition.position, scoreKey: definition.scoreKey, family: definition.family, score })
+    candidates.push({ position: definition.position, scoreKey: definition.scoreKey, family: definition.family, group: definition.group, roleCode: definition.roleCode, roleName: definition.roleName, score })
     seen.add(key)
   }
   return candidates
@@ -101,7 +106,7 @@ export function basePositionScoresForReference(player: ReferencePlayer, attribut
     if (seen.has(key)) continue
     const score = pairedRoleScore(attributes, baseWeights('IP', definition), baseWeights('OOP', definition))
     if (score === null) continue
-    candidates.push({ position: definition.position, scoreKey: definition.scoreKey, family: definition.family, score })
+    candidates.push({ position: definition.position, scoreKey: definition.scoreKey, family: definition.family, group: definition.group, roleCode: definition.roleCode, roleName: definition.roleName, score })
     seen.add(key)
   }
   return candidates
@@ -113,3 +118,4 @@ export function generalScoreForReference(player: ReferencePlayer, attributeKeys:
 
 export const generalBasePositionScore = generalScoreForSnapshot
 export const generalBasePositionScoreForReference = generalScoreForReference
+

@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "fm-datatracker-potential-general-ceiling-manifest-v1",
+  "potentialModelVersion": "pccgs-direct-hgbq95-hrmono-phasefloor-20260901-v1",
+  "engineVersion": "plausible-career-ceiling-general-score-engine-v1",
+  "scoringModelVersion": "2.0",
+  "basePositionCatalogVersion": "fm26-canonical-base-position-10-20260901",
+  "model": {
+    "file": "potential-general-ceiling.fm26-v1.bin",
+    "sha256": "754ab2be596d3582a3395038ebc0bed2fb3c1afd565415fa2050c1cda592db97",
+    "byteLength": 448256,
+    "format": "FMDTGC01",
+    "formatVersion": 1,
+    "treeCount": 180,
+    "featureCount": 62,
+    "basePositionGroupCount": 10
+  },
+  "training": {
+    "quantile": 0.95,
+    "randomState": 20260901,
+    "trainingRows": 11896,
+    "trainingSources": [
+      "2025",
+      "2026"
+    ],
+    "headroomMonotonicConstraint": true,
+    "frozenBaselineEligibility": true
+  },
+  "domain": {
+    "minAgeInclusive": 16,
+    "maxAgeExclusive": 30,
+    "positionEligibilityThreshold": 15,
+    "canonicalBasePositionGroups": 10,
+    "requiresTrustedCaPa": true,
+    "requiresCompleteVisible47": true,
+    "requiresPotentialRoleCeilingV1_1": true,
+    "customMatricesSupported": false
+  },
+  "featureOrderModel": [
+    "current_best_base_group_id",
+    "age",
+    "current_general_score",
+    "headroom",
+    "eligible_base_group_count",
+    "eligible_gk",
+    "eligible_cb",
+    "eligible_fb",
+    "eligible_wb",
+    "eligible_dm",
+    "eligible_cm",
+    "eligible_wm",
+    "eligible_am",
+    "eligible_w",
+    "eligible_st",
+    "corners",
+    "crossing",
+    "dribbling",
+    "finishing",
+    "first_touch",
+    "free_kick_taking",
+    "heading",
+    "long_shots",
+    "long_throws",
+    "marking",
+    "passing",
+    "penalty_taking",
+    "tackling",
+    "technique",
+    "aggression",
+    "anticipation",
+    "bravery",
+    "composure",
+    "concentration",
+    "decisions",
+    "determination",
+    "flair",
+    "leadership",
+    "off_the_ball",
+    "positioning",
+    "team_work",
+    "vision",
+    "work_rate",
+    "acceleration",
+    "agility",
+    "balance",
+    "jumping_reach",
+    "natural_fitness",
+    "pace",
+    "stamina",
+    "strength",
+    "aerial_reach",
+    "command_of_area",
+    "communication",
+    "eccentricity",
+    "handling",
+    "kicking",
+    "one_on_ones",
+    "punching",
+    "reflexes",
+    "rushing_out_tendency",
+    "throwing"
+  ],
+  "basePositionGroups": [
+    {
+      "id": 0,
+      "code": "GK"
+    },
+    {
+      "id": 1,
+      "code": "CB"
+    },
+    {
+      "id": 2,
+      "code": "FB"
+    },
+    {
+      "id": 3,
+      "code": "WB"
+    },
+    {
+      "id": 4,
+      "code": "DM"
+    },
+    {
+      "id": 5,
+      "code": "CM"
+    },
+    {
+      "id": 6,
+      "code": "WM"
+    },
+    {
+      "id": 7,
+      "code": "AM"
+    },
+    {
+      "id": 8,
+      "code": "W"
+    },
+    {
+      "id": 9,
+      "code": "ST"
+    }
+  ],
+  "combination": {
+    "method": "maximum",
+    "components": [
+      "direct_general_ceiling",
+      "best_eligible_base_role_ceiling"
+    ],
+    "roleFloorModelVersion": "pccrs-phase-hgbq925-20260901-v1.1",
+    "clampMin": "current_general_score",
+    "clampMax": 20
+  },
+  "notes": [
+    "The 0.95 quantile is a positive-scenario calibration target, not an individual probability of attainment.",
+    "Eligibility is frozen from the current snapshot using positional rating >=15, with the canonical positions fallback already used by GeneralScore.",
+    "The role floor reuses the validated individual-function v1.1 engine and geometric IP/OOP composition for each eligible base group.",
+    "Professionalism, Ambition, Determination and history do not receive an independent numerical uplift in v1."
+  ]
+}

@@ -1,0 +1,689 @@
+{
+  "schemaVersion": "fm-datatracker-potential-role-ceiling-manifest-v1_1",
+  "potentialModelVersion": "pccrs-phase-hgbq925-20260901-v1.1",
+  "engineVersion": "plausible-career-ceiling-role-score-engine-v1.1",
+  "scoringModelVersion": "2.0",
+  "roleCatalogVersion": "fm26-canonical-individual-83-20260901",
+  "model": {
+    "file": "potential-role-ceiling.fm26-v1_1.bin",
+    "sha256": "8f13649e7f6e032b1af7b77cee126c051ec7344ece60e5fc0599415d6e21cb83",
+    "byteLength": 455872,
+    "format": "FMDTPH21",
+    "formatVersion": 2,
+    "treeCount": 180,
+    "featureCount": 51,
+    "individualRoleCount": 83
+  },
+  "training": {
+    "marginalQuantile": 0.925,
+    "randomState": 20260901,
+    "sampledFunctionsPerPlayer": 26,
+    "sampledIpFunctionsPerPlayer": 13,
+    "sampledOopFunctionsPerPlayer": 13,
+    "trainingRows": 309296,
+    "trainingSources": [
+      "2025",
+      "2026"
+    ],
+    "additionalYouthCorrection": false
+  },
+  "domain": {
+    "minAgeInclusive": 16,
+    "maxAgeExclusive": 30,
+    "canonicalIpFunctions": 48,
+    "canonicalOopFunctions": 35,
+    "canonicalIndividualFunctions": 83,
+    "canonicalPairCapacity": 1680,
+    "requiresTrustedCaPa": true,
+    "requiresCompleteVisible47": true,
+    "customMatricesSupported": false
+  },
+  "featureOrderModel": [
+    "individual_role_id",
+    "age",
+    "current_single_phase_role_score",
+    "headroom",
+    "corners",
+    "crossing",
+    "dribbling",
+    "finishing",
+    "first_touch",
+    "free_kick_taking",
+    "heading",
+    "long_shots",
+    "long_throws",
+    "marking",
+    "passing",
+    "penalty_taking",
+    "tackling",
+    "technique",
+    "aggression",
+    "anticipation",
+    "bravery",
+    "composure",
+    "concentration",
+    "decisions",
+    "determination",
+    "flair",
+    "leadership",
+    "off_the_ball",
+    "positioning",
+    "team_work",
+    "vision",
+    "work_rate",
+    "acceleration",
+    "agility",
+    "balance",
+    "jumping_reach",
+    "natural_fitness",
+    "pace",
+    "stamina",
+    "strength",
+    "aerial_reach",
+    "command_of_area",
+    "communication",
+    "eccentricity",
+    "handling",
+    "kicking",
+    "one_on_ones",
+    "punching",
+    "reflexes",
+    "rushing_out_tendency",
+    "throwing"
+  ],
+  "individualRoles": [
+    {
+      "id": 0,
+      "phase": "IP",
+      "group": "GK",
+      "code": "GK",
+      "name": "Goalkeeper"
+    },
+    {
+      "id": 1,
+      "phase": "IP",
+      "group": "GK",
+      "code": "NNGK",
+      "name": "No-Nonsense Goalkeeper"
+    },
+    {
+      "id": 2,
+      "phase": "IP",
+      "group": "GK",
+      "code": "BPGK",
+      "name": "Ball-Playing Goalkeeper"
+    },
+    {
+      "id": 3,
+      "phase": "IP",
+      "group": "CB",
+      "code": "CB",
+      "name": "Centre-Back"
+    },
+    {
+      "id": 4,
+      "phase": "IP",
+      "group": "CB",
+      "code": "BPCB",
+      "name": "Ball-Playing Centre-Back"
+    },
+    {
+      "id": 5,
+      "phase": "IP",
+      "group": "CB",
+      "code": "NNCB",
+      "name": "No-Nonsense Centre-Back"
+    },
+    {
+      "id": 6,
+      "phase": "IP",
+      "group": "CB",
+      "code": "ACB",
+      "name": "Advanced Centre-Back"
+    },
+    {
+      "id": 7,
+      "phase": "IP",
+      "group": "CB",
+      "code": "OCB",
+      "name": "Overlapping Centre-Back"
+    },
+    {
+      "id": 8,
+      "phase": "IP",
+      "group": "FB",
+      "code": "FB",
+      "name": "Full Back"
+    },
+    {
+      "id": 9,
+      "phase": "IP",
+      "group": "FB",
+      "code": "WB",
+      "name": "Wing Back"
+    },
+    {
+      "id": 10,
+      "phase": "IP",
+      "group": "FB",
+      "code": "IFB",
+      "name": "Inside Full-Back"
+    },
+    {
+      "id": 11,
+      "phase": "IP",
+      "group": "FB",
+      "code": "IWB",
+      "name": "Inside Wing-Back"
+    },
+    {
+      "id": 12,
+      "phase": "IP",
+      "group": "FB",
+      "code": "PWB",
+      "name": "Playmaking Wing-Back"
+    },
+    {
+      "id": 13,
+      "phase": "IP",
+      "group": "WB",
+      "code": "WB",
+      "name": "Wing Back"
+    },
+    {
+      "id": 14,
+      "phase": "IP",
+      "group": "WB",
+      "code": "IWB",
+      "name": "Inside Wing-Back"
+    },
+    {
+      "id": 15,
+      "phase": "IP",
+      "group": "WB",
+      "code": "PWB",
+      "name": "Playmaking Wing-Back"
+    },
+    {
+      "id": 16,
+      "phase": "IP",
+      "group": "WB",
+      "code": "AWB",
+      "name": "Advanced Wing-Back"
+    },
+    {
+      "id": 17,
+      "phase": "IP",
+      "group": "DM",
+      "code": "DM",
+      "name": "Defensive Midfielder"
+    },
+    {
+      "id": 18,
+      "phase": "IP",
+      "group": "DM",
+      "code": "DLP",
+      "name": "Deep-Lying Playmaker"
+    },
+    {
+      "id": 19,
+      "phase": "IP",
+      "group": "DM",
+      "code": "HB",
+      "name": "Half Back"
+    },
+    {
+      "id": 20,
+      "phase": "IP",
+      "group": "DM",
+      "code": "B2BM",
+      "name": "Box-To-Box Midfielder"
+    },
+    {
+      "id": 21,
+      "phase": "IP",
+      "group": "DM",
+      "code": "B2BP",
+      "name": "Box-To-Box Playmaker"
+    },
+    {
+      "id": 22,
+      "phase": "IP",
+      "group": "CM",
+      "code": "CM",
+      "name": "Central Midfielder"
+    },
+    {
+      "id": 23,
+      "phase": "IP",
+      "group": "CM",
+      "code": "MP",
+      "name": "Midfield Playmaker"
+    },
+    {
+      "id": 24,
+      "phase": "IP",
+      "group": "CM",
+      "code": "AP",
+      "name": "Advanced Playmaker"
+    },
+    {
+      "id": 25,
+      "phase": "IP",
+      "group": "CM",
+      "code": "AM",
+      "name": "Attacking Midfielder"
+    },
+    {
+      "id": 26,
+      "phase": "IP",
+      "group": "CM",
+      "code": "CHM",
+      "name": "Channel Midfielder"
+    },
+    {
+      "id": 27,
+      "phase": "IP",
+      "group": "CM",
+      "code": "WCM",
+      "name": "Wide Central Midfielder"
+    },
+    {
+      "id": 28,
+      "phase": "IP",
+      "group": "WM",
+      "code": "WM",
+      "name": "Wide Midfielder"
+    },
+    {
+      "id": 29,
+      "phase": "IP",
+      "group": "WM",
+      "code": "W",
+      "name": "Winger"
+    },
+    {
+      "id": 30,
+      "phase": "IP",
+      "group": "WM",
+      "code": "IW",
+      "name": "Inside Winger"
+    },
+    {
+      "id": 31,
+      "phase": "IP",
+      "group": "WM",
+      "code": "PW",
+      "name": "Playmaking Winger"
+    },
+    {
+      "id": 32,
+      "phase": "IP",
+      "group": "AM",
+      "code": "AM",
+      "name": "Attacking Midfielder"
+    },
+    {
+      "id": 33,
+      "phase": "IP",
+      "group": "AM",
+      "code": "AP",
+      "name": "Advanced Playmaker"
+    },
+    {
+      "id": 34,
+      "phase": "IP",
+      "group": "AM",
+      "code": "CHM",
+      "name": "Channel Midfielder"
+    },
+    {
+      "id": 35,
+      "phase": "IP",
+      "group": "AM",
+      "code": "FR",
+      "name": "Free Role"
+    },
+    {
+      "id": 36,
+      "phase": "IP",
+      "group": "AM",
+      "code": "SS",
+      "name": "Second Striker"
+    },
+    {
+      "id": 37,
+      "phase": "IP",
+      "group": "W",
+      "code": "W",
+      "name": "Winger"
+    },
+    {
+      "id": 38,
+      "phase": "IP",
+      "group": "W",
+      "code": "IW",
+      "name": "Inside Winger"
+    },
+    {
+      "id": 39,
+      "phase": "IP",
+      "group": "W",
+      "code": "IF",
+      "name": "Inside Forward"
+    },
+    {
+      "id": 40,
+      "phase": "IP",
+      "group": "W",
+      "code": "PW",
+      "name": "Playmaking Winger"
+    },
+    {
+      "id": 41,
+      "phase": "IP",
+      "group": "W",
+      "code": "WF",
+      "name": "Wide Forward"
+    },
+    {
+      "id": 42,
+      "phase": "IP",
+      "group": "ST",
+      "code": "CF",
+      "name": "Centre Forward"
+    },
+    {
+      "id": 43,
+      "phase": "IP",
+      "group": "ST",
+      "code": "CHF",
+      "name": "Channel Forward"
+    },
+    {
+      "id": 44,
+      "phase": "IP",
+      "group": "ST",
+      "code": "DLF",
+      "name": "Deep-Lying Forward"
+    },
+    {
+      "id": 45,
+      "phase": "IP",
+      "group": "ST",
+      "code": "F9",
+      "name": "False Nine"
+    },
+    {
+      "id": 46,
+      "phase": "IP",
+      "group": "ST",
+      "code": "P",
+      "name": "Poacher"
+    },
+    {
+      "id": 47,
+      "phase": "IP",
+      "group": "ST",
+      "code": "TF",
+      "name": "Target Forward"
+    },
+    {
+      "id": 48,
+      "phase": "OOP",
+      "group": "GK",
+      "code": "GK",
+      "name": "Goalkeeper"
+    },
+    {
+      "id": 49,
+      "phase": "OOP",
+      "group": "GK",
+      "code": "LHK",
+      "name": "Line-Holding Keeper"
+    },
+    {
+      "id": 50,
+      "phase": "OOP",
+      "group": "GK",
+      "code": "SK",
+      "name": "Sweeper Keeper"
+    },
+    {
+      "id": 51,
+      "phase": "OOP",
+      "group": "CB",
+      "code": "CB",
+      "name": "Centre-Back"
+    },
+    {
+      "id": 52,
+      "phase": "OOP",
+      "group": "CB",
+      "code": "CCB",
+      "name": "Covering Centre-Back"
+    },
+    {
+      "id": 53,
+      "phase": "OOP",
+      "group": "CB",
+      "code": "SCB",
+      "name": "Stopping Centre-Back"
+    },
+    {
+      "id": 54,
+      "phase": "OOP",
+      "group": "FB",
+      "code": "FB",
+      "name": "Full Back"
+    },
+    {
+      "id": 55,
+      "phase": "OOP",
+      "group": "FB",
+      "code": "HFB",
+      "name": "Holding Full-Back"
+    },
+    {
+      "id": 56,
+      "phase": "OOP",
+      "group": "FB",
+      "code": "PFB",
+      "name": "Pressing Full-Back"
+    },
+    {
+      "id": 57,
+      "phase": "OOP",
+      "group": "WB",
+      "code": "WB",
+      "name": "Wing Back"
+    },
+    {
+      "id": 58,
+      "phase": "OOP",
+      "group": "WB",
+      "code": "HWB",
+      "name": "Holding Wing-Back"
+    },
+    {
+      "id": 59,
+      "phase": "OOP",
+      "group": "WB",
+      "code": "PWB",
+      "name": "Pressing Wing-Back"
+    },
+    {
+      "id": 60,
+      "phase": "OOP",
+      "group": "DM",
+      "code": "DM",
+      "name": "Defensive Midfielder"
+    },
+    {
+      "id": 61,
+      "phase": "OOP",
+      "group": "DM",
+      "code": "DDM",
+      "name": "Dropping Defensive Midfielder"
+    },
+    {
+      "id": 62,
+      "phase": "OOP",
+      "group": "DM",
+      "code": "SDM",
+      "name": "Screening Defensive Midfielder"
+    },
+    {
+      "id": 63,
+      "phase": "OOP",
+      "group": "DM",
+      "code": "WCDM",
+      "name": "Wide Covering Defensive Midfielder"
+    },
+    {
+      "id": 64,
+      "phase": "OOP",
+      "group": "CM",
+      "code": "CM",
+      "name": "Central Midfielder"
+    },
+    {
+      "id": 65,
+      "phase": "OOP",
+      "group": "CM",
+      "code": "PCM",
+      "name": "Pressing Central Midfielder"
+    },
+    {
+      "id": 66,
+      "phase": "OOP",
+      "group": "CM",
+      "code": "SCM",
+      "name": "Screening Central Midfielder"
+    },
+    {
+      "id": 67,
+      "phase": "OOP",
+      "group": "CM",
+      "code": "WCCM",
+      "name": "Wide Covering Central Midfielder"
+    },
+    {
+      "id": 68,
+      "phase": "OOP",
+      "group": "WM",
+      "code": "WM",
+      "name": "Wide Midfielder"
+    },
+    {
+      "id": 69,
+      "phase": "OOP",
+      "group": "WM",
+      "code": "TWM",
+      "name": "Tracking Wide Midfielder"
+    },
+    {
+      "id": 70,
+      "phase": "OOP",
+      "group": "WM",
+      "code": "WOWM",
+      "name": "Wide Outlet Wide Midfielder"
+    },
+    {
+      "id": 71,
+      "phase": "OOP",
+      "group": "AM",
+      "code": "AM",
+      "name": "Attacking Midfielder"
+    },
+    {
+      "id": 72,
+      "phase": "OOP",
+      "group": "AM",
+      "code": "COAM",
+      "name": "Central Outlet Attacking Midfielder"
+    },
+    {
+      "id": 73,
+      "phase": "OOP",
+      "group": "AM",
+      "code": "SOAM",
+      "name": "Splitting Outlet Attacking Midfielder"
+    },
+    {
+      "id": 74,
+      "phase": "OOP",
+      "group": "AM",
+      "code": "TAM",
+      "name": "Tracking Attacking Midfielder"
+    },
+    {
+      "id": 75,
+      "phase": "OOP",
+      "group": "W",
+      "code": "W",
+      "name": "Winger"
+    },
+    {
+      "id": 76,
+      "phase": "OOP",
+      "group": "W",
+      "code": "IOW",
+      "name": "Inside Outlet Winger"
+    },
+    {
+      "id": 77,
+      "phase": "OOP",
+      "group": "W",
+      "code": "TW",
+      "name": "Tracking Winger"
+    },
+    {
+      "id": 78,
+      "phase": "OOP",
+      "group": "W",
+      "code": "WOW",
+      "name": "Wide Outlet Winger"
+    },
+    {
+      "id": 79,
+      "phase": "OOP",
+      "group": "ST",
+      "code": "CF",
+      "name": "Centre Forward"
+    },
+    {
+      "id": 80,
+      "phase": "OOP",
+      "group": "ST",
+      "code": "COCF",
+      "name": "Central Outlet Centre Forward"
+    },
+    {
+      "id": 81,
+      "phase": "OOP",
+      "group": "ST",
+      "code": "SOCF",
+      "name": "Splitting Outlet Centre Forward"
+    },
+    {
+      "id": 82,
+      "phase": "OOP",
+      "group": "ST",
+      "code": "TCF",
+      "name": "Tracking Centre Forward"
+    }
+  ],
+  "combination": {
+    "method": "geometric_mean",
+    "formula": "sqrt(ip_ceiling * oop_ceiling)",
+    "clampMin": "current_combined_role_score",
+    "clampMax": 20
+  },
+  "notes": [
+    "The 0.925 quantile is a marginal research calibration target, not an individual probability of attainment.",
+    "Canonical mixed IP/OOP pairs are supported when both individual roles resolve exactly.",
+    "Professionalism/Ambition/Determination/history do not receive an independent numerical uplift in v1.1.",
+    "CA and PA are required as trusted provenance facts; the fitted numerical feature is headroom=max(0,PA-CA)."
+  ]
+}

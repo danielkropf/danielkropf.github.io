@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "fm-datatracker-potential-general-ceiling-manifest-v2",
+  "potentialModelVersion": "pccgs-profileq95-coarseq90-phasefloor-20260901-v2",
+  "engineVersion": "plausible-career-ceiling-general-score-engine-v2",
+  "scoringModelVersion": "2.0",
+  "basePositionCatalogVersion": "fm26-canonical-base-position-10-20260901",
+  "model": {
+    "file": "potential-general-ceiling.fm26-v2.bin",
+    "sha256": "7d1c56053dd615b3b216e63e971cde7db80c429abe53ad226d769baba54853ea",
+    "byteLength": 918104,
+    "format": "FMDTGC02",
+    "formatVersion": 2,
+    "profileTreeCount": 180,
+    "profileFeatureCount": 62,
+    "coarseTreeCount": 180,
+    "coarseFeatureCount": 15,
+    "basePositionGroupCount": 10
+  },
+  "training": {
+    "profileQuantile": 0.95,
+    "coarseFloorQuantile": 0.9,
+    "randomState": 20260901,
+    "trainingRows": 12728,
+    "trainingSources": ["2025", "2026"],
+    "headroomMonotonicConstraint": true,
+    "frozenBaselineEligibility": true
+  },
+  "domain": {
+    "minimumAgeGate": false,
+    "observedMinimumAgeInclusive": 15,
+    "maxAgeExclusive": 30,
+    "roleFloorMinimumAgeInclusive": 16,
+    "positionEligibilityThreshold": 15,
+    "canonicalBasePositionGroups": 10,
+    "requiresTrustedCaPa": true,
+    "requiresCompleteVisible47": true,
+    "requiresPotentialRoleCeilingV1_1WhenAgeSupported": true,
+    "customMatricesSupported": false
+  },
+  "featureOrderModel": [
+    "current_best_base_group_id", "age", "current_general_score", "headroom", "eligible_base_group_count",
+    "eligible_gk", "eligible_cb", "eligible_fb", "eligible_wb", "eligible_dm", "eligible_cm", "eligible_wm", "eligible_am", "eligible_w", "eligible_st",
+    "corners", "crossing", "dribbling", "finishing", "first_touch", "free_kick_taking", "heading", "long_shots", "long_throws", "marking", "passing", "penalty_taking", "tackling", "technique",
+    "aggression", "anticipation", "bravery", "composure", "concentration", "decisions", "determination", "flair", "leadership", "off_the_ball", "positioning", "team_work", "vision", "work_rate",
+    "acceleration", "agility", "balance", "jumping_reach", "natural_fitness", "pace", "stamina", "strength",
+    "aerial_reach", "command_of_area", "communication", "eccentricity", "handling", "kicking", "one_on_ones", "punching", "reflexes", "rushing_out_tendency", "throwing"
+  ],
+  "basePositionGroups": [
+    {"id": 0, "code": "GK"}, {"id": 1, "code": "CB"}, {"id": 2, "code": "FB"}, {"id": 3, "code": "WB"}, {"id": 4, "code": "DM"},
+    {"id": 5, "code": "CM"}, {"id": 6, "code": "WM"}, {"id": 7, "code": "AM"}, {"id": 8, "code": "W"}, {"id": 9, "code": "ST"}
+  ],
+  "combination": {
+    "method": "maximum",
+    "components": ["profile_general_ceiling_q95", "headroom_dominant_coarse_floor_q90", "best_eligible_base_role_ceiling_when_age_supported"],
+    "roleFloorModelVersion": "pccrs-phase-hgbq925-20260901-v1.1",
+    "clampMin": "current_general_score",
+    "clampMax": 20
+  },
+  "notes": [
+    "The profile q0.95 and coarse q0.90 are positive-scenario calibration targets, not individual attainment probabilities.",
+    "The coarse floor deliberately removes the 47-attribute profile so PA/headroom can protect very young, low-CA players whose current attribute shape is still immature.",
+    "The coarse floor is evaluated as a cumulative 10-CA headroom envelope, guaranteeing that additional trusted headroom cannot lower the final floor.",
+    "There is no product minimum-age gate. Age 15 is directly observed; younger values use the fitted young boundary without suppressing the result.",
+    "The validated role floor remains active from age 16; below 16 the two General-specific components are sufficient and no invalid role extrapolation is used."
+  ]
+}
