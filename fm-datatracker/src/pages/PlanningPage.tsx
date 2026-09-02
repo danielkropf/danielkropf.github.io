@@ -99,6 +99,98 @@ const defaults = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal
 const canPlay = canPlayPosition
 const planningClubStorageKey = (saveId: string) => `fm-datatracker:planning-club:${saveId}`
 
+// Planning-local warm caches. They are intentionally scoped to exact source object
+// identities and exact save/club/function/matrix inputs so stale results cannot cross
+// factual or scoring boundaries.
+const planningMembershipCache = new Map<string, Map<string, WeakMap<Player[], Promise<PlayerMembershipWithClubs[]>>>>()
+const planningGeneralReferenceCache = new Map<string, WeakMap<ReferenceDataset, ReturnType<typeof generalReferenceScoresByFamily>>>()
+const planningRoleReferenceCache = new Map<string, WeakMap<ReferenceDataset, Map<string, number[]>>>()
+
+function loadPlanningMembershipsWarm(saveId: string, clubId: string | null, currentPlayers: Player[]) {
+  const clubKey = clubId ?? '__no_planning_club__'
+  let byClub = planningMembershipCache.get(saveId)
+  if (!byClub) {
+    byClub = new Map()
+    planningMembershipCache.set(saveId, byClub)
+  }
+  let byPlayers = byClub.get(clubKey)
+  if (!byPlayers) {
+    byPlayers = new WeakMap()
+    byClub.set(clubKey, byPlayers)
+  }
+  const cache = byPlayers
+  const cached = cache.get(currentPlayers)
+  if (cached) return cached
+  const snapshotIds = currentPlayers.map(player => player.player_snapshots[0]?.id).filter((id): id is string => Boolean(id))
+  const request = loadPlanningMemberships(saveId, snapshotIds).catch(error => {
+    cache.delete(currentPlayers)
+    throw error
+  })
+  cache.set(currentPlayers, request)
+  return request
+}
+
+function planningReferenceScopeKey(saveId: string, clubId: string | null) {
+  return JSON.stringify(['planning-reference-v1', saveId, clubId ?? '__no_planning_club__'])
+}
+
+function planningGeneralReferenceRatings(scopeKey: string, reference: ReferenceDataset) {
+  let cache = planningGeneralReferenceCache.get(scopeKey)
+  if (!cache) {
+    cache = new WeakMap()
+    planningGeneralReferenceCache.set(scopeKey, cache)
+  }
+  const cached = cache.get(reference)
+  if (cached !== undefined) return cached
+  const ratings = generalReferenceScoresByFamily(reference.players, reference.attributes)
+  cache.set(reference, ratings)
+  return ratings
+}
+
+function planningWeightKey(weights: Record<string, number>) {
+  return JSON.stringify(Object.entries(weights).sort(([left], [right]) => left.localeCompare(right)))
+}
+
+function planningRoleReferenceKey(pair: Pair, ipWeights: Record<string, number>, oopWeights: Record<string, number>) {
+  return JSON.stringify([
+    'planning-role-reference-v1',
+    pair.ip.playerId,
+    pair.ip.position,
+    pair.ip.roleId ?? '',
+    pair.ip.roleCode,
+    pair.ip.roleName,
+    planningWeightKey(ipWeights),
+    pair.oop.position,
+    pair.oop.roleId ?? '',
+    pair.oop.roleCode,
+    pair.oop.roleName,
+    planningWeightKey(oopWeights),
+  ])
+}
+
+function planningRoleReferenceRatings(scopeKey: string, reference: ReferenceDataset, pair: Pair, ipWeights: Record<string, number>, oopWeights: Record<string, number>) {
+  let byReference = planningRoleReferenceCache.get(scopeKey)
+  if (!byReference) {
+    byReference = new WeakMap()
+    planningRoleReferenceCache.set(scopeKey, byReference)
+  }
+  let cache = byReference.get(reference)
+  if (!cache) {
+    cache = new Map()
+    byReference.set(reference, cache)
+  }
+  const key = planningRoleReferenceKey(pair, ipWeights, oopWeights)
+  const cached = cache.get(key)
+  if (cached !== undefined) return cached
+  const ratings = reference.players
+    .filter(player => canPlay([player.p], pair.ip.position))
+    .map(player => referencePairedRoleScore(player, reference.attributes, ipWeights, oopWeights))
+    .filter((value): value is number => value !== null)
+    .sort((a, b) => a - b)
+  cache.set(key, ratings)
+  return ratings
+}
+
 function normalizePlanning(raw: (Planning & { assignments?: Record<string, string> }) | undefined): Planning {
   const base: Planning = raw
     ? { ...defaults(), groups: raw.groups ?? defaults().groups, slotAssignments: raw.slotAssignments ?? {}, setLayouts: raw.setLayouts ?? {} }
@@ -169,19 +261,20 @@ export function PlanningPage() {
     setLoading(true)
     saveStatus('Carregando…')
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)]).then(async ([cached, modelConfig]) => {
-      const membershipResult = await loadPlanningMemberships(selected.id, cached.map(player => player.player_snapshots[0]?.id).filter((id): id is string => Boolean(id)))
+      const currentPlayers = cached as unknown as Player[]
+      const existing = modelConfig as Config
+      const tracked = selected.structure?.trackedClubs ?? []
+      const primaryId = primaryPlanningClubId(tracked)
+      const remembered = typeof window === 'undefined' ? null : localStorage.getItem(planningClubStorageKey(selected.id))
+      const nextClubId = resolvePlanningClubId(tracked, remembered)
+      const membershipResult = await loadPlanningMembershipsWarm(selected.id, nextClubId, currentPlayers)
         .then(rows => ({ rows, diagnostic: '' }))
         .catch(error => ({ rows: [] as PlayerMembershipWithClubs[], diagnostic: describeDbError(error).full }))
       if (!active) return
       startTransition(() => {
-        setPlayers(cached as unknown as Player[])
+        setPlayers(currentPlayers)
         setMemberships(membershipResult.rows)
         setMembershipDiagnostic(membershipResult.diagnostic)
-        const existing = modelConfig as Config
-        const tracked = selected.structure?.trackedClubs ?? []
-        const primaryId = primaryPlanningClubId(tracked)
-        const remembered = typeof window === 'undefined' ? null : localStorage.getItem(planningClubStorageKey(selected.id))
-        const nextClubId = resolvePlanningClubId(tracked, remembered)
         const promotedPlanning = promoteLegacyPrimaryPlanning(existing, primaryId)
         const planningByClub = Object.fromEntries(Object.entries(promotedPlanning).map(([clubId, raw]) => [clubId, normalizePlanning(raw as Planning)]))
         const selectedPlanning = nextClubId
@@ -285,14 +378,15 @@ export function PlanningPage() {
     return snapshot ? generalScoreForSnapshot(snapshot)?.score ?? null : null
   }
 
-  const generalReferenceRatings = useMemo(() => generalReferenceScoresByFamily(reference?.players ?? [], reference?.attributes ?? []), [reference])
+  const referenceScopeKey = useMemo(() => planningReferenceScopeKey(selected?.id ?? '__no_save__', selectedClubId), [selected?.id, selectedClubId])
+  const generalReferenceRatings = useMemo(() => reference ? planningGeneralReferenceRatings(referenceScopeKey, reference) : generalReferenceScoresByFamily([], []), [referenceScopeKey, reference])
 
   const referenceRatings = useMemo(() => new Map(pairs.map(pair => {
     const ipWeights = resolvedWeights(pair.ip, 'IP')
     const oopWeights = resolvedWeights(pair.oop, 'OOP')
-    const ratings = (reference?.players ?? []).filter(player => canPlay([player.p], pair.ip.position)).map(player => referencePairedRoleScore(player, reference!.attributes, ipWeights, oopWeights)).filter((value): value is number => value !== null).sort((a, b) => a - b)
+    const ratings = reference ? planningRoleReferenceRatings(referenceScopeKey, reference, pair, ipWeights, oopWeights) : []
     return [pair.ip.playerId, ratings]
-  })), [pairs, reference, roleOverrides, tactic])
+  })), [pairs, reference, referenceScopeKey, roleOverrides, tactic])
 
   const playerScores = useMemo(() => new Map(players.map(player => [player.id, new Map(pairs.map(pair => {
     const value = pairRoleScore(player, pair)

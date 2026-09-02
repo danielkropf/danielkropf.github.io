@@ -9,12 +9,17 @@ const mocks = vi.hoisted(() => ({
   loadConfig: vi.fn(),
   loadPlayers: vi.fn(),
   loadMemberships: vi.fn(),
+  loadReference: vi.fn(),
+  generalReferenceScores: vi.fn(),
+  referencePairedRoleScore: vi.fn(),
+  referenceDataset: { players: [{ p: ['D (C)'] }], attributes: [] } as any,
+  selected: { id: 'save', structure: { trackedClubs: [{ club_id: 'club-a', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-a', name: 'Fluminense' } }] } } as any,
 }))
 
 vi.mock('../lib/supabase', () => ({ supabase: {} }))
-vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: { id: 'save', structure: { trackedClubs: [{ club_id: 'club-a', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-a', name: 'Fluminense' } }] } } }) }))
+vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected }) }))
 vi.mock('../features/potential/PotentialContext', () => ({ usePotential: () => ({ showPotential: true }) }))
-vi.mock('../lib/dataCache', () => ({ loadCurrentPlayers: (...args: unknown[]) => mocks.loadPlayers(...args), loadReferenceDataset: vi.fn().mockResolvedValue({ players: [], attributes: [] }) }))
+vi.mock('../lib/dataCache', () => ({ loadCurrentPlayers: (...args: unknown[]) => mocks.loadPlayers(...args), loadReferenceDataset: (...args: unknown[]) => mocks.loadReference(...args) }))
 vi.mock('../lib/longitudinal-service', () => ({ loadPlanningMemberships: (...args: unknown[]) => mocks.loadMemberships(...args) }))
 vi.mock('../lib/model-config', () => ({
   loadModelConfig: (...args: unknown[]) => mocks.loadConfig(...args),
@@ -29,9 +34,9 @@ vi.mock('../lib/role-scoring', () => ({
 }))
 vi.mock('../lib/reference', () => ({
   generalReferencePercentile: () => ({ percentile: 50, population: [] }),
-  generalReferenceScoresByFamily: () => ({}),
+  generalReferenceScoresByFamily: (...args: unknown[]) => mocks.generalReferenceScores(...args),
   percentile: () => 50,
-  referencePairedRoleScore: () => null,
+  referencePairedRoleScore: (...args: unknown[]) => mocks.referencePairedRoleScore(...args),
 }))
 vi.mock('../lib/positions', () => ({ canPlayPosition: () => true }))
 vi.mock('../lib/planning-familiarity', () => ({
@@ -54,8 +59,14 @@ const snapshot = {
 }
 
 beforeEach(() => {
+  localStorage.clear()
+  mocks.referenceDataset = { players: [{ p: ['D (C)'] }], attributes: [] }
+  mocks.selected = { id: 'save', structure: { trackedClubs: [{ club_id: 'club-a', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-a', name: 'Fluminense' } }] } }
   mocks.schedule.mockReset()
   mocks.loadPlayers.mockReset().mockResolvedValue([{ id: 'player', current_name: 'Jogador Teste', nationality: 'BRA', player_snapshots: [snapshot] }])
+  mocks.loadReference.mockReset().mockResolvedValue(mocks.referenceDataset)
+  mocks.generalReferenceScores.mockReset().mockReturnValue({})
+  mocks.referencePairedRoleScore.mockReset().mockReturnValue(10)
   mocks.loadMemberships.mockReset().mockResolvedValue([{
     id: 'membership', save_id: 'save', owner_id: 'owner', player_id: 'player', observed_date: '2026-09-01', season_id: null,
     current_club_id: 'club-a', owner_club_id: 'club-a', team_level: 'first_team', squad_name: 'Principal', is_loan: false,
@@ -99,5 +110,72 @@ describe('PlanningPage 3C', () => {
       const saved = patches.find(patch => JSON.stringify(patch).includes('"sale":{"market":["player"]}'))
       expect(saved).toBeTruthy()
     })
+  })
+
+
+  it('reuses memberships only for the same save, planning club, and exact cached player list', async () => {
+    const referenceScoreCalls = () => mocks.generalReferenceScores.mock.calls.filter(call => call[0] === mocks.referenceDataset.players).length
+
+    const first = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
+    expect(mocks.loadMemberships).toHaveBeenLastCalledWith('save', ['snapshot'])
+
+    const initialGeneralReferenceCalls = referenceScoreCalls()
+    const initialRoleReferenceCalls = mocks.referencePairedRoleScore.mock.calls.length
+    expect(initialGeneralReferenceCalls).toBeGreaterThan(0)
+    expect(initialRoleReferenceCalls).toBeGreaterThan(0)
+
+    first.unmount()
+    const second = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
+    expect(referenceScoreCalls()).toBe(initialGeneralReferenceCalls)
+    expect(mocks.referencePairedRoleScore).toHaveBeenCalledTimes(initialRoleReferenceCalls)
+
+    second.unmount()
+    mocks.loadPlayers.mockResolvedValue([{ id: 'player', current_name: 'Jogador Teste', nationality: 'BRA', player_snapshots: [snapshot] }])
+    const refreshed = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(2)
+    expect(referenceScoreCalls()).toBe(initialGeneralReferenceCalls)
+    expect(mocks.referencePairedRoleScore).toHaveBeenCalledTimes(initialRoleReferenceCalls)
+
+    refreshed.unmount()
+    mocks.selected = { id: 'save', structure: { trackedClubs: [{ club_id: 'club-b', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-b', name: 'Outro Clube' } }] } }
+    const otherClub = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(3)
+
+    const otherClubGeneralReferenceCalls = referenceScoreCalls()
+    const otherClubRoleReferenceCalls = mocks.referencePairedRoleScore.mock.calls.length
+    expect(otherClubGeneralReferenceCalls).toBeGreaterThan(initialGeneralReferenceCalls)
+    expect(otherClubRoleReferenceCalls).toBeGreaterThan(initialRoleReferenceCalls)
+
+    otherClub.unmount()
+    mocks.selected = { id: 'save-2', structure: { trackedClubs: [{ club_id: 'club-b', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-b', name: 'Outro Clube' } }] } }
+    render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(4)
+    expect(referenceScoreCalls()).toBeGreaterThan(otherClubGeneralReferenceCalls)
+    expect(mocks.referencePairedRoleScore.mock.calls.length).toBeGreaterThan(otherClubRoleReferenceCalls)
+  })
+
+  it('does not retain a failed memberships request in the warm cache', async () => {
+    const successfulRows = await mocks.loadMemberships()
+    mocks.loadMemberships.mockReset()
+      .mockRejectedValueOnce(new Error('membership unavailable'))
+      .mockResolvedValueOnce(successfulRows)
+
+    const first = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    expect(await screen.findByText('Contexto factual indisponível; o planejamento manual continua seguro.')).not.toBeNull()
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
+
+    first.unmount()
+    render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await waitFor(() => expect(mocks.loadMemberships).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Contexto factual indisponível; o planejamento manual continua seguro.')).toBeNull()
   })
 })

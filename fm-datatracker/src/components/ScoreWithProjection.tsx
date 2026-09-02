@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { ScoreBadge } from './ScoreBadge'
 import { usePotential } from '../features/potential/PotentialContext'
 import type { ProjectionSnapshot } from '../lib/projection-player'
@@ -24,7 +25,7 @@ type Props = {
 const ROLE_CEILING_TOOLTIP = 'Potencial na função: melhor RoleScore plausível em um cenário positivo de desenvolvimento, calibrado em trajetórias reais. Os tetos IP e OOP são estimados separadamente e unidos pela média geométrica. Não é a evolução mais provável, não possui horizonte fixo e não representa o PA/CP do Football Manager.'
 const GENERAL_CEILING_TOOLTIP = 'Potencial geral: melhor Nota Geral plausível em um cenário positivo de carreira. O modelo considera PA/headroom, idade, perfil completo de atributos e posições-base atuais elegíveis; o resultado nunca fica abaixo do melhor teto-base calculado pelo Potencial na função. Não é a evolução mais provável, não possui horizonte fixo e não representa o PA/CP do Football Manager.'
 
-export function ScoreWithProjection({
+export const ScoreWithProjection = memo(function ScoreWithProjection({
   playerId,
   currentScore,
   currentRank = null,
@@ -40,12 +41,12 @@ export function ScoreWithProjection({
 }: Props) {
   const potential = usePotential()
   const projectionVisible = potential.showPotential && shouldDisplayProjectionForAge(snapshot?.age)
-  const functionPotential = scoreType === 'function' && projectionVisible
+  const functionPotential = useMemo(() => scoreType === 'function' && projectionVisible
     ? potentialRoleCeilingForSnapshot({ snapshot, currentRoleScore: currentScore, scoreKey, loadedModel: potential.ceilingModel })
-    : null
-  const generalPotential = scoreType === 'general' && projectionVisible
+    : null, [scoreType, projectionVisible, playerId, snapshot, currentScore, scoreKey, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
+  const generalPotential = useMemo(() => scoreType === 'general' && projectionVisible
     ? potentialGeneralCeilingForSnapshot({ snapshot, loadedGeneralModel: potential.generalCeilingModel, loadedRoleModel: potential.ceilingModel })
-    : null
+    : null, [scoreType, projectionVisible, playerId, snapshot, potential.generalCeilingModel, potential.generalCeilingModel?.manifest.potentialModelVersion, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
   const displayedCurrentScore = scoreType === 'general' ? generalPotential?.currentGeneralScore ?? currentScore : currentScore
   const displayedCurrentRank = scoreType === 'general' && generalPotential?.currentGeneralScore !== null ? null : currentRank
 
@@ -84,4 +85,4 @@ export function ScoreWithProjection({
       </span>
     </>}
   </span>
-}
+})

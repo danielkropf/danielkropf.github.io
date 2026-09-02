@@ -24,6 +24,22 @@ const IDLE_DETAIL = 'Potencial geral e Potencial na função serão carregados a
 const CEILING_MANIFEST = `${import.meta.env.BASE_URL}reference/potential-role-ceiling.fm26-v1_1.manifest.json`
 const GENERAL_CEILING_MANIFEST = `${import.meta.env.BASE_URL}reference/potential-general-ceiling.fm26-v2.manifest.json`
 
+/* PERF-DIAGNOSTIC DIAG-PERF-01 START */
+function perfDiagEnabled() {
+  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('perfDiag') === '1'
+}
+
+function perfDiagMark(name: string, detail?: Record<string, string>) {
+  if (!perfDiagEnabled() || typeof performance === 'undefined') return
+  performance.mark(name, detail ? { detail } : undefined)
+}
+
+function perfDiagBetween(name: string, start: string, end: string, detail?: Record<string, string>) {
+  if (!perfDiagEnabled() || typeof performance === 'undefined') return
+  performance.measure(name, { start, end, ...(detail ? { detail } : {}) })
+}
+/* PERF-DIAGNOSTIC DIAG-PERF-01 END */
+
 export function PotentialProvider({ children }: { children: ReactNode }) {
   const [ownerKey, setOwnerKey] = useState('anonymous')
   const [showPotential, setShowPotentialState] = useState(false)
@@ -53,12 +69,27 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
     let active = true
     setCeilingStatus('loading')
     setCeilingDetail('Carregando modelo validado de Potencial na função…')
+    /* PERF-DIAGNOSTIC DIAG-PERF-01 START */
+    if (perfDiagEnabled()) perfDiagMark('fmdt:potential:role-start', { status: 'loading' })
+    /* PERF-DIAGNOSTIC DIAG-PERF-01 END */
     void loadPotentialRoleCeilingModel(CEILING_MANIFEST).then(model => {
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 START */
+      if (perfDiagEnabled()) {
+        perfDiagMark('fmdt:potential:role-ready', { status: 'ready', version: model.manifest.potentialModelVersion })
+        perfDiagBetween('fmdt.potential.await.role-model', 'fmdt:potential:role-start', 'fmdt:potential:role-ready', { status: 'ready', version: model.manifest.potentialModelVersion })
+      }
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 END */
       if (!active) return
       setCeilingModel(model)
       setCeilingStatus('ready')
       setCeilingDetail(`Potencial na função · ${model.manifest.potentialModelVersion}`)
     }).catch(error => {
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 START */
+      if (perfDiagEnabled()) {
+        perfDiagMark('fmdt:potential:role-invalid', { status: 'invalid' })
+        perfDiagBetween('fmdt.potential.await.role-model', 'fmdt:potential:role-start', 'fmdt:potential:role-invalid', { status: 'invalid' })
+      }
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 END */
       if (!active) return
       setCeilingStatus('invalid')
       setCeilingDetail(error instanceof Error ? error.message : 'Não foi possível carregar o modelo de Potencial na função.')
@@ -71,12 +102,27 @@ export function PotentialProvider({ children }: { children: ReactNode }) {
     let active = true
     setGeneralCeilingStatus('loading')
     setGeneralCeilingDetail('Carregando modelo validado de Potencial geral…')
+    /* PERF-DIAGNOSTIC DIAG-PERF-01 START */
+    if (perfDiagEnabled()) perfDiagMark('fmdt:potential:general-start', { status: 'loading' })
+    /* PERF-DIAGNOSTIC DIAG-PERF-01 END */
     void loadPotentialGeneralCeilingModel(GENERAL_CEILING_MANIFEST).then(model => {
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 START */
+      if (perfDiagEnabled()) {
+        perfDiagMark('fmdt:potential:general-ready', { status: 'ready', version: model.manifest.potentialModelVersion })
+        perfDiagBetween('fmdt.potential.await.general-model', 'fmdt:potential:general-start', 'fmdt:potential:general-ready', { status: 'ready', version: model.manifest.potentialModelVersion })
+      }
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 END */
       if (!active) return
       setGeneralCeilingModel(model)
       setGeneralCeilingStatus('ready')
       setGeneralCeilingDetail(`Potencial geral · ${model.manifest.potentialModelVersion}`)
     }).catch(error => {
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 START */
+      if (perfDiagEnabled()) {
+        perfDiagMark('fmdt:potential:general-invalid', { status: 'invalid' })
+        perfDiagBetween('fmdt.potential.await.general-model', 'fmdt:potential:general-start', 'fmdt:potential:general-invalid', { status: 'invalid' })
+      }
+      /* PERF-DIAGNOSTIC DIAG-PERF-01 END */
       if (!active) return
       setGeneralCeilingStatus('invalid')
       setGeneralCeilingDetail(error instanceof Error ? error.message : 'Não foi possível carregar o modelo de Potencial geral.')
