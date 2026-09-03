@@ -1,9 +1,25 @@
-export {}
+import type { OfflineFmRead } from './fm26-offline-normalizer'
 
 type FmWorkerRequest = { id: string; bytes: ArrayBuffer; fileName: string }
 type WorkerScope = {
   onmessage: ((event: MessageEvent<FmWorkerRequest>) => void) | null
   postMessage: (message: unknown) => void
+}
+
+type WorkerResultInput = Pick<
+  OfflineFmRead,
+  'players' | 'tactics' | 'diagnostics' | 'snapshot_date' | 'snapshot_date_precision' | 'competition_history'
+>
+
+export function buildOfflineWorkerResult(result: WorkerResultInput) {
+  return {
+    players: result.players,
+    tactics: result.tactics,
+    diagnostics: result.diagnostics,
+    snapshot_date: result.snapshot_date,
+    snapshot_date_precision: result.snapshot_date_precision,
+    competition_history: result.competition_history,
+  }
 }
 
 const scope = globalThis as unknown as WorkerScope
@@ -48,13 +64,7 @@ scope.onmessage = event => {
       scope.postMessage({
         id,
         type: 'result',
-        result: {
-          players: result.players,
-          tactics: result.tactics,
-          diagnostics: result.diagnostics,
-          snapshot_date: result.snapshot_date,
-          snapshot_date_precision: result.snapshot_date_precision,
-        },
+        result: buildOfflineWorkerResult(result),
       })
     } catch (error) {
       scope.postMessage({ id, type: 'error', message: `${stage}: ${describeWorkerError(error)}` })

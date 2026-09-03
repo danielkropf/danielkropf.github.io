@@ -3,6 +3,7 @@ import { FM26OfflineReaderV022 } from './fm26-offline-reader-v022.js'
 import { enrichOfflineTeamNames } from './fm26-team-resolver'
 import { enrichOfflineContracts } from './fm26-contract-reader'
 import { enrichOfflineMembershipFacts } from './fm26-membership-facts'
+import { readCompetitionHistory } from './fm26-competition-history'
 import { parseFm26SaveSummaryDate } from './fm26-save-summary'
 
 type ReaderResult = Record<string, unknown>
@@ -39,6 +40,16 @@ async function localZstd(frame: Uint8Array): Promise<Uint8Array> {
   let offset = 0
   for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.length }
   return output
+}
+
+async function optionalArchiveMember(archive: Archive, name: string, warnings: string[]): Promise<Uint8Array | null> {
+  if (!archive.memberByName.has(name)) return null
+  try {
+    return await archive.getMember(name)
+  } catch (error) {
+    warnings.push(`${name}: ${error instanceof Error ? error.message : String(error)}`)
+    return null
+  }
 }
 
 /** Reads the required FM26 members locally and keeps the characterized v0.22 core read-only. */
@@ -78,6 +89,36 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
   enrichOfflineContracts(result, gameDb, saveSummary.status === 'confirmed' ? saveSummary.current_date : null)
   onStatus('Resolvendo membership factual E-MC-01A…')
   enrichOfflineMembershipFacts(result, gameDb, saveSummary.status === 'confirmed' ? saveSummary.current_date : null)
+
+  // E-TC-01 is an additive, fail-closed sidecar. Historical member failures must
+  // never invalidate the already-characterized players/tactics/membership result.
+  onStatus('Interpretando histórico de competições E-TC-01…')
+  const competitionWarnings: string[] = []
+  try {
+    const hasLeagueHistory = archive.memberByName.has('tc_league_history_dt.cmt')
+    const [leagueHistory, compHistory, fixMan] = hasLeagueHistory
+      ? await Promise.all([
+          optionalArchiveMember(archive, 'tc_league_history_dt.cmt', competitionWarnings),
+          optionalArchiveMember(archive, 'comp_history_dt.cmt', competitionWarnings),
+          optionalArchiveMember(archive, 'rgman/fix_man.dat', competitionWarnings),
+        ])
+      : [null, null, null]
+    const competitionHistory = await readCompetitionHistory({
+      leagueHistory,
+      compHistory,
+      fixMan,
+      gameDb,
+      decompress: localZstd,
+    })
+    competitionHistory.diagnostics.warnings.push(...competitionWarnings)
+    result.competition_history = competitionHistory
+  } catch (error) {
+    const competitionHistory = await readCompetitionHistory({})
+    competitionHistory.diagnostics.errors.push(`E-TC-01 sidecar failure: ${error instanceof Error ? error.message : String(error)}`)
+    competitionHistory.diagnostics.warnings.push(...competitionWarnings)
+    result.competition_history = competitionHistory
+  }
+
   onStatus('Concluído.')
   return result
 }

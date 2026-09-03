@@ -1,4 +1,5 @@
 import { ATTRIBUTE_LOOKUP, type AttributeCategory } from './attributes'
+import { COMPETITION_HISTORY_VERSION, type CompetitionHistory } from './fm26-competition-history'
 import { readOfflineSaveBytes } from './fm26-offline-reader'
 
 type UnknownRecord = Record<string, unknown>
@@ -33,6 +34,7 @@ export type OfflineFmRead = {
   diagnostics: UnknownRecord
   snapshot_date: string | null
   snapshot_date_precision: 'day' | 'year' | null
+  competition_history: CompetitionHistory | null
 }
 
 const normalizedName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -86,6 +88,13 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
   const humans = Array.isArray(raw.human_managers) ? raw.human_managers : []
   const players: OfflinePlayerRow[] = []
   const tactics = resolvedHumanTactics(humans)
+  const competitionHistoryCandidate = record(raw.competition_history)
+  const competitionHistory = competitionHistoryCandidate.version === COMPETITION_HISTORY_VERSION
+    && (competitionHistoryCandidate.status === 'confirmed' || competitionHistoryCandidate.status === 'partial' || competitionHistoryCandidate.status === 'unresolved')
+    && Array.isArray(competitionHistoryCandidate.seasons)
+    && Object.keys(record(competitionHistoryCandidate.diagnostics)).length > 0
+    ? competitionHistoryCandidate as CompetitionHistory
+    : null
 
   for (const humanValue of humans) {
     const human = record(humanValue)
@@ -223,7 +232,7 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
     human_manager_count: humans.length,
     resolved_human_club_count: humans.filter(value => numberOrNull(record(record(value).human_club).root_team_id) !== null).length,
   }
-  return { raw, players: playersWithAge, tactics, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null }
+  return { raw, players: playersWithAge, tactics, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null, competition_history: competitionHistory }
 }
 
 export async function readFmSaveBytes(bytes: Uint8Array, fileName = 'save.fm', onStatus?: (status: string) => void): Promise<OfflineFmRead> {
