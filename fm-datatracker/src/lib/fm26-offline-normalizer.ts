@@ -21,6 +21,7 @@ export type OfflinePlayerRow = {
   attributes: Array<{ attribute_key: string; attribute_label: string; value: number; category: AttributeCategory; source_column: string }>
   statistics: UnknownRecord | null
   tactic: UnknownRecord | null
+  membership_facts_v1: UnknownRecord | null
   raw_data: UnknownRecord
   normalized_data: UnknownRecord
 }
@@ -139,11 +140,16 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
       const contractTerms = Array.isArray(currentContract.terms) ? currentContract.terms : []
       const statistics = Object.keys(record(player.statistics)).length ? record(player.statistics) : null
       const tactic = Object.keys(record(player.tactic)).length ? record(player.tactic) : null
+      const membershipFacts = Object.keys(record(player.membership_facts_v1)).length ? record(player.membership_facts_v1) : null
+      // E-MC-01A persistence fence: the factual envelope is a reader-side result only.
+      // Keep it out of raw_data/normalized_data because import_fm_export stores both JSON objects.
+      const { membership_facts_v1: _membershipFacts, ...legacyRawPlayer } = player
       players.push({
         fm_player_id: String(uid), current_name: name, normalized_name: normalizedName(name), identity_key: `fm:${uid}`,
         date_of_birth: stringOrNull(player.birth_date), nationality: stringOrNull(player.nation), age: null,
         club: currentTeamName, squad: stringOrNull(rosterGroup.label) ?? groupLabel, positions, preferred_foot: preferredFoot,
-        height: numberOrNull(player.height_cm), weight: null, contract_expiry: expiryDate, attributes, statistics, tactic, raw_data: player,
+        height: numberOrNull(player.height_cm), weight: null, contract_expiry: expiryDate, attributes, statistics, tactic,
+        membership_facts_v1: membershipFacts, raw_data: legacyRawPlayer,
         normalized_data: {
           source: 'fm26-save-offline', parser: raw.parser ?? null, eid: player.eid ?? null, uid,
           ca_candidate: player.ca ?? null, pa_candidate: player.pa ?? null,

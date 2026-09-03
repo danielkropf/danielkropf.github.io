@@ -2,6 +2,7 @@ import { ZSTDDecoder } from 'zstddec/stream'
 import { FM26OfflineReaderV022 } from './fm26-offline-reader-v022.js'
 import { enrichOfflineTeamNames } from './fm26-team-resolver'
 import { enrichOfflineContracts } from './fm26-contract-reader'
+import { enrichOfflineMembershipFacts } from './fm26-membership-facts'
 import { parseFm26SaveSummaryDate } from './fm26-save-summary'
 
 type ReaderResult = Record<string, unknown>
@@ -75,6 +76,8 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
   enrichOfflineTeamNames(result, gameDb)
   onStatus('Interpretando contratos, termos e empréstimos…')
   enrichOfflineContracts(result, gameDb, saveSummary.status === 'confirmed' ? saveSummary.current_date : null)
+  onStatus('Resolvendo membership factual E-MC-01A…')
+  enrichOfflineMembershipFacts(result, gameDb, saveSummary.status === 'confirmed' ? saveSummary.current_date : null)
   onStatus('Concluído.')
   return result
 }
