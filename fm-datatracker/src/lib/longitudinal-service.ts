@@ -19,8 +19,7 @@ function client() {
 }
 
 export type IntakeArchiveMember = IntakeClassMember & {
-  player: { id: string; current_name: string; is_active: boolean } | null
-  latestSnapshot: { snapshot_date: string; age: number | null; club: string | null; squad: string | null; positions: string[] } | null
+  player: { id: string; current_name: string } | null
 }
 export type IntakeArchiveClass = IntakeClass & { club: Club | null; season: Season | null; members: IntakeArchiveMember[] }
 
@@ -37,12 +36,12 @@ export async function loadIntakeArchive(saveId: string): Promise<IntakeArchiveCl
   const members = (membersResult.data ?? []) as IntakeClassMember[]
   const playerIds = [...new Set(members.map(member => member.player_id))]
   const playersResult = playerIds.length
-    ? await db.from('players').select('id,current_name,is_active,player_snapshots:player_snapshots!player_snapshots_player_save_fkey(snapshot_date,age,club,squad,positions)').eq('save_id', saveId).in('id', playerIds).order('snapshot_date', { referencedTable: 'player_snapshots', ascending: false }).limit(1, { referencedTable: 'player_snapshots' })
+    ? await db.from('players').select('id,current_name').eq('save_id', saveId).in('id', playerIds)
     : { data: [], error: null }
   if (playersResult.error) throw new Error(dbError(playersResult.error))
   const clubs = new Map(((clubsResult.data ?? []) as Club[]).map(row => [row.id, row]))
   const seasons = new Map(((seasonsResult.data ?? []) as Season[]).map(row => [row.id, row]))
-  type PlayerResult = { id: string; current_name: string; is_active: boolean; player_snapshots: IntakeArchiveMember['latestSnapshot'][] }
+  type PlayerResult = { id: string; current_name: string }
   const players = new Map(((playersResult.data ?? []) as unknown as PlayerResult[]).map(row => [row.id, row]))
   const membersByClass = new Map<string, IntakeClassMember[]>()
   for (const member of members) membersByClass.set(member.intake_class_id, [...(membersByClass.get(member.intake_class_id) ?? []), member])
@@ -52,7 +51,7 @@ export async function loadIntakeArchive(saveId: string): Promise<IntakeArchiveCl
     season: row.season_id ? seasons.get(row.season_id) ?? null : null,
     members: (membersByClass.get(row.id) ?? []).map(member => {
       const player = players.get(member.player_id) ?? null
-      return { ...member, player: player ? { id: player.id, current_name: player.current_name, is_active: player.is_active } : null, latestSnapshot: player?.player_snapshots?.[0] ?? null }
+      return { ...member, player: player ? { id: player.id, current_name: player.current_name } : null }
     }),
   }))
 }
@@ -253,17 +252,25 @@ async function hydrateMembershipClubs(
   }))
 }
 
+function expandCurrentSnapshotIds(snapshotIds: string[]) {
+  return [...new Set(snapshotIds.flatMap(value => {
+    if (!value.startsWith('current:')) return [value]
+    const parts = value.split(':')
+    return parts.length >= 3 ? parts.slice(2).join(':').split('+').filter(Boolean) : [value]
+  }).filter(Boolean))]
+}
+
 /**
  * Loads only memberships explicitly linked to the supplied current snapshots.
- * The caller remains responsible for resolving duplicates/conflicts per
- * snapshot; this function intentionally does not choose a factual row.
+ * Synthetic same-date checkpoint IDs are expanded to every source snapshot so
+ * the caller can reconcile coverage/conflicts without upload-order precedence.
  */
 export async function loadPlanningMemberships(
   saveId: string,
   snapshotIds: string[],
 ): Promise<PlayerMembershipWithClubs[]> {
   const db = client()
-  const ids = [...new Set(snapshotIds.filter(Boolean))]
+  const ids = expandCurrentSnapshotIds(snapshotIds)
   if (!ids.length) return []
 
   const memberships: PlayerMembership[] = []

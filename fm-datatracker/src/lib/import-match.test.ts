@@ -49,6 +49,23 @@ describe('import matching', () => {
     expect(result.ambiguous).toBe(0)
   })
 
+  it('preserves .fm factual sidecars top-level in a validated CSV+.fm merge', () => {
+    const membershipFacts = { schema: 'membership_facts_v1', version: 'e-mc-01-v1' }
+    const persistence = { sync_version: 'e-mc-01b-v1', fm_player_id: '1' }
+    const csv = [row('A', '1', '2000-01-01', { raw_data: { csv: true }, normalized_data: { csv: true } })]
+    const fm = [row('A', '1', '2000-01-01', {
+      raw_data: { fm: true }, normalized_data: { fm: true },
+      membership_facts_v1: membershipFacts, membership_persistence_v1: persistence,
+    })]
+    const merged = mergeValidatedRows(csv, matchImportRows(csv, fm).matches)
+    expect(merged[0].membership_facts_v1).toEqual(membershipFacts)
+    expect(merged[0].membership_persistence_v1).toEqual(persistence)
+    expect(merged[0].raw_data).not.toHaveProperty('membership_facts_v1')
+    expect(merged[0].raw_data).not.toHaveProperty('membership_persistence_v1')
+    expect(merged[0].normalized_data).not.toHaveProperty('membership_facts_v1')
+    expect(merged[0].normalized_data).not.toHaveProperty('membership_persistence_v1')
+  })
+
   it('keeps CSV population when the .fm contains extra players', () => {
     const csv = [row('A', '1', '2000-01-01'), row('B', '2', '2000-02-01')]
     const fm = [

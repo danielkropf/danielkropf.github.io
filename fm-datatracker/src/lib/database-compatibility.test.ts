@@ -5,15 +5,16 @@ const allCapabilities = {
   import_rpc: true, delete_import_rpc: true, model_config_patch: true, projections: true,
   diagnostics_table: true, diagnostics_bucket: true, diagnostics_reservations: true, diagnostics_upload: true, diagnostics_server_retention: true,
   longitudinal_core: true, longitudinal_backfill: true, longitudinal_save_structure: true, longitudinal_imports: true,
-  analyzer_stats_context: true,
+  analyzer_stats_context: true, factual_membership_emc01b: true,
 }
 
 describe('database capability detection', () => {
-  it('aceita Fase 1A somente com fundação longitudinal e contexto estatístico', () => {
+  it('aceita 01B somente com fundação longitudinal, Analyzer e capability factual explícita', () => {
     const result = parseDatabaseCompatibilityInfo({ schema_version: REQUIRED_DATABASE_SCHEMA, capabilities: allCapabilities })
     expect(result.status).toBe('compatible')
     expect(result.capabilities.longitudinalCore).toBe(true)
     expect(result.capabilities.analyzerStatsContext).toBe(true)
+    expect(result.capabilities.factualMembershipEmc01b).toBe(true)
   })
   it('rejeita o schema final da Fase 0 sem a migration do Analyzer', () => {
     const result = parseDatabaseCompatibilityInfo({ schema_version: '202608290004', capabilities: allCapabilities })
@@ -26,6 +27,13 @@ describe('database capability detection', () => {
     expect(result.capabilities.analyzerStatsContext).toBe(false)
     expect(result.diagnostic).toContain('analyzer stats context')
   })
+  it('falha fechado se a migration 01B não expuser a capability factual', () => {
+    const result = parseDatabaseCompatibilityInfo({ schema_version: REQUIRED_DATABASE_SCHEMA, capabilities: { ...allCapabilities, factual_membership_emc01b: false } })
+    expect(result.status).toBe('outdated')
+    expect(result.capabilities.factualMembershipEmc01b).toBe(false)
+    expect(result.diagnostic).toContain('E-MC-01B factual membership')
+  })
+
   it('mantém diagnóstico privado fail-closed sem tornar o restante do app incompatível', () => {
     const result = parseDatabaseCompatibilityInfo({ schema_version: REQUIRED_DATABASE_SCHEMA, capabilities: { ...allCapabilities, diagnostics_server_retention: false } })
     expect(result.status).toBe('compatible')

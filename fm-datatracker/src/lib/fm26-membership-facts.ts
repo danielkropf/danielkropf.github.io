@@ -128,6 +128,9 @@ export type OrganizationReference = {
   organization_ref: string
   organization_team_ids: number[]
   record_offset: number
+  evidence_team_id_raw: number | null
+  evidence_team_name_raw: string | null
+  evidence_team_name_status: 'confirmed' | 'unknown' | 'ambiguous'
 }
 
 export type StructuralTeamReference = {
@@ -708,11 +711,42 @@ function selectContracts(objects: CompleteContractObject[], unsupportedAnchors: 
   }
 }
 
-function orgReference(org: StructuralOrganization): OrganizationReference {
+function directTeamNameEvidence(player: UnknownRecord, teamId: number | null) {
+  if (teamId === null) return { teamId: null, name: null, status: 'unknown' as const }
+  const names = new Set<string>()
+  const add = (source: UnknownRecord | null, idKey = 'team_id', nameKey = 'team_name', statusKey?: string) => {
+    if (!source || integer(source[idKey]) !== teamId) return
+    if (statusKey) {
+      const resolution = asRecord(source[statusKey])
+      if (resolution?.status !== 'confirmed') return
+    }
+    const name = text(source[nameKey])
+    if (name) names.add(name)
+  }
+
+  add(asRecord(player.roster_group), 'team_id', 'team_name', 'team_name_resolution')
+  add(player, 'contract_team_id', 'contract_team_name', 'contract_team_name_resolution')
+  add(asRecord(player.current_contract))
+  for (const value of Array.isArray(player.future_contracts) ? player.future_contracts : []) add(asRecord(value))
+  for (const value of Array.isArray(player.contract_relationships) ? player.contract_relationships : []) add(asRecord(value))
+  const loan = asRecord(player.loan)
+  add(loan, 'from_team_id', 'from_team_name')
+  add(loan, 'to_team_id', 'to_team_name')
+
+  if (names.size === 1) return { teamId, name: [...names][0], status: 'confirmed' as const }
+  if (names.size > 1) return { teamId, name: null, status: 'ambiguous' as const }
+  return { teamId, name: null, status: 'unknown' as const }
+}
+
+function orgReference(org: StructuralOrganization, player?: UnknownRecord, evidenceTeamId: number | null = null): OrganizationReference {
+  const evidence = player ? directTeamNameEvidence(player, evidenceTeamId) : { teamId: evidenceTeamId, name: null, status: 'unknown' as const }
   return {
     organization_ref: org.organization_ref,
     organization_team_ids: [...org.organization_team_ids],
     record_offset: org.record_offset,
+    evidence_team_id_raw: evidence.teamId,
+    evidence_team_name_raw: evidence.name,
+    evidence_team_name_status: evidence.status,
   }
 }
 
@@ -746,13 +780,13 @@ function unresolvedLike<T>(resolution: TeamOrganizationResolution, unknownReason
     : unknown<T>(unknownReason)
 }
 
-function structuralOrganizationFact(resolution: TeamOrganizationResolution | null): FactualValue<OrganizationReference> {
+function structuralOrganizationFact(resolution: TeamOrganizationResolution | null, player?: UnknownRecord, evidenceTeamId: number | null = null): FactualValue<OrganizationReference> {
   if (!resolution) return unknown('structural_team_unresolved')
   if (resolution.status !== 'confirmed' || !resolution.organization) return unresolvedLike(resolution, 'structural_team_organization_unresolved')
-  return confirmed(orgReference(resolution.organization), 'unique_structural_organization_record', resolution.candidate_refs)
+  return confirmed(orgReference(resolution.organization, player, evidenceTeamId), 'unique_structural_organization_record', resolution.candidate_refs)
 }
 
-function ownerFact(currentSelection: FactualValue<CompleteContractObject>, organizations: Map<number, TeamOrganizationResolution>): FactualValue<OrganizationReference> {
+function ownerFact(currentSelection: FactualValue<CompleteContractObject>, organizations: Map<number, TeamOrganizationResolution>, player?: UnknownRecord): FactualValue<OrganizationReference> {
   if (currentSelection.status !== 'confirmed' || !currentSelection.value) {
     if (currentSelection.status === 'ambiguous') return ambiguous('current_contract_root_ambiguous', currentSelection.evidence_refs)
     if (currentSelection.status === 'unsupported') return unsupported('current_contract_root_unsupported', currentSelection.evidence_refs)
@@ -762,7 +796,7 @@ function ownerFact(currentSelection: FactualValue<CompleteContractObject>, organ
   if (!resolution || resolution.status !== 'confirmed' || !resolution.organization) {
     return resolution ? unresolvedLike(resolution, 'current_root_organization_unresolved') : unknown('current_root_organization_unresolved')
   }
-  return confirmed(orgReference(resolution.organization), 'unique_current_root_organization', [currentSelection.value.ref, ...resolution.candidate_refs])
+  return confirmed(orgReference(resolution.organization, player, currentSelection.value.team_id_raw), 'unique_current_root_organization', [currentSelection.value.ref, ...resolution.candidate_refs])
 }
 
 function resolveRelationships(
@@ -869,6 +903,9 @@ function evaluateMembershipFacts(args: {
       organization_ref: organizationRef,
       organization_team_ids: [],
       record_offset: Number(organizationRef.split('@')[1]),
+      evidence_team_id_raw: null,
+      evidence_team_name_raw: null,
+      evidence_team_name_status: 'unknown',
     }
     const evidence = relations.map(relation => relation.ref)
     if (args.structuralOrg.status === 'confirmed' && args.structuralOrg.value
@@ -961,8 +998,8 @@ export function buildPlayerMembershipFacts(
   const teamResolutions = uniqueTeamResolutions(organizationIndex, relevantTeamIds)
   const organizationByTeam = byTeam(teamResolutions)
   const structuralTeamOrgResolution = structuralTeamId === null ? null : organizationByTeam.get(structuralTeamId) ?? null
-  const structuralOrg = structuralOrganizationFact(structuralTeamOrgResolution)
-  const owner = ownerFact(selection.current, organizationByTeam)
+  const structuralOrg = structuralOrganizationFact(structuralTeamOrgResolution, player, structuralTeamId)
+  const owner = ownerFact(selection.current, organizationByTeam, player)
   const rootOrgValue = owner.status === 'confirmed' ? owner.value : null
   const resolvedRelationships = resolveRelationships(evidence.relationships, checkpointDate, organizationByTeam, rootOrgValue)
   const membership = evaluateMembershipFacts({
@@ -974,10 +1011,17 @@ export function buildPlayerMembershipFacts(
 
   // Preserve complete organization identity on the current/external refs after the
   // membership decision. No representative Team is promoted to a public club UID.
+  const rootTeamId = selection.current.status === 'confirmed' && selection.current.value ? selection.current.value.team_id_raw : null
+  const evidenceTeamFor = (fact: FactualValue<OrganizationReference>) => {
+    if (fact.status !== 'confirmed' || !fact.value) return null
+    if (structuralOrg.status === 'confirmed' && structuralOrg.value?.organization_ref === fact.value.organization_ref) return structuralTeamId
+    if (owner.status === 'confirmed' && owner.value?.organization_ref === fact.value.organization_ref) return rootTeamId
+    return null
+  }
   const fillOrganizationTeams = (fact: FactualValue<OrganizationReference>): FactualValue<OrganizationReference> => {
     if (fact.status !== 'confirmed' || !fact.value) return fact
     const record = organizationIndex.records.find(candidate => candidate.organization_ref === fact.value!.organization_ref)
-    return record ? { ...fact, value: orgReference(record) } : fact
+    return record ? { ...fact, value: orgReference(record, player, evidenceTeamFor(fact)) } : fact
   }
   membership.current_organization = fillOrganizationTeams(membership.current_organization)
   membership.loan_from_organization = fillOrganizationTeams(membership.loan_from_organization)

@@ -8,7 +8,8 @@ import { explainBasePositionScore } from '../lib/score-explanation'
 import { loadPlayerStats, statContextLabel, statMetricEntries, statsSample } from '../lib/player-stats'
 import { loadPlayerEvolutionContext, type PlayerEvolutionContextData } from '../lib/longitudinal-service'
 import { loadPlayerSaveEvents, type PlayerSaveEventData } from '../lib/player-trajectory-service'
-import { loadReferenceDataset } from '../lib/dataCache'
+import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
+import { formatCheckpointDate, resolveSameDateSnapshotGroup } from '../lib/current-checkpoint'
 import { generalReferencePercentile, generalReferenceScoresByFamily, normalizeCountry, referenceLevel, type ReferenceDataset } from '../lib/reference'
 import { ScoreBadge } from '../components/ScoreBadge'
 import { PlayerEvolutionSection } from '../components/PlayerEvolutionSection'
@@ -31,6 +32,7 @@ type Snapshot = {
   raw_data: Record<string, unknown>
   normalized_data: Record<string, unknown>
   player_attributes: Attribute[]
+  source_snapshot_ids?: string[]
 }
 type Player = {
   id: string
@@ -58,17 +60,29 @@ function isPlayer(value: unknown): value is Player {
     && value.player_snapshots.every(snapshot => isRecord(snapshot) && typeof snapshot.id === 'string' && typeof snapshot.snapshot_date === 'string' && Array.isArray(snapshot.player_attributes))
 }
 
+function reconcileHistory(snapshots: Snapshot[]): Snapshot[] {
+  const byDate = new Map<string, Snapshot[]>()
+  for (const snapshot of snapshots) byDate.set(snapshot.snapshot_date, [...(byDate.get(snapshot.snapshot_date) ?? []), snapshot])
+  return [...byDate.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .flatMap(([date, rows]) => {
+      const merged = resolveSameDateSnapshotGroup(rows, date)
+      return merged ? [merged as Snapshot] : []
+    })
+}
+
 export function PlayerPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState(-1)
   const [compareMode, setCompareMode] = useState('previous')
+  const checkpointDate = selected && currentCheckpoint?.saveId === selected.id && currentCheckpoint.status === 'ready' ? currentCheckpoint.date : null
 
   useEffect(() => {
     let active = true
-    setIndex(0)
+    setIndex(-1)
     setState({ status: 'loading' })
 
     if (!supabase) { setState({ status: 'error', message: 'Banco Mestre não configurado.' }); return () => { active = false } }
@@ -76,7 +90,7 @@ export function PlayerPage() {
     const client = supabase
 
     void (async () => {
-      const [playerResult, stats, reference, evolutionContext, saveEvents] = await Promise.all([
+      const [playerResult, stats, reference, evolutionContext, saveEvents, currentPortrait] = await Promise.all([
         client.from('players')
           .select('id,fm_player_id,current_name,nationality,date_of_birth,first_seen_date,last_seen_date,is_active,player_snapshots:player_snapshots!player_snapshots_player_save_fkey(id,snapshot_date,age,club,squad,positions,preferred_foot,height,weight,contract_expiry,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))')
           .eq('id', id).eq('save_id', selected.id).maybeSingle(),
@@ -84,19 +98,25 @@ export function PlayerPage() {
         loadReferenceDataset().catch(() => null),
         loadPlayerEvolutionContext(selected.id, id),
         loadPlayerSaveEvents(selected.id, id),
+        checkpointDate ? loadCurrentPlayers(selected.id) : Promise.resolve([]),
       ])
       if (!active) return
       if (playerResult.error) { setState({ status: 'error', message: playerResult.error.message }); return }
       if (!playerResult.data) { setState({ status: 'not-found' }); return }
       if (!isPlayer(playerResult.data)) { setState({ status: 'error', message: 'O Banco Mestre retornou uma ficha de jogador em formato inesperado.' }); return }
 
-      const player: Player = { ...playerResult.data, player_snapshots: [...playerResult.data.player_snapshots].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date)) }
+      let snapshots = reconcileHistory(playerResult.data.player_snapshots)
+      const exactCurrent = currentPortrait.find(candidate => candidate.id === id)?.player_snapshots[0] as Snapshot | undefined
+      if (checkpointDate && exactCurrent?.snapshot_date === checkpointDate) {
+        snapshots = [...snapshots.filter(snapshot => snapshot.snapshot_date !== checkpointDate), exactCurrent].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date))
+      }
+      const player: Player = { ...playerResult.data, player_snapshots: snapshots }
       setState({ status: 'data', player, stats, reference, evolutionContext, saveEvents })
-      setIndex(Math.max(0, player.player_snapshots.length - 1))
+      setIndex(checkpointDate ? snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) : -1)
     })().catch(cause => { if (active) setState({ status: 'error', message: cause instanceof Error ? cause.message : 'Falha inesperada ao carregar a ficha do jogador.' }) })
 
     return () => { active = false }
-  }, [id, selected?.id])
+  }, [id, selected?.id, checkpointDate])
 
   const player = state.status === 'data' ? state.player : null
   const stats = state.status === 'data' ? state.stats : []
@@ -104,9 +124,11 @@ export function PlayerPage() {
   const evolutionContext = state.status === 'data' ? state.evolutionContext : null
   const saveEvents = state.status === 'data' ? state.saveEvents : null
   const snapshots = player?.player_snapshots ?? []
-  const current = snapshots[index]
-  const compareIndex = useMemo(() => compareMode === 'previous' ? Math.max(0, index - 1) : compareMode === 'oldest' ? 0 : Number(compareMode), [compareMode, index])
-  const comparison = snapshots[compareIndex]
+  const current = index >= 0 ? snapshots[index] : undefined
+  const compareIndex = useMemo(() => index < 0 ? -1 : compareMode === 'previous' ? Math.max(0, index - 1) : compareMode === 'oldest' ? 0 : Number(compareMode), [compareMode, index])
+  const comparison = compareIndex >= 0 ? snapshots[compareIndex] : undefined
+  const isHistoricalView = Boolean(current && current.snapshot_date !== checkpointDate)
+  const lastConfirmedIndex = snapshots.length ? snapshots.length - 1 : -1
 
   const analysis = useMemo(() => {
     if (!current) return null
@@ -129,12 +151,18 @@ export function PlayerPage() {
   if (!player) return null
 
   return <div className="screen-page player-page">
-    <div className="title-row"><div><button className="back-button" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/squad')}>← Voltar</button><h1>{player.current_name}</h1></div><div className="player-snapshot-control"><label>Snapshot <span>{index + 1}/{snapshots.length}</span><input type="range" min="0" max={Math.max(0, snapshots.length - 1)} value={index} disabled={snapshots.length <= 1} onChange={event => setIndex(Number(event.target.value))} /></label><strong>{current?.snapshot_date ?? 'Sem snapshot'}</strong></div></div>
-    {current ? <div className="player-page-body">
+    <div className="title-row"><div><button className="back-button" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/squad')}>← Voltar</button><h1>{player.current_name}</h1></div>{snapshots.length > 0 && <div className="player-snapshot-control"><label>{isHistoricalView ? 'Histórico local' : 'Snapshot'} <span>{index >= 0 ? `${index + 1}/${snapshots.length}` : `—/${snapshots.length}`}</span><input type="range" min="0" max={Math.max(0, snapshots.length - 1)} value={Math.max(0, index)} disabled={snapshots.length <= 1} onChange={event => setIndex(Number(event.target.value))} /></label><strong>{current?.snapshot_date ?? 'Sem observação atual'}</strong></div>}</div>
+    {isHistoricalView && <p className="notice">Visualização histórica local em {current?.snapshot_date}. O checkpoint global do save permanece {formatCheckpointDate(checkpointDate) ?? 'Sem snapshot'}.</p>}
+    {!current ? <div className="player-page-body">
+      <section className="card player-current-analysis"><span className="eyebrow">CHECKPOINT ATUAL</span><h2>Sem observação no checkpoint atual</h2><p>{checkpointDate ? `Este jogador não possui observação sustentada em ${formatCheckpointDate(checkpointDate) ?? checkpointDate}. Dados anteriores não são promovidos automaticamente a atuais.` : 'Este save ainda não possui um checkpoint global autoritativo.'}</p>{lastConfirmedIndex >= 0 && <button className="ghost button" type="button" onClick={() => setIndex(lastConfirmedIndex)}>Abrir último confirmado · {snapshots[lastConfirmedIndex].snapshot_date}</button>}</section>
+      <PlayerEvolutionSection snapshots={snapshots} memberships={evolutionContext?.memberships} seasons={evolutionContext?.seasons} contextDiagnostic={evolutionContext?.diagnostic} />
+      <PlayerPerformanceHistorySection stats={stats} />
+      <PlayerTrajectorySection memberships={evolutionContext?.memberships} events={saveEvents?.events} eventsDiagnostic={saveEvents?.diagnostic} />
+    </div> : <div className="player-page-body">
       <section className="player-summary-grid"><Info label="Idade" value={current.age} /><Info label="Nacionalidade" value={player.nationality} /><Info label="Nascimento" value={player.date_of_birth} /><Info label="Posições" value={current.positions?.join(', ')} /><Info label="Equipe" value={current.club || current.squad} /><FeetInfo snapshot={current} /><Info label="Altura" value={current.height ? `${current.height} cm` : field(current, 'height')} /><Info label="Peso" value={current.weight ? `${current.weight} kg` : field(current, 'weight')} /><Info label="Contrato" value={current.contract_expiry} /><Info label="ID do FM" value={player.fm_player_id} /></section>
 
       <section className="player-analyzer-grid">
-        <article className="card player-current-analysis"><header><div><span className="eyebrow">ANALYZER</span><h2>Qualidade atual</h2></div>{analysis?.general ? <ScoreBadge value={analysis.general.score} rank={analysis.reference?.percentile ?? null} /> : null}</header>
+        <article className="card player-current-analysis"><header><div><span className="eyebrow">ANALYZER</span><h2>{isHistoricalView ? 'Qualidade histórica' : 'Qualidade atual'}</h2></div>{analysis?.general ? <ScoreBadge value={analysis.general.score} rank={analysis.reference?.percentile ?? null} /> : null}</header>
           {analysis?.general ? <><div className="analysis-primary"><div><small>Nota Geral</small><strong>{analysis.general.score.toLocaleString('pt-BR',{maximumFractionDigits:2})}</strong><span>{analysis.general.position} · BasePositionScore {analysis.general.scoreKey}</span></div>{analysis.reference ? <div><small>Referência competitiva</small><strong>P{analysis.reference.percentile} · {analysis.reference.level}</strong><span>{analysis.reference.country} · {analysis.reference.division}ª divisão · {analysis.reference.sample} jogadores · família {analysis.reference.family}</span></div> : <div><small>Referência competitiva</small><strong>Indisponível</strong><span>Sem população compatível para este save.</span></div>}</div>
             <div className="base-position-list">{analysis.bases.map(item => <div key={`${item.scoreKey}-${item.family}`}><span>{item.position}</span><ScoreBadge value={item.score} showTitle={false}/></div>)}</div>
             {analysis.explanation ? <div className="score-evidence"><div><small>Matriz-base</small><strong>{analysis.explanation.roleName}</strong><span>IP {formatScore(analysis.explanation.ipScore)} · OOP {formatScore(analysis.explanation.oopScore)} · combinação geométrica canônica.</span></div><div className="score-evidence-attributes">{analysis.explanation.attributes.slice(0,6).map(item => <span key={item.key}><b>{attributeLabel(item.key)}</b><strong>{item.value}</strong><small>IP {item.ipWeight} · OOP {item.oopWeight}</small></span>)}</div><p>Os atributos acima são os de maior peso efetivo na matriz usada. A nota continua sendo calculada pela fórmula canônica; familiaridade, percentil e stats não alteram silenciosamente esse valor.</p></div> : null}</> : <p className="notice">Não há atributos suficientes para calcular a Nota Geral neste snapshot.</p>}
@@ -161,8 +189,8 @@ export function PlayerPage() {
         eventsDiagnostic={saveEvents?.diagnostic}
       />
 
-      <section className="card player-attributes-panel"><header><div><span className="eyebrow">ATRIBUTOS</span><h2>{current.snapshot_date}</h2></div><label>Comparar com<select value={compareMode} disabled={snapshots.length <= 1} onChange={event => setCompareMode(event.target.value)}><option value="previous">Snapshot anterior</option><option value="oldest">Primeiro snapshot</option>{snapshots.map((snapshot, snapshotIndex) => <option value={snapshotIndex} key={snapshot.id}>{snapshot.snapshot_date}</option>)}</select></label></header><div className="player-attribute-groups">{(['technical', 'mental', 'physical', 'goalkeeping'] as const).map(category => <section key={category}><h3>{{ technical: 'Técnico', mental: 'Mental', physical: 'Físico', goalkeeping: 'Goleiro' }[category]}</h3>{ATTRIBUTE_CATALOG.filter(attribute => attribute.category === category).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')).map(definition => { const attribute = current.player_attributes.find(item => item.attribute_key === definition.key); const old = comparison?.player_attributes.find(item => item.attribute_key === definition.key); const delta = attribute && old ? attribute.value - old.value : null; return <div className="player-attribute-row" key={definition.key}><span>{attribute?.attribute_label ?? definition.label}</span><b className={attribute ? attributeClass(attribute.value) : ''}>{attribute?.value ?? '—'}</b><small className={delta && delta > 0 ? 'up' : delta && delta < 0 ? 'down' : ''}>{delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : ''}${delta}`}</small></div> })}</section>)}</div></section>
-    </div> : <p>Este jogador ainda não possui snapshots.</p>}
+      <section className="card player-attributes-panel"><header><div><span className="eyebrow">ATRIBUTOS</span><h2>{current.snapshot_date}{isHistoricalView ? ' · histórico' : ' · checkpoint atual'}</h2></div><label>Comparar com<select value={compareMode} disabled={snapshots.length <= 1} onChange={event => setCompareMode(event.target.value)}><option value="previous">Snapshot anterior</option><option value="oldest">Primeiro snapshot</option>{snapshots.map((snapshot, snapshotIndex) => <option value={snapshotIndex} key={snapshot.id}>{snapshot.snapshot_date}</option>)}</select></label></header><div className="player-attribute-groups">{(['technical', 'mental', 'physical', 'goalkeeping'] as const).map(category => <section key={category}><h3>{{ technical: 'Técnico', mental: 'Mental', physical: 'Físico', goalkeeping: 'Goleiro' }[category]}</h3>{ATTRIBUTE_CATALOG.filter(attribute => attribute.category === category).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')).map(definition => { const attribute = current.player_attributes.find(item => item.attribute_key === definition.key); const old = comparison?.player_attributes.find(item => item.attribute_key === definition.key); const delta = attribute && old ? attribute.value - old.value : null; return <div className="player-attribute-row" key={definition.key}><span>{attribute?.attribute_label ?? definition.label}</span><b className={attribute ? attributeClass(attribute.value) : ''}>{attribute?.value ?? '—'}</b><small className={delta && delta > 0 ? 'up' : delta && delta < 0 ? 'down' : ''}>{delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : ''}${delta}`}</small></div> })}</section>)}</div></section>
+    </div>}
   </div>
 }
 

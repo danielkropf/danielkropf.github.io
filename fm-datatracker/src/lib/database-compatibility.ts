@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { describeDbError, isMissingRpcError } from './db-error'
 
-export const REQUIRED_DATABASE_SCHEMA = '202608290005'
+export const REQUIRED_DATABASE_SCHEMA = '202609030001'
 const STALE_RECHECK_MS = 30_000
 
 export type DatabaseCapabilities = {
@@ -19,6 +19,7 @@ export type DatabaseCapabilities = {
   longitudinalSaveStructure: boolean
   longitudinalImports: boolean
   analyzerStatsContext: boolean
+  factualMembershipEmc01b: boolean
 }
 
 export type DatabaseCompatibility = {
@@ -32,7 +33,7 @@ const NO_CAPABILITIES: DatabaseCapabilities = {
   importRpc: false, deleteImportRpc: false, modelConfigPatch: false, projections: false,
   diagnosticsTable: false, diagnosticsBucket: false, diagnosticsReservations: false, diagnosticsServerRetention: false, diagnosticsUpload: false,
   longitudinalCore: false, longitudinalBackfill: false, longitudinalSaveStructure: false, longitudinalImports: false,
-  analyzerStatsContext: false,
+  analyzerStatsContext: false, factualMembershipEmc01b: false,
 }
 
 let cached: Promise<DatabaseCompatibility> | null = null
@@ -58,12 +59,12 @@ export function parseDatabaseCompatibilityInfo(value: unknown): DatabaseCompatib
     diagnosticsTable: capability(source, 'diagnostics_table'), diagnosticsBucket: capability(source, 'diagnostics_bucket'), diagnosticsReservations: capability(source, 'diagnostics_reservations'),
     diagnosticsServerRetention, diagnosticsUpload: capability(source, 'diagnostics_upload') && diagnosticsServerRetention,
     longitudinalCore: capability(source, 'longitudinal_core'), longitudinalBackfill: capability(source, 'longitudinal_backfill'), longitudinalSaveStructure: capability(source, 'longitudinal_save_structure'), longitudinalImports: capability(source, 'longitudinal_imports'),
-    analyzerStatsContext: capability(source, 'analyzer_stats_context'),
+    analyzerStatsContext: capability(source, 'analyzer_stats_context'), factualMembershipEmc01b: capability(source, 'factual_membership_emc01b'),
   }
   const missingCore = [
     capabilities.importRpc ? null : 'import RPC', capabilities.deleteImportRpc ? null : 'delete import RPC', capabilities.modelConfigPatch ? null : 'model config patch', capabilities.projections ? null : 'projections',
     capabilities.longitudinalCore ? null : 'longitudinal core', capabilities.longitudinalBackfill ? null : 'longitudinal backfill', capabilities.longitudinalSaveStructure ? null : 'longitudinal save structure', capabilities.longitudinalImports ? null : 'longitudinal imports',
-    capabilities.analyzerStatsContext ? null : 'analyzer stats context',
+    capabilities.analyzerStatsContext ? null : 'analyzer stats context', capabilities.factualMembershipEmc01b ? null : 'E-MC-01B factual membership',
   ].filter((item): item is string => Boolean(item))
   if (missingCore.length) return { status: 'outdated', schemaVersion, capabilities, diagnostic: `Schema ${schemaVersion} sem capabilities obrigatórias: ${missingCore.join(', ')}.` }
   return { status: 'compatible', schemaVersion, capabilities, diagnostic: null }

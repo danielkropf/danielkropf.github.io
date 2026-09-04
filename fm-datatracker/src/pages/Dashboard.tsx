@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { loadCurrentPlayers, type CurrentPlayerSummary } from '../lib/dataCache'
+import { formatCheckpointDate } from '../lib/current-checkpoint'
 import { loadModelConfig } from '../lib/model-config'
 import { derivePlanningDistribution, type PlanningDistributionSource } from '../lib/planningDistribution'
 import { SquadDistribution } from '../components/SquadDistribution'
@@ -12,21 +12,18 @@ type ModelConfig = {
   tactics?: Array<{ id: string; name: string }>
   selected_tactic_id?: string | null
 }
-type ImportInfo = { snapshot_date: string; original_filename: string; row_count: number; status: string }
 
 export function Dashboard() {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const [players, setPlayers] = useState<CurrentPlayerSummary[]>([])
   const [model, setModel] = useState<ModelConfig>({})
-  const [lastImport, setLastImport] = useState<ImportInfo | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let active = true
-    if (!selected || !supabase) {
+    if (!selected) {
       setPlayers([])
       setModel({})
-      setLastImport(null)
       setLoading(false)
       return () => { active = false }
     }
@@ -35,20 +32,10 @@ export function Dashboard() {
     void Promise.all([
       loadCurrentPlayers(selected.id, { summary: true }),
       loadModelConfig(selected.id),
-      supabase
-        .from('imports')
-        .select('snapshot_date,original_filename,row_count,status')
-        .eq('save_id', selected.id)
-        .eq('status', 'imported')
-        .eq('file_type', 'squad')
-        .order('snapshot_date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]).then(([currentPlayers, modelConfig, importResult]) => {
+    ]).then(([currentPlayers, modelConfig]) => {
       if (!active) return
       setPlayers(currentPlayers)
       setModel(modelConfig as ModelConfig)
-      setLastImport(importResult.data as ImportInfo | null)
       setLoading(false)
     }).catch(() => {
       if (active) setLoading(false)
@@ -77,6 +64,10 @@ export function Dashboard() {
     <Link className="button" to="/saves">Criar save</Link>
   </section>
 
+  const checkpointLabel = currentCheckpoint.saveId === selected.id && currentCheckpoint.status === 'ready'
+    ? formatCheckpointDate(currentCheckpoint.date) ?? '—'
+    : '—'
+
   return <div className={`dashboard-v2 ${loading ? 'is-loading' : ''}`}>
     <header className="dashboard-heading">
       <div>
@@ -87,10 +78,10 @@ export function Dashboard() {
     </header>
 
     <section className="dashboard-kpis">
-      <Insight value={players.length} label="jogadores ativos" hint={`${summary.assigned} já organizados`}/>
+      <Insight value={players.length} label="observados no checkpoint" hint={`${summary.assigned} já organizados`}/>
       <Insight value={summary.unassigned} label="sem elenco definido" hint={summary.unassigned ? 'Revisar no Planejamento' : 'Elenco totalmente organizado'}/>
       <Insight value={model.tactics?.length ?? 0} label="táticas criadas" hint={summary.tactic ? `Ativa: ${summary.tactic}` : 'Crie a estrutura do time'}/>
-      <Insight value={lastImport ? formatDate(lastImport.snapshot_date) : '—'} label="última fotografia" hint={lastImport ? `${lastImport.row_count} linhas · ${lastImport.original_filename}` : 'Nenhum import concluído'}/>
+      <Insight value={checkpointLabel} label="checkpoint atual" hint={currentCheckpoint.date ? 'Fotografia factual global do save' : 'Nenhum snapshot concluído'}/>
     </section>
 
     <section className="dashboard-main-grid">
@@ -147,10 +138,6 @@ function Age({ value, label, tone }: { value: number; label: string; tone: strin
 }
 function Empty({ text, action, to }: { text: string; action: string; to: string }) {
   return <div className="dashboard-inline-empty"><p>{text}</p><Link to={to}>{action} →</Link></div>
-}
-function formatDate(value: string) {
-  const date = new Date(`${value}T12:00:00`)
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('pt-BR').format(date)
 }
 function nextTitle(players: number, unassigned: number, tactics: number) {
   if (!players) return 'Construa sua primeira base de dados'

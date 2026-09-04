@@ -6,6 +6,8 @@ export type PreparedImportRow = Omit<CsvPreparedRow, 'raw_data' | 'normalized_da
   normalized_data: Record<string, unknown>
   statistics?: unknown
   tactic?: unknown
+  membership_facts_v1?: unknown
+  membership_persistence_v1?: unknown
 }
 
 export type ImportRowMatch = {
@@ -114,6 +116,8 @@ export function mergeValidatedRows(csvRows: PreparedImportRow[], matches: Import
       normalized_data: { ...csv.normalized_data, ...fm.normalized_data, import_source: 'csv+fm26-offline' },
       ...(fm.statistics !== undefined ? { statistics: fm.statistics } : {}),
       ...(fm.tactic !== undefined ? { tactic: fm.tactic } : {}),
+      ...(fm.membership_facts_v1 !== undefined ? { membership_facts_v1: fm.membership_facts_v1 } : {}),
+      ...(fm.membership_persistence_v1 !== undefined ? { membership_persistence_v1: fm.membership_persistence_v1 } : {}),
     }
   })
 }

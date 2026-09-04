@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
-import { invalidateSaveData } from '../../lib/dataCache'
+import { invalidateSaveData, loadCurrentCheckpoint, SAVE_FACTS_INVALIDATED_EVENT } from '../../lib/dataCache'
 import { discardModelConfigState } from '../../lib/model-config'
 import { loadSaveStructures } from '../../lib/longitudinal-service'
 import { sanitizeSquadTablePreferencesForSaveChange } from '../../lib/squad-table-preferences'
@@ -8,33 +8,80 @@ import type { Save } from '../../types/domain'
 import { createSaveRefreshRequestGuard, resolveSaveRefresh } from './save-refresh'
 
 type NewSave = { name: string; club_name: string; country: string }
+export type CurrentCheckpointState = {
+  saveId: string | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  date: string | null
+  error: string | null
+  revision: number
+}
 type Value = {
   saves: Save[]
   selected: Save | null
   loading: boolean
   error: string | null
+  currentCheckpoint: CurrentCheckpointState
   select: (save: Save) => void
   refresh: () => Promise<void>
+  refreshCurrentCheckpoint: (saveId?: string) => Promise<void>
   create: (save: NewSave) => Promise<string | null>
   deleteSave: (saveId: string) => Promise<string | null>
 }
 
 const Context = createContext<Value | null>(null)
 const ACTIVE_SAVE_KEY = 'fm-datatracker:active-save'
+const EMPTY_CHECKPOINT: CurrentCheckpointState = { saveId: null, status: 'idle', date: null, error: null, revision: 0 }
 
 export function SaveProvider({ children }: { children: ReactNode }) {
   const [saves, setSaves] = useState<Save[]>([])
   const [selected, setSelected] = useState<Save | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [currentCheckpoint, setCurrentCheckpoint] = useState<CurrentCheckpointState>(EMPTY_CHECKPOINT)
   const savesRef = useRef<Save[]>([])
   const selectedRef = useRef<Save | null>(null)
   const refreshGuard = useRef(createSaveRefreshRequestGuard())
+  const checkpointRequest = useRef(0)
+
+  const loadCheckpoint = useCallback(async (saveId: string, bumpRevision: boolean) => {
+    const request = ++checkpointRequest.current
+    setCurrentCheckpoint(previous => ({
+      saveId,
+      status: 'loading',
+      date: null,
+      error: null,
+      revision: previous.saveId === saveId ? previous.revision : 0,
+    }))
+    try {
+      const date = await loadCurrentCheckpoint(saveId)
+      if (checkpointRequest.current !== request || selectedRef.current?.id !== saveId) return
+      setCurrentCheckpoint(previous => ({
+        saveId,
+        status: 'ready',
+        date,
+        error: null,
+        revision: (previous.saveId === saveId ? previous.revision : 0) + (bumpRevision ? 1 : 0),
+      }))
+    } catch (cause) {
+      if (checkpointRequest.current !== request || selectedRef.current?.id !== saveId) return
+      setCurrentCheckpoint(previous => ({
+        saveId,
+        status: 'error',
+        date: null,
+        error: cause instanceof Error ? cause.message : 'Falha ao resolver o checkpoint atual.',
+        revision: previous.saveId === saveId ? previous.revision : 0,
+      }))
+    }
+  }, [])
+
+  const refreshCurrentCheckpoint = useCallback(async (saveId?: string) => {
+    const target = saveId ?? selectedRef.current?.id
+    if (!target) return
+    await loadCheckpoint(target, true)
+  }, [loadCheckpoint])
 
   function select(save: Save) {
-    if (selectedRef.current?.id && selectedRef.current.id !== save.id) {
-      sanitizeSquadTablePreferencesForSaveChange()
-    }
+    if (selectedRef.current?.id && selectedRef.current.id !== save.id) sanitizeSquadTablePreferencesForSaveChange()
     selectedRef.current = save
     setSelected(save)
     localStorage.setItem(ACTIVE_SAVE_KEY, save.id)
@@ -54,11 +101,9 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     try {
       const result = await supabase.from('saves').select('*').eq('is_archived', false).order('created_at')
       if (!refreshGuard.current.isCurrent(token)) return
-
       const rawData = result.error ? null : (result.data ?? []) as Save[]
       const structuredData = rawData ? await loadSaveStructures(rawData) : null
       if (!refreshGuard.current.isCurrent(token)) return
-
       const resolution = resolveSaveRefresh({
         currentSaves: savesRef.current,
         currentSelected: selectedRef.current,
@@ -69,9 +114,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       setError(resolution.error)
       if (resolution.error) return
       const previousSaveId = selectedRef.current?.id ?? null
-      if (previousSaveId && previousSaveId !== resolution.selected?.id) {
-        sanitizeSquadTablePreferencesForSaveChange()
-      }
+      if (previousSaveId && previousSaveId !== resolution.selected?.id) sanitizeSquadTablePreferencesForSaveChange()
       savesRef.current = resolution.saves
       selectedRef.current = resolution.selected
       setSaves(resolution.saves)
@@ -89,9 +132,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   async function create(input: NewSave) {
     if (!supabase) return 'Banco não configurado'
     const { error: createError } = await supabase.rpc('create_save_with_structure', {
-      p_name: input.name.trim(),
-      p_club_name: input.club_name.trim(),
-      p_country: input.country.trim() || null,
+      p_name: input.name.trim(), p_club_name: input.club_name.trim(), p_country: input.country.trim() || null,
     })
     if (createError) return createError.message
     await refresh()
@@ -119,7 +160,27 @@ export function SaveProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { void refresh(); return () => refreshGuard.current.invalidate() }, [])
 
-  return <Context.Provider value={{ saves, selected, loading, error, select, refresh, create, deleteSave }}>{children}</Context.Provider>
+  useEffect(() => {
+    const saveId = selected?.id
+    if (!saveId) {
+      checkpointRequest.current += 1
+      setCurrentCheckpoint(EMPTY_CHECKPOINT)
+      return
+    }
+    void loadCheckpoint(saveId, false)
+  }, [selected?.id, loadCheckpoint])
+
+  useEffect(() => {
+    function onFactsInvalidated(event: Event) {
+      const saveId = (event as CustomEvent<{ saveId?: string }>).detail?.saveId
+      if (!saveId || selectedRef.current?.id !== saveId) return
+      void loadCheckpoint(saveId, true)
+    }
+    window.addEventListener(SAVE_FACTS_INVALIDATED_EVENT, onFactsInvalidated)
+    return () => window.removeEventListener(SAVE_FACTS_INVALIDATED_EVENT, onFactsInvalidated)
+  }, [loadCheckpoint])
+
+  return <Context.Provider value={{ saves, selected, loading, error, currentCheckpoint, select, refresh, refreshCurrentCheckpoint, create, deleteSave }}>{children}</Context.Provider>
 }
 
 export function useSaves() {

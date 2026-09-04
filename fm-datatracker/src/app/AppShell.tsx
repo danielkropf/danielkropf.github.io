@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { AppVersion } from '../components/AppVersion'
+import { CurrentCheckpointCalendar } from '../components/CurrentCheckpointCalendar'
 import { usePotential } from '../features/potential/PotentialContext'
 import { useSaves } from '../features/saves/SaveContext'
 import { supabase } from '../lib/supabase'
@@ -12,7 +13,7 @@ import { flushAllModelConfigPatches } from '../lib/model-config'
 const navigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/planning', 'Planejamento'], ['/network', 'Rede'], ['/academy', 'Academia'], ['/history', 'História'], ['/tactics', 'Táticas'], ['/scoring', 'Pontuação & Funções']] as const
 
 export function AppShell() {
-  const { saves, selected, select } = useSaves()
+  const { saves, selected, select, currentCheckpoint } = useSaves()
   const location = useLocation()
   const potential = usePotential()
   const [settings, setSettings] = useState(false)
@@ -33,6 +34,10 @@ export function AppShell() {
   const potentialTitle = potential.available
     ? 'Mostra os melhores scores plausíveis em um cenário positivo de carreira, na Nota Geral e por função. Não é a evolução mais provável e o PA/CP do Football Manager não é exibido.'
     : potential.detail
+  const checkpointMatchesSave = !selected || currentCheckpoint.saveId === selected.id
+  const checkpointReady = !selected || (checkpointMatchesSave && currentCheckpoint.status === 'ready')
+  const checkpointError = Boolean(selected && checkpointMatchesSave && currentCheckpoint.status === 'error')
+  const routeKey = selected ? `${selected.id}:${currentCheckpoint.date ?? 'none'}:${currentCheckpoint.revision}` : 'no-save'
 
   return <div className="shell">
     <aside>
@@ -59,7 +64,16 @@ export function AppShell() {
         <AppVersion />
       </div>
     </aside>
-    <main><AppRoutes /></main>
+    <main>
+      <div className="shell-main-context">{selected && <CurrentCheckpointCalendar checkpoint={checkpointMatchesSave ? currentCheckpoint : { ...currentCheckpoint, saveId: selected.id, status: 'loading', date: null, error: null }} />}</div>
+      <div className="shell-page-frame">
+        {checkpointError
+          ? <section className="card checkpoint-route-state"><span className="eyebrow">CHECKPOINT ATUAL</span><h1>Não foi possível sincronizar a fotografia atual</h1><p>{currentCheckpoint.error ?? 'Tente recarregar o save.'}</p></section>
+          : checkpointReady
+            ? <AppRoutes key={routeKey} />
+            : <section className="checkpoint-route-state is-loading" aria-live="polite"><span className="checkpoint-route-spinner" aria-hidden="true"/><strong>Sincronizando checkpoint atual…</strong><small>Os dados do save serão exibidos juntos com a data correta.</small></section>}
+      </div>
+    </main>
     {settings && <SettingsModal close={() => setSettings(false)} />}
   </div>
 }
