@@ -1,0 +1,88 @@
+/* Administration windows that preserve the current screen underneath. */
+.import-modal{
+  position:relative;
+  width:min(1480px,96vw);
+  height:min(900px,calc(100dvh - 32px));
+  padding:var(--dt-space-5);
+}
+.import-modal-actions{
+  position:absolute;
+  top:var(--dt-space-4);
+  right:var(--dt-space-4);
+  z-index:6;
+  display:flex;
+  align-items:center;
+  gap:var(--dt-space-2);
+}
+.import-modal-actions .import-history-trigger{
+  min-height:var(--dt-control-compact-height);
+  margin:0;
+}
+.import-modal-close{
+  position:static;
+}
+.import-modal-content{
+  width:100%;
+  height:100%;
+  min-width:0;
+  min-height:0;
+  overflow:auto;
+  padding-right:var(--dt-space-1);
+}
+.import-modal-content>.screen-page,
+.import-modal-content .imports-page{
+  min-height:0;
+}
+
+/* Import history moved out of Configurações and opens as a secondary, smaller window. */
+.import-history-overlay{z-index:45}
+.import-history-modal{
+  position:relative;
+  width:min(1040px,88vw);
+  height:min(680px,calc(100dvh - 96px));
+  padding:var(--dt-space-5);
+}
+.import-history-close{
+  position:absolute;
+  top:var(--dt-space-4);
+  right:var(--dt-space-4);
+  z-index:6;
+}
+.import-history-modal-content{
+  width:100%;
+  height:100%;
+  min-width:0;
+  min-height:0;
+  overflow:auto;
+  padding-right:var(--dt-space-1);
+}
+.import-history-modal .settings-import-history{padding-right:var(--dt-space-2)}
+.import-history-modal .settings-import-history>p:first-of-type{display:none}
+.import-history-modal .settings-import-history .table-wrap{max-height:none}
+
+/* Compact the current Import surface without changing its import/validation engine. */
+.import-modal .fm-import-preview>.import-file-pickers+.warning{display:none}
+.import-modal .import-fields>label:nth-child(4){display:none}
+.import-modal .fm-import-preview>details.import-debug:first-of-type:not(:has(.chips)){display:none}
+.import-modal .fm-competition-history-preview,
+.import-modal .fm-comparison,
+.import-modal .diagnostic-consent,
+.import-modal .import-comparison-overlay{display:none!important}
+
+/* Pontuação & Funções keeps its existing behavior inside Configurações.
+   The settings frame owns scrolling instead of clipping the full scoring workspace. */
+.settings-content>.scoring-page,
+.settings-content .scoring-page{
+  box-sizing:border-box;
+  width:100%;
+  height:100%;
+  min-height:0;
+  overflow:auto;
+  padding-right:var(--dt-space-1);
+}
+
+@media(max-width:900px){
+  .import-modal{width:100%;height:auto;max-height:calc(100dvh - 16px);padding:var(--dt-space-4)}
+  .import-modal-content{max-height:calc(100dvh - 48px)}
+  .import-history-modal{width:96vw;height:min(720px,calc(100dvh - 32px));padding:var(--dt-space-4)}
+}

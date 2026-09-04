@@ -1,0 +1,13 @@
+/* QA — canonical sidebar grouping and footer anchoring. */
+.shell>aside{
+  display:flex;
+  flex-direction:column;
+}
+.shell>aside nav .sidebar-nav-divider{
+  height:1px;
+  margin:var(--dt-space-2) var(--dt-space-1);
+  background:var(--dt-border);
+}
+.shell>aside .sidebar-footer{
+  margin-top:auto;
+}

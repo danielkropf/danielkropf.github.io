@@ -3,8 +3,6 @@ import { Route, Routes } from 'react-router-dom'
 import { RequireSave } from '../components/RequireSave'
 
 const Dashboard = lazy(() => import('../pages/Dashboard').then(module => ({ default: module.Dashboard })))
-const ImportsPage = lazy(() => import('../pages/ImportsPage').then(module => ({ default: module.ImportsPage })))
-const ModelLabPage = lazy(() => import('../pages/ModelLabPage').then(module => ({ default: module.ModelLabPage })))
 const PlanningPage = lazy(() => import('../pages/PlanningPage').then(module => ({ default: module.PlanningPage })))
 const SavesPage = lazy(() => import('../pages/SavesPage').then(module => ({ default: module.SavesPage })))
 const PlayerComparisonPage = lazy(() => import('../pages/PlayerComparisonPage').then(module => ({ default: module.PlayerComparisonPage })))
@@ -21,7 +19,6 @@ export function AppRoutes() {
   return <Suspense fallback={<div className="route-loading" role="status">Carregando módulo…</div>}><Routes>
     <Route path="/" element={<Dashboard />} />
     <Route path="/saves" element={<SavesPage />} />
-    <Route path="/imports" element={<Protected><ImportsPage /></Protected>} />
     <Route path="/squad" element={<Protected><SquadPage /></Protected>} />
     <Route path="/compare" element={<Protected><PlayerComparisonPage /></Protected>} />
     <Route path="/players/:id" element={<Protected><PlayerPage /></Protected>} />
@@ -30,8 +27,6 @@ export function AppRoutes() {
     <Route path="/academy" element={<Protected><AcademyPage /></Protected>} />
     <Route path="/history" element={<Protected><HistoryPage /></Protected>} />
     <Route path="/tactics" element={<Protected><TacticsPage /></Protected>} />
-    <Route path="/scoring" element={<Protected><ModelLabPage /></Protected>} />
-    <Route path="/models" element={<Protected><ModelLabPage /></Protected>} />
     <Route path="*" element={<Dashboard />} />
   </Routes></Suspense>
 }

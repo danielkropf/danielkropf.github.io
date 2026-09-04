@@ -35,7 +35,10 @@
 @import './tactics.css';
 /* Analyzer comparison surface — Phase 1B. */
 @import './player-comparison.css';
+/* Shared Configurações/Novo import window behavior. */
+@import './administration-modals.css';
 /* Canonical shell remains above primitives for chrome-specific authority. */
 @import './shell.css';
+@import './sidebar-menu.css';
 /* Responsive contracts must remain last so mobile/tablet geometry wins. */
 @import '../../responsive.css';

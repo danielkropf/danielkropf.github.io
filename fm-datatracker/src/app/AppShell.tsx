@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { AppVersion } from '../components/AppVersion'
 import { CurrentCheckpointCalendar } from '../components/CurrentCheckpointCalendar'
 import { usePotential } from '../features/potential/PotentialContext'
 import { useSaves } from '../features/saves/SaveContext'
 import { supabase } from '../lib/supabase'
 import { AppRoutes } from './AppRoutes'
+import { ImportModal } from './ImportModal'
 import { SettingsModal } from './SettingsModal'
 import { preloadSave } from '../lib/dataCache'
 import { flushAllModelConfigPatches } from '../lib/model-config'
 
-const navigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/planning', 'Planejamento'], ['/network', 'Rede'], ['/academy', 'Academia'], ['/history', 'História'], ['/tactics', 'Táticas'], ['/scoring', 'Pontuação & Funções']] as const
+const primaryNavigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/tactics', 'Táticas']] as const
+const secondaryNavigation = [['/network', 'Rede'], ['/academy', 'Academia'], ['/history', 'História']] as const
 
 export function AppShell() {
   const { saves, selected, select, currentCheckpoint } = useSaves()
   const location = useLocation()
   const potential = usePotential()
+  const [importOpen, setImportOpen] = useState(false)
   const [settings, setSettings] = useState(false)
   useEffect(() => { if (selected) preloadSave(selected.id) }, [selected?.id])
   useEffect(() => {
@@ -55,11 +58,11 @@ export function AppShell() {
       <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'has-load-error' : ''}`} onClick={() => potential.setShowPotential(!potential.showPotential)} title={potentialTitle} aria-pressed={potential.showPotential}>
         <span><b aria-hidden="true">↗</b> Mostrar potencial</span><span className="potential-switch" aria-hidden="true" />
       </button>
-      <nav>{navigation.slice(0, 2).map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}<NavLink to={compareTo}>Comparar</NavLink>{navigation.slice(2).map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}</nav>
+      <nav>{primaryNavigation.map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}<NavLink to={compareTo}>Comparar</NavLink><div className="sidebar-nav-divider" aria-hidden="true" />{secondaryNavigation.map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}</nav>
       <div className="sidebar-footer">
         <div className="sidebar-actions">
-          <Link className="ghost sidebar-import" to="/imports">↥ Novo import</Link>
-          <button className="ghost" onClick={() => setSettings(true)}>⚙ Configurações</button>
+          <button className="ghost sidebar-import" type="button" onClick={() => { setSettings(false); setImportOpen(true) }}>↥ Import</button>
+          <button className="ghost" type="button" onClick={() => { setImportOpen(false); setSettings(true) }}>⚙ Configurações</button>
           <button className="ghost" onClick={() => void supabase?.auth.signOut()}>Sair</button>
         </div>
         <AppVersion />
@@ -74,6 +77,7 @@ export function AppShell() {
             : <section className="checkpoint-route-state is-loading" aria-live="polite"><span className="checkpoint-route-spinner" aria-hidden="true"/><strong>Sincronizando checkpoint atual…</strong><small>Os dados do save serão exibidos juntos com a data correta.</small></section>}
       </div>
     </main>
+    {importOpen && <ImportModal close={() => setImportOpen(false)} />}
     {settings && <SettingsModal close={() => setSettings(false)} />}
   </div>
 }
