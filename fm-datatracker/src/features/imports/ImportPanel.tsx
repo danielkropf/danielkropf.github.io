@@ -11,14 +11,38 @@ import type { ImportPreview, ImportType } from '../../types/domain'
 import { useSaves } from '../saves/SaveContext'
 
 type PreparedRow = PreparedImportRow
-type OfflineRead = { players: PreparedRow[]; tactics?: unknown[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null }
+type CompetitionHistoryPreview = {
+  version?: string
+  status?: 'confirmed' | 'partial' | 'unresolved'
+  seasons?: Array<{
+    season_end_year?: number
+    competition_id_raw?: number
+    competition_uid?: number | null
+    competition_identity_status?: string
+    fixture_status?: string
+    table_status?: string
+    team_count?: number
+    expected_fixture_count?: number | null
+    resolved_fixture_count?: number
+    rows?: unknown[]
+  }>
+  diagnostics?: { warnings?: string[]; errors?: string[] }
+}
+type OfflineRead = { players: PreparedRow[]; tactics?: unknown[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null; competition_history?: CompetitionHistoryPreview | null }
 type ComparisonDifference = { player: string; field: string; csv: string; fm: string }
 type DataComparison = {
   matched: number; csvTotal: number; fmTotal: number; coverage: number; valid: boolean; csvOnly: number; fmOnly: number; ambiguous: number
   checkedFields: number; matchingFields: number; divergentFields: number; unavailableFields: string[]; missingValues: number; dataCoverage: number; samples: string[]; differences: ComparisonDifference[]
 }
+type ImportFlash = { saveId: string; message: string; createdAt: number }
+type FmReadMarker = { fileName: string; startedAt: number; runtimeId: string }
 
 const TACTIC_MODEL_VERSION = '2.9.0'
+const IMPORT_FLASH_KEY = 'fm-datatracker:import-success-v1'
+const FM_READ_MARKER_KEY = 'fm-datatracker:fm-read-in-progress-v1'
+const IMPORT_FLASH_TTL_MS = 2 * 60_000
+const FM_READ_MARKER_TTL_MS = 10 * 60_000
+const IMPORT_PANEL_RUNTIME_ID = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `runtime-${Date.now()}-${Math.random()}`
 const comparable = (value: string | null | undefined) => normalizedText(value)
 const comparableNumber = (value: unknown) => {
   const match = String(value ?? '').replace(',', '.').match(/-?\d+(?:\.\d+)?/)
@@ -45,6 +69,23 @@ function errorMessage(error: unknown): string {
     return content || (typeof detail.code === 'string' ? detail.code : 'erro desconhecido')
   }
   return 'erro desconhecido'
+}
+
+function sessionJson<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = sessionStorage.getItem(key)
+    return value ? JSON.parse(value) as T : null
+  } catch { return null }
+}
+
+function writeImportFlash(saveId: string, message: string) {
+  if (typeof window === 'undefined') return
+  sessionStorage.setItem(IMPORT_FLASH_KEY, JSON.stringify({ saveId, message, createdAt: Date.now() } satisfies ImportFlash))
+}
+
+function clearImportFlash() {
+  if (typeof window !== 'undefined') sessionStorage.removeItem(IMPORT_FLASH_KEY)
 }
 
 function comparePlayers(csvRows: PreparedRow[], fmRows: PreparedRow[]): DataComparison {
@@ -156,6 +197,18 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const [comparisonModal, setComparisonModal] = useState<'differences' | 'unavailable' | null>(null)
 
   useEffect(() => {
+    const flash = sessionJson<ImportFlash>(IMPORT_FLASH_KEY)
+    if (flash && selected?.id === flash.saveId && Date.now() - flash.createdAt <= IMPORT_FLASH_TTL_MS) setMessage(flash.message)
+    else if (flash) clearImportFlash()
+
+    const interrupted = sessionJson<FmReadMarker>(FM_READ_MARKER_KEY)
+    if (interrupted && interrupted.runtimeId !== IMPORT_PANEL_RUNTIME_ID && Date.now() - interrupted.startedAt <= FM_READ_MARKER_TTL_MS) {
+      setFmStatus(`A leitura anterior de “${interrupted.fileName}” foi interrompida por um recarregamento da página. Selecione o arquivo novamente; nenhum import foi confirmado.`)
+      sessionStorage.removeItem(FM_READ_MARKER_KEY)
+    } else if (interrupted && (interrupted.runtimeId !== IMPORT_PANEL_RUNTIME_ID || Date.now() - interrupted.startedAt > FM_READ_MARKER_TTL_MS)) sessionStorage.removeItem(FM_READ_MARKER_KEY)
+  }, [selected?.id])
+
+  useEffect(() => {
     void Promise.all([getImportDirectoryName('csv'), getImportDirectoryName('fm')]).then(([csv, fm]) => setDirectoryNames({ csv, fm }))
     const onDirectoryChanged = (event: Event) => {
       const detail = (event as CustomEvent<{ kind: ImportFileKind; name: string }>).detail
@@ -168,6 +221,19 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const csvRows = useMemo(() => preview ? prepareRows(preview, nameColumn) : [], [preview, nameColumn])
   const fmRows = useMemo(() => fmRead?.players ?? [], [fmRead])
   const comparison = useMemo(() => csvRows.length && fmRows.length ? comparePlayers(csvRows, fmRows) : null, [csvRows, fmRows])
+  const competitionSummary = useMemo(() => {
+    const history = fmRead?.competition_history
+    const seasons = history?.seasons ?? []
+    return history ? {
+      status: history.status ?? 'unresolved',
+      version: history.version ?? '—',
+      seasons,
+      confirmedTables: seasons.filter(season => season.table_status === 'confirmed').length,
+      fixtureCount: seasons.reduce((total, season) => total + (season.resolved_fixture_count ?? 0), 0),
+      warnings: history.diagnostics?.warnings?.length ?? 0,
+      errors: history.diagnostics?.errors?.length ?? 0,
+    } : null
+  }, [fmRead])
   const { importRows, importMode } = useMemo(() => {
     if (csvRows.length && fmRows.length) {
       if (type === 'stats') return { importRows: tagRows(csvRows, 'csv-only', 'unavailable'), importMode: 'csv-stats' }
@@ -188,9 +254,23 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const fmIdentitySafe = !fmIdentityRequired || resolvedHumanClubCount > 0
   const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid && fmIdentitySafe)
 
+  function clearSuccessForNewInput() {
+    clearImportFlash()
+    setMessage('')
+  }
+
+  function resetTransientImportState() {
+    setCsvFile(null); setFmFile(null); setPreview(null); setFmRead(null)
+    setNameColumn(''); setSnapshotDate(''); setType('squad')
+    setCsvStatus('Aguardando arquivo CSV.'); setFmStatus('Aguardando arquivo .fm.')
+    setLoadingCsv(false); setLoadingFm(false); setShareForDiagnostics(false); setComparisonModal(null)
+    if (csvInput.current) csvInput.current.value = ''
+    if (fmInput.current) fmInput.current.value = ''
+  }
+
   async function chooseCsv(file: File | undefined) {
     if (!file) return
-    setMessage(''); setCsvFile(file); setPreview(null); setLoadingCsv(true); setCsvStatus('Lendo CSV em segundo plano…')
+    clearSuccessForNewInput(); setCsvFile(file); setPreview(null); setLoadingCsv(true); setCsvStatus('Lendo CSV em segundo plano…')
     try {
       const next = await parseCsvFile(file)
       const detected = detectNameColumn(next.headers)
@@ -251,7 +331,8 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
 
   async function chooseFm(file: File | undefined) {
     if (!file) return
-    setMessage(''); setFmFile(file); setFmRead(null); setType('squad'); setLoadingFm(true); setFmStatus('Lendo o save localmente em segundo plano…')
+    clearSuccessForNewInput(); setFmFile(file); setFmRead(null); setType('squad'); setLoadingFm(true); setFmStatus('Lendo o save localmente em segundo plano…')
+    if (typeof window !== 'undefined') sessionStorage.setItem(FM_READ_MARKER_KEY, JSON.stringify({ fileName: file.name, startedAt: Date.now(), runtimeId: IMPORT_PANEL_RUNTIME_ID } satisfies FmReadMarker))
     try {
       const read = await readFmInWorker(file)
       setFmRead(read)
@@ -266,7 +347,10 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       const clubStatus = clubCount > 0 ? ` ${clubCount} clube(s) de human manager resolvido(s).` : ' Clube do human manager não resolvido; importação direta do .fm ficará bloqueada para evitar atribuição ao save errado.'
       setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${tacticStatus}${clubStatus}${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. Informe dia e mês antes de confirmar; 01/01 não será usado como data inventada.` : ' A data exata do save ainda não foi localizada pelo leitor; informe a data manualmente antes de confirmar.'}`)
     } catch (error) { setFmStatus(`Não foi possível ler o arquivo .fm: ${errorMessage(error)}`) }
-    finally { setLoadingFm(false) }
+    finally {
+      if (typeof window !== 'undefined') sessionStorage.removeItem(FM_READ_MARKER_KEY)
+      setLoadingFm(false)
+    }
   }
 
   async function openFile(kind: ImportFileKind) {
@@ -347,11 +431,18 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       const tacticOutcome = await persistTacticPlan(tacticPlan)
       const tacticSuffix = tacticOutcome.note ? ` ${tacticOutcome.note}` : ''
       if (result?.duplicate) {
-        setMessage(`Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.${tacticSuffix}`)
-        if (tacticOutcome.changed) onImported?.()
+        const duplicateMessage = `Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.${tacticSuffix}`
+        setMessage(duplicateMessage)
+        if (tacticOutcome.changed) {
+          writeImportFlash(selected.id, duplicateMessage)
+          onImported?.()
+        }
         return
       }
-      setMessage(`${importMode === 'validated' ? 'Importação concluída: CSV e .fm foram validados juntos.' : 'Importação concluída.'}${tacticSuffix}`)
+      const successMessage = `${importMode === 'validated' ? 'Importação concluída: CSV e .fm foram validados juntos.' : 'Importação concluída.'} Save: ${selected.name}. Snapshot: ${snapshotDate}.${tacticSuffix}`
+      writeImportFlash(selected.id, successMessage)
+      setMessage(successMessage)
+      resetTransientImportState()
       onImported?.()
     } catch (error) { setMessage(`Falha na persistência: ${errorMessage(error)}`) }
     finally { setSaving(false) }
@@ -378,9 +469,10 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       {preview && csvRows.length === 0 && <p className="warning">Nenhum jogador com nome foi encontrado. Escolha uma coluna de nome válida.</p>}
       <details className="import-debug"><summary>Dados detectados <small>{preview ? `${preview.headers.length} dados · abrir para conferir o mapeamento` : 'a leitura do CSV exibirá os dados aqui'}</small></summary>{preview && <div className="chips">{preview.headers.map(header => <span key={header} className={preview.ignoredColumns.includes(header) ? 'chip muted' : 'chip'}>{header}</span>)}</div>}</details>
       <div className={`fm-reader-status ${fmFile ? (loadingFm ? 'reading' : fmRead ? 'valid' : 'invalid') : ''}`}><strong>Arquivo .fm</strong><span>{fmStatus}</span></div>
+      {competitionSummary && <details className="import-debug fm-competition-history-preview"><summary>Histórico competitivo do .fm <small>{competitionSummary.status} · {competitionSummary.seasons.length} temporada(s)</small></summary><p className="notice">Prévia somente do reader E-TC-01. Estes dados ainda não são persistidos como histórico de domínio pelo fluxo de importação.</p><div className="stats import-overview"><div><span>Status</span><strong>{competitionSummary.status}</strong></div><div><span>Temporadas</span><strong>{competitionSummary.seasons.length}</strong></div><div><span>Tabelas confirmadas</span><strong>{competitionSummary.confirmedTables}</strong></div><div><span>Fixtures resolvidos</span><strong>{competitionSummary.fixtureCount}</strong></div></div><ul>{competitionSummary.seasons.map((season, index) => <li key={`${season.season_end_year ?? 'season'}-${season.competition_uid ?? season.competition_id_raw ?? index}`}><b>{season.season_end_year ?? 'Ano não resolvido'}</b> · competição {season.competition_uid ?? season.competition_id_raw ?? 'não resolvida'} · tabela {season.table_status ?? 'unresolved'} · fixtures {season.fixture_status ?? 'unresolved'} · {season.team_count ?? '—'} equipes · {season.resolved_fixture_count ?? 0} jogos resolvidos</li>)}</ul>{(competitionSummary.warnings > 0 || competitionSummary.errors > 0) && <small>{competitionSummary.warnings} aviso(s) · {competitionSummary.errors} erro(s) de diagnóstico.</small>}</details>}
       <div className={`fm-comparison ${comparison ? (comparison.valid ? 'valid' : 'invalid') : ''}`}><strong>Validação CSV × .fm</strong>{comparison ? <><span>{comparison.matched}/{comparison.csvTotal} jogadores associados · {comparison.matchingFields}/{comparison.checkedFields} dados coincidem ({Math.round(comparison.dataCoverage * 100)}%).</span><small>{comparison.valid ? `Validação aprovada. O CSV define os ${comparison.csvTotal} jogadores persistidos; ${comparison.fmOnly} jogador(es) extra(s) do .fm ficam fora deste import. ${comparison.unavailableFields.length} campos ainda não têm equivalência confirmada e não entraram no cálculo.` : `Validação recusada: ${comparison.csvOnly} jogador(es) do CSV sem associação, ${comparison.ambiguous} associação(ões) ambígua(s) e ${comparison.divergentFields} divergência(s) objetiva(s). Por segurança, serão usados apenas dados CSV.`}</small><div className="comparison-actions">{comparison.differences.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('differences')}>Ver {comparison.divergentFields} divergência(s)</button>}{comparison.unavailableFields.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('unavailable')}>Ver campos ainda não comparáveis</button>}</div>{comparison.missingValues > 0 && <small>{comparison.missingValues} comparação(ões) foram ignoradas porque o valor estava vazio em pelo menos um dos arquivos.</small>}</> : <span>Envie os dois arquivos para validar identidade, posições, atributos, nascimento e nacionalidade.</span>}</div>
       {comparison && !comparison.valid && <div className="diagnostic-consent"><label><input type="checkbox" checked={shareForDiagnostics} onChange={event => setShareForDiagnostics(event.target.checked)} /> Autorizo o envio privado destes dois arquivos para diagnóstico e melhoria do leitor.</label><button className="ghost" disabled={!shareForDiagnostics || sendingDiagnostics} onClick={() => void uploadDiagnostics()}>{sendingDiagnostics ? 'Enviando…' : 'Enviar arquivos para diagnóstico'}</button></div>}
-      {message && <p className={message.startsWith('Falha') || message.startsWith('Não foi') ? 'warning' : 'notice'}>{message}</p>}
+      {message && <p className={message.startsWith('Falha') || message.startsWith('Não foi') ? 'warning' : 'notice'} role="status">{message}</p>}
       <div className="import-actions"><button className="primary" disabled={!canConfirm} onClick={() => void confirm()}>{saving ? 'Importando…' : isReading ? 'Aguardando leitura…' : importMode === 'csv-fallback' ? 'Importar CSV sem dados do .fm' : 'Confirmar importação'}</button></div>
       {comparisonModal && comparison && <div className="settings-overlay import-comparison-overlay" role="presentation" onMouseDown={() => setComparisonModal(null)}><section className="import-comparison-modal" role="dialog" aria-modal="true" aria-label="Detalhes da validação" onMouseDown={event => event.stopPropagation()}><header><div><span className="eyebrow">VALIDAÇÃO CSV × .FM</span><h2>{comparisonModal === 'differences' ? 'Divergências encontradas' : 'Campos ainda não comparáveis'}</h2></div><button className="ghost" type="button" onClick={() => setComparisonModal(null)} aria-label="Fechar">×</button></header><div className="import-comparison-modal-body">{comparisonModal === 'differences' ? <><p>Mostrando as primeiras {comparison.differences.length} de {comparison.divergentFields} divergências objetivas.</p><ul>{comparison.differences.map((difference, index) => <li key={`${difference.player}-${difference.field}-${index}`}><b>{difference.player}</b><span>{difference.field}</span><code>CSV: {difference.csv}</code><code>.fm: {difference.fm}</code></li>)}</ul></> : <><p>Estes campos ainda não têm uma equivalência segura: alguns não foram mapeados pelo leitor <code>.fm</code>; outros existem nas duas fontes, mas usam escalas ou formatos diferentes. Eles não entram no cálculo da validação.</p><ul className="field-list">{comparison.unavailableFields.map(field => <li key={field}>{field}</li>)}</ul></>}</div></section></div>}
     </div>

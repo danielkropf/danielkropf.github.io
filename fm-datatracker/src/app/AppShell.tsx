@@ -51,6 +51,7 @@ export function AppShell() {
           {saves.map(save => <option key={save.id} value={save.id}>{save.name}</option>)}
         </select>
       </div>}
+      {selected && <CurrentCheckpointCalendar checkpoint={checkpointMatchesSave ? currentCheckpoint : { ...currentCheckpoint, saveId: selected.id, status: 'loading', date: null, error: null }} />}
       <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'has-load-error' : ''}`} onClick={() => potential.setShowPotential(!potential.showPotential)} title={potentialTitle} aria-pressed={potential.showPotential}>
         <span><b aria-hidden="true">↗</b> Mostrar potencial</span><span className="potential-switch" aria-hidden="true" />
       </button>
@@ -65,7 +66,6 @@ export function AppShell() {
       </div>
     </aside>
     <main>
-      <div className="shell-main-context">{selected && <CurrentCheckpointCalendar checkpoint={checkpointMatchesSave ? currentCheckpoint : { ...currentCheckpoint, saveId: selected.id, status: 'loading', date: null, error: null }} />}</div>
       <div className="shell-page-frame">
         {checkpointError
           ? <section className="card checkpoint-route-state"><span className="eyebrow">CHECKPOINT ATUAL</span><h1>Não foi possível sincronizar a fotografia atual</h1><p>{currentCheckpoint.error ?? 'Tente recarregar o save.'}</p></section>

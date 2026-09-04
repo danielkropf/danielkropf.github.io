@@ -10,6 +10,7 @@ import { loadPlayerEvolutionContext, type PlayerEvolutionContextData } from '../
 import { loadPlayerSaveEvents, type PlayerSaveEventData } from '../lib/player-trajectory-service'
 import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
 import { formatCheckpointDate, resolveSameDateSnapshotGroup } from '../lib/current-checkpoint'
+import { resolveCurrentSnapshotMembership } from '../lib/planning-membership'
 import { generalReferencePercentile, generalReferenceScoresByFamily, normalizeCountry, referenceLevel, type ReferenceDataset } from '../lib/reference'
 import { ScoreBadge } from '../components/ScoreBadge'
 import { PlayerEvolutionSection } from '../components/PlayerEvolutionSection'
@@ -125,6 +126,10 @@ export function PlayerPage() {
   const saveEvents = state.status === 'data' ? state.saveEvents : null
   const snapshots = player?.player_snapshots ?? []
   const current = index >= 0 ? snapshots[index] : undefined
+  const membershipResolution = useMemo(() => resolveCurrentSnapshotMembership(
+    evolutionContext?.memberships ?? [],
+    current?.source_snapshot_ids?.length ? current.source_snapshot_ids : current?.id,
+  ), [current, evolutionContext?.memberships])
   const compareIndex = useMemo(() => index < 0 ? -1 : compareMode === 'previous' ? Math.max(0, index - 1) : compareMode === 'oldest' ? 0 : Number(compareMode), [compareMode, index])
   const comparison = compareIndex >= 0 ? snapshots[compareIndex] : undefined
   const isHistoricalView = Boolean(current && current.snapshot_date !== checkpointDate)
@@ -161,6 +166,8 @@ export function PlayerPage() {
     </div> : <div className="player-page-body">
       <section className="player-summary-grid"><Info label="Idade" value={current.age} /><Info label="Nacionalidade" value={player.nationality} /><Info label="Nascimento" value={player.date_of_birth} /><Info label="Posições" value={current.positions?.join(', ')} /><Info label="Equipe" value={current.club || current.squad} /><FeetInfo snapshot={current} /><Info label="Altura" value={current.height ? `${current.height} cm` : field(current, 'height')} /><Info label="Peso" value={current.weight ? `${current.weight} kg` : field(current, 'weight')} /><Info label="Contrato" value={current.contract_expiry} /><Info label="ID do FM" value={player.fm_player_id} /></section>
 
+      <FactualMembershipCard resolution={membershipResolution} historical={isHistoricalView} />
+
       <section className="player-analyzer-grid">
         <article className="card player-current-analysis"><header><div><span className="eyebrow">ANALYZER</span><h2>{isHistoricalView ? 'Qualidade histórica' : 'Qualidade atual'}</h2></div>{analysis?.general ? <ScoreBadge value={analysis.general.score} rank={analysis.reference?.percentile ?? null} /> : null}</header>
           {analysis?.general ? <><div className="analysis-primary"><div><small>Nota Geral</small><strong>{analysis.general.score.toLocaleString('pt-BR',{maximumFractionDigits:2})}</strong><span>{analysis.general.position} · BasePositionScore {analysis.general.scoreKey}</span></div>{analysis.reference ? <div><small>Referência competitiva</small><strong>P{analysis.reference.percentile} · {analysis.reference.level}</strong><span>{analysis.reference.country} · {analysis.reference.division}ª divisão · {analysis.reference.sample} jogadores · família {analysis.reference.family}</span></div> : <div><small>Referência competitiva</small><strong>Indisponível</strong><span>Sem população compatível para este save.</span></div>}</div>
@@ -192,6 +199,24 @@ export function PlayerPage() {
       <section className="card player-attributes-panel"><header><div><span className="eyebrow">ATRIBUTOS</span><h2>{current.snapshot_date}{isHistoricalView ? ' · histórico' : ' · checkpoint atual'}</h2></div><label>Comparar com<select value={compareMode} disabled={snapshots.length <= 1} onChange={event => setCompareMode(event.target.value)}><option value="previous">Snapshot anterior</option><option value="oldest">Primeiro snapshot</option>{snapshots.map((snapshot, snapshotIndex) => <option value={snapshotIndex} key={snapshot.id}>{snapshot.snapshot_date}</option>)}</select></label></header><div className="player-attribute-groups">{(['technical', 'mental', 'physical', 'goalkeeping'] as const).map(category => <section key={category}><h3>{{ technical: 'Técnico', mental: 'Mental', physical: 'Físico', goalkeeping: 'Goleiro' }[category]}</h3>{ATTRIBUTE_CATALOG.filter(attribute => attribute.category === category).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')).map(definition => { const attribute = current.player_attributes.find(item => item.attribute_key === definition.key); const old = comparison?.player_attributes.find(item => item.attribute_key === definition.key); const delta = attribute && old ? attribute.value - old.value : null; return <div className="player-attribute-row" key={definition.key}><span>{attribute?.attribute_label ?? definition.label}</span><b className={attribute ? attributeClass(attribute.value) : ''}>{attribute?.value ?? '—'}</b><small className={delta && delta > 0 ? 'up' : delta && delta < 0 ? 'down' : ''}>{delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : ''}${delta}`}</small></div> })}</section>)}</div></section>
     </div>}
   </div>
+}
+
+function FactualMembershipCard({ resolution, historical }: { resolution: ReturnType<typeof resolveCurrentSnapshotMembership>; historical: boolean }) {
+  const membership = resolution.membership
+  const clubLabel = (id: string | null, name: string | null | undefined) => name ?? (id ? 'Confirmado · nome indisponível' : 'Não resolvido')
+  const teamLabel = membership?.squad_name?.trim() || (membership?.team_level && membership.team_level !== 'unknown' ? ({ first_team: 'Principal', reserve: 'Reserva/B', academy: 'Base', other: 'Outro elenco' } as const)[membership.team_level] : 'Não resolvido')
+  const loanLabel = membership?.is_loan === true ? 'Empréstimo confirmado' : membership?.is_loan === false ? 'Não está emprestado' : 'Situação não resolvida'
+  return <section className="card player-current-analysis">
+    <header><div><span className="eyebrow">VÍNCULO FACTUAL</span><h2>{historical ? 'Situação neste snapshot' : 'Situação no checkpoint atual'}</h2></div><span className="analyzer-status">{loanLabel}</span></header>
+    {membership ? <><div className="player-summary-grid">
+      <Info label="Clube atual" value={clubLabel(membership.current_club_id, membership.currentClub?.name)} />
+      <Info label="Proprietário" value={clubLabel(membership.owner_club_id, membership.ownerClub?.name)} />
+      <Info label="Equipe / elenco" value={teamLabel} />
+      <Info label="Empréstimo" value={loanLabel} />
+      <Info label="Origem do empréstimo" value={clubLabel(membership.loan_from_club_id, membership.loanFromClub?.name)} />
+      <Info label="Destino do empréstimo" value={clubLabel(membership.loan_to_club_id, membership.loanToClub?.name)} />
+    </div>{resolution.diagnostic && <p className="notice">{resolution.diagnostic}</p>}</> : <p className="notice">{resolution.diagnostic ?? 'Sem vínculo factual confirmado para esta observação. Campos desconhecidos permanecem desconhecidos; dados de outro snapshot não são usados como atuais.'}</p>}
+  </section>
 }
 
 function StatContext({stat}:{stat:PlayerStat}){

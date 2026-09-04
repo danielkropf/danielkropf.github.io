@@ -108,9 +108,7 @@
 
 .shell>main{
   box-sizing:border-box;
-  display:grid;
-  grid-template-rows:auto minmax(0,1fr);
-  gap:var(--dt-space-3);
+  display:block;
   width:100%;
   min-width:0;
   max-width:none;
@@ -120,20 +118,16 @@
   overflow:hidden;
   background:var(--dt-bg-canvas);
 }
-.shell-main-context{
-  display:flex;
-  justify-content:flex-end;
-  min-height:50px;
-  pointer-events:none;
-}
 .current-checkpoint-calendar{
   box-sizing:border-box;
   display:flex;
   align-items:center;
-  gap:var(--dt-space-3);
-  min-width:220px;
+  gap:var(--dt-space-2);
+  width:100%;
+  min-width:0;
   min-height:50px;
-  padding:7px var(--dt-space-3);
+  margin:0 0 var(--dt-space-3);
+  padding:7px var(--dt-space-2);
   border:1px solid var(--dt-border);
   border-radius:var(--dt-radius-card);
   background:var(--dt-surface-1);
@@ -185,7 +179,7 @@
 .checkpoint-calendar-copy em{color:var(--dt-text-3);font-size:.7rem;font-style:normal;white-space:nowrap}
 .current-checkpoint-calendar.is-loading .checkpoint-calendar-copy strong,.current-checkpoint-calendar.is-idle .checkpoint-calendar-copy strong{color:var(--dt-text-2)}
 .current-checkpoint-calendar.is-error .checkpoint-calendar-copy strong{color:#dba0a0}
-.shell-page-frame{min-width:0;min-height:0;overflow:hidden}
+.shell-page-frame{width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}
 .shell-page-frame>*,.shell-page-frame>.screen-page{min-height:0}
 .checkpoint-route-state{
   box-sizing:border-box;

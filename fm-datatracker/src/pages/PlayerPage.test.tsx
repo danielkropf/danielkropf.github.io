@@ -6,16 +6,23 @@ import { PlayerPage } from './PlayerPage'
 
 const mocks = vi.hoisted(() => ({
   selected: { id: 'save-a', name: 'Save A' } as { id: string; name: string } | null,
+  currentCheckpoint: undefined as { saveId: string; status: 'ready'; date: string } | undefined,
   queries: [] as Array<{
     filters: Array<[string, unknown]>
     result: Promise<{ data: unknown; error: { message: string } | null }>
   }>,
   loadEvolutionContext: vi.fn(),
+  loadCurrentPlayers: vi.fn(),
+  loadReferenceDataset: vi.fn(),
 }))
 
-vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected }) }))
+vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected, currentCheckpoint: mocks.currentCheckpoint }) }))
 vi.mock('../lib/longitudinal-service', () => ({
   loadPlayerEvolutionContext: (...args: unknown[]) => mocks.loadEvolutionContext(...args),
+}))
+vi.mock('../lib/dataCache', () => ({
+  loadCurrentPlayers: (...args: unknown[]) => mocks.loadCurrentPlayers(...args),
+  loadReferenceDataset: (...args: unknown[]) => mocks.loadReferenceDataset(...args),
 }))
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -44,8 +51,11 @@ vi.mock('../lib/supabase', () => ({
 }))
 
 beforeEach(() => {
+  mocks.currentCheckpoint = undefined
   mocks.loadEvolutionContext.mockReset()
   mocks.loadEvolutionContext.mockResolvedValue({ memberships: [], seasons: [], diagnostic: null })
+  mocks.loadCurrentPlayers.mockReset().mockResolvedValue([])
+  mocks.loadReferenceDataset.mockReset().mockResolvedValue(null)
 })
 
 afterEach(() => {
@@ -156,5 +166,40 @@ describe('PlayerPage save isolation', () => {
     render(view())
     expect(await screen.findByText(/Contexto normalizado indisponível: membership unavailable/)).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'Jogador A' })).not.toBeNull()
+  })
+
+  it('mostra empréstimo factual confirmado sem inventar proprietário quando o owner está desconhecido', async () => {
+    mocks.selected = { id: 'save-a', name: 'A' }
+    mocks.currentCheckpoint = { saveId: 'save-a', status: 'ready', date: '2029-07-01' }
+    const currentSnapshot = { ...snapshot('s1', '2029-07-01'), source_snapshot_ids: ['s1'] }
+    mocks.loadCurrentPlayers.mockResolvedValue([player('player-1', 'Alisson', [currentSnapshot])])
+    mocks.loadEvolutionContext.mockResolvedValue({
+      seasons: [], diagnostic: null, memberships: [{
+        id: 'membership-1', save_id: 'save-a', owner_id: 'owner', player_id: 'player-1', observed_date: '2029-07-01', season_id: null,
+        current_club_id: 'club-flu', owner_club_id: null, team_level: 'first_team', squad_name: 'Principal', is_loan: true,
+        loan_from_club_id: null, loan_to_club_id: 'club-flu', source_snapshot_id: 's1', source_import_id: 'import-1', source_kind: 'fm', created_at: '',
+        currentClub: { id: 'club-flu', name: 'FLU' }, ownerClub: null, loanFromClub: null, loanToClub: { id: 'club-flu', name: 'FLU' },
+        provenance: {
+          membership_authority: 'membership_facts_v1', membership_facts_sync_version: 'e-mc-01b-v1',
+          factual_fields: {
+            current_organization: { status: 'confirmed', binding_status: 'confirmed', evidence_refs: ['current'] },
+            owner_organization: { status: 'unknown', evidence_refs: ['owner'] },
+            team_level: { status: 'confirmed', evidence_refs: ['level'] },
+            structural_squad: { status: 'confirmed', evidence_refs: ['squad'] },
+            is_loan: { status: 'confirmed', evidence_refs: ['loan'] },
+            loan_from_organization: { status: 'unknown', evidence_refs: ['from'] },
+            loan_to_organization: { status: 'confirmed', binding_status: 'confirmed', evidence_refs: ['to'] },
+          },
+        },
+      }],
+    })
+    mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Alisson', [currentSnapshot]), error: null }) })
+
+    render(view())
+    expect(await screen.findByRole('heading', { name: 'Situação no checkpoint atual' })).not.toBeNull()
+    expect(screen.getAllByText('Empréstimo confirmado').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('FLU').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Não resolvido').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/São Paulo/i)).toBeNull()
   })
 })
