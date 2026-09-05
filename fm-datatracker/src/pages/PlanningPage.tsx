@@ -914,7 +914,7 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
         </Fragment>
       })}
       {preview === null && activePlayer && <PlayerDropPlaceholder />}
-      {!activePlayer && hidden === 0 && <div className="planning-set-vacancy" aria-hidden="true" title="Espaço para adicionar jogador"><span>+</span></div>}
+      {!activePlayer && hidden === 0 && visible.length < capacity && <div className="planning-set-vacancy" aria-hidden="true" title="Espaço para adicionar jogador"><span>+</span></div>}
       {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggle() }} title={`Mostrar mais ${hidden} jogador${hidden === 1 ? '' : 'es'}`}>+{hidden}</button>}
       {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggle() }} title="Recolher" aria-label={`Recolher ${displayLabel}`}>−</button>}
     </div>

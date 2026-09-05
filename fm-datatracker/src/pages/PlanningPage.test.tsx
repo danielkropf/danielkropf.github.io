@@ -104,6 +104,41 @@ describe('PlanningPage 3C', () => {
     expect(screen.getByText('Clube atual')).not.toBeNull()
   })
 
+  it('keeps the compact set footprint to two visible card slots without adding a third vacancy', async () => {
+    const secondSnapshot = { ...snapshot, id: 'snapshot-2' }
+    mocks.loadPlayers.mockResolvedValue([
+      { id: 'player', current_name: 'Jogador Teste', nationality: 'BRA', player_snapshots: [snapshot] },
+      { id: 'player-2', current_name: 'Segundo Jogador', nationality: 'BRA', player_snapshots: [secondSnapshot] },
+    ])
+    mocks.loadConfig.mockResolvedValue({
+      planning: {
+        groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }],
+        slotAssignments: { principal: { 'slot-1': ['player', 'player-2'] } },
+        setLayouts: {},
+      },
+      tactics: [{
+        id: 'tactic', name: 'Tática',
+        ipAssignments: [
+          { playerId: 'slot-1', nodeId: '1', position: 'D (C)', roleCode: 'CD', roleName: 'Central Defender' },
+          { playerId: 'slot-2', nodeId: '2', position: 'M (C)', roleCode: 'AP', roleName: 'Advanced Playmaker' },
+        ],
+        oopAssignments: [
+          { playerId: 'slot-1', nodeId: '1', position: 'D (C)', roleCode: 'CB', roleName: 'Centre Back' },
+          { playerId: 'slot-2', nodeId: '2', position: 'DM (C)', roleCode: 'DM', roleName: 'Defensive Midfielder' },
+        ],
+      }],
+      selected_tactic_id: 'tactic',
+    })
+
+    const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    const secondPlayer = await screen.findByText('Segundo Jogador')
+    const set = secondPlayer.closest('.planning-set-row')
+    expect(set).not.toBeNull()
+    expect(set!.querySelectorAll('.planning-set-player-card').length).toBe(2)
+    expect(set!.querySelectorAll('.planning-set-vacancy').length).toBe(0)
+    expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(1)
+  })
+
   it('uses the single best contextual pair and moves the player to a market group from the context menu', async () => {
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
     expect(await screen.findByText('Jogador Teste')).not.toBeNull()
