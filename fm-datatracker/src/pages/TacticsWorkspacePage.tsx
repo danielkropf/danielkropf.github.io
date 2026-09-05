@@ -81,11 +81,11 @@ export function TacticsWorkspacePage() {
     <div className="tactics-workspace-body">
       <div ref={tacticsHost} className="tactics-workspace-surface tactics-workspace-tactics" hidden={mode !== 'structure'}>
         <TacticsModeBridge host={tacticsHost} />
-        <Suspense fallback={<div className="route-loading" role="status">Carregando Táticas…</div>}><TacticsPage /></Suspense>
+        <Suspense fallback={<div className="route-loading" role="status">Carregando Táticas…</div>}><TacticsPage active={mode === 'structure'} /></Suspense>
       </div>
 
       {planningMounted && <div className="tactics-workspace-surface tactics-workspace-planning" hidden={mode !== 'planning'}>
-        <Suspense fallback={<div className="route-loading" role="status">Carregando Planejamento…</div>}><PlanningPage /></Suspense>
+        <Suspense fallback={<div className="route-loading" role="status">Carregando Planejamento…</div>}><PlanningPage active={mode === 'planning'} /></Suspense>
       </div>}
     </div>
   </div>

@@ -24,12 +24,13 @@ import { PositionSelector, canonicalPosition } from '../components/PositionSelec
 import { ATTRIBUTE_CATALOG, type AttributeCategory } from '../lib/attributes'
 import type { PlayerRow } from '../types/domain'
 import { DATA_TABLE_PRESETS } from '../components/data-table/presets'
+import { patchClubTacticId, primaryPlanningClubId, sanitizeClubTacticSelections } from '../lib/multiclub-planning'
 
 type Role = { id: string; name: string; weights: Record<string, number> }
 type Assignment = { playerId: string; nodeId: string; position: string; roleId: string; roleCode: string; roleName: string }
 type Tactic = { id: string; name: string; roles: Role[]; assignments?: Assignment[]; ipAssignments: Assignment[]; oopAssignments: Assignment[]; lineup: Record<string, string | null> }
 type Planning = { groups: Array<{ id: string; name: string }>; assignments?: Record<string, string>; slotAssignments?: Record<string, Record<string, string[]>> }
-type Config = { role_weight_overrides: Record<string, Record<string, number>>; tactics: Tactic[]; selected_tactic_id: string | null; selected_role_id: string | null; planning?: Planning }
+type Config = { role_weight_overrides: Record<string, Record<string, number>>; tactics: Tactic[]; selected_tactic_id: string | null; selected_tactic_id_by_club?: Record<string, string | null>; selected_role_id: string | null; planning?: Planning }
 type Snapshot = PlayerRow['player_snapshots'][number]
 type Candidate = { id: string; name: string; positions: string[]; age: number | null; attributes: Array<{ key: string; value: number }>; player: PlayerRow; latest: Snapshot | undefined }
 type PlayerDataKey = 'status' | 'name' | 'age' | 'nationality' | 'team' | 'position' | 'height' | 'weight' | 'foot' | 'contract' | 'snapshot' | 'relativeScore'
@@ -186,7 +187,9 @@ function PersonOutline() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25"/><path d="M5.75 19.25c.7-4 2.8-6 6.25-6s5.55 2 6.25 6"/></svg>
 }
 
-export function TacticsPage() {
+type TacticsPageProps = { active?: boolean }
+
+export function TacticsPage({ active = true }: TacticsPageProps = {}) {
   const { selected } = useSaves()
   const navigate = useNavigate()
   const [config, setConfig] = useState<Config>(fresh)
@@ -214,6 +217,7 @@ export function TacticsPage() {
   const cardWasDragged = useRef(false)
   const loaded = useRef(false)
   const loadGuard = useRef(createLatestSaveRequestGuard())
+  const primaryClubId = primaryPlanningClubId(selected?.structure?.trackedClubs ?? [])
 
   function saveStatus(next: string, detail?: string) { setStatus(next); setSaveDetail(detail ?? '') }
 
@@ -232,7 +236,7 @@ export function TacticsPage() {
     if (!selected) return
     try {
       const result = await retryModelConfigPatch(selected.id, saveStatus)
-      if (!result) await persistPatch({ tactics: config.tactics, selected_tactic_id: config.selected_tactic_id, selected_role_id: config.selected_role_id })
+      if (!result) await persistPatch({ tactics: config.tactics, selected_tactic_id: config.selected_tactic_id, selected_tactic_id_by_club: config.selected_tactic_id_by_club ?? {}, selected_role_id: config.selected_role_id })
     } catch {
       /* shared layer already updated the status */
     }
@@ -254,6 +258,19 @@ export function TacticsPage() {
     })
     return () => loadGuard.current.invalidate(token)
   }, [selected?.id])
+
+  useEffect(() => {
+    if (!active || !loaded.current || !selected || !supabase) return
+    let current = true
+    void loadModelConfig(selected.id).then(data => {
+      if (!current || !loaded.current) return
+      const latest = data as Partial<Config>
+      setConfig({ ...fresh(), ...latest, tactics: (latest.tactics ?? []).map(tactic => normalizeTactic(tactic)) })
+    }).catch(error => {
+      if (current) console.error('Falha ao sincronizar Táticas ao reabrir Estrutura.', describeDbError(error).full)
+    })
+    return () => { current = false }
+  }, [active, selected?.id])
 
   useEffect(() => {
     let active = true
@@ -286,9 +303,10 @@ export function TacticsPage() {
     scheduleModelConfigPatch(selected.id, '2.9.0', {
       tactics: config.tactics,
       selected_tactic_id: config.selected_tactic_id,
+      selected_tactic_id_by_club: config.selected_tactic_id_by_club ?? {},
       selected_role_id: config.selected_role_id,
     }, saveStatus)
-  }, [config.tactics, config.selected_tactic_id, config.selected_role_id, selected?.id])
+  }, [config.tactics, config.selected_tactic_id, config.selected_tactic_id_by_club, config.selected_role_id, selected?.id])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -308,29 +326,39 @@ export function TacticsPage() {
   const otherAssignments = tactic ? (phase === 'IP' ? tactic.oopAssignments : tactic.ipAssignments) : []
   const linkedOther = otherAssignments.find(assignment => assignment.playerId === editPlayerId)
 
+  function primaryTacticSelectionPatch(current: Config, tacticId: string | null) {
+    return primaryClubId
+      ? patchClubTacticId(current, primaryClubId, primaryClubId, tacticId)
+      : { selected_tactic_id: tacticId }
+  }
+
   function create() {
     const clean = name.trim()
     if (!clean) return
     const id = crypto.randomUUID()
     const created = normalizeTactic({ id, name: clean, roles: [], ipAssignments: assignmentsFor(ipFormation, 'IP'), oopAssignments: assignmentsFor(oopFormation, 'OOP') })
-    const next = { ...config, tactics: [...config.tactics, created], selected_tactic_id: id, selected_role_id: null }
+    const selection = primaryTacticSelectionPatch(config, id)
+    const next = { ...config, tactics: [...config.tactics, created], ...selection, selected_role_id: null }
     setConfig(next)
-    void persistPatch({ tactics: next.tactics, selected_tactic_id: id, selected_role_id: null })
+    void persistPatch({ tactics: next.tactics, ...selection, selected_role_id: null })
     setName('')
     setCreateOpen(false)
   }
 
   function remove() {
     if (!tactic || !confirm(`Excluir a tática “${tactic.name}”?`)) return
-    const next = { ...config, tactics: config.tactics.filter(item => item.id !== tactic.id), selected_tactic_id: null, selected_role_id: null }
+    const tactics = config.tactics.filter(item => item.id !== tactic.id)
+    const sanitized = sanitizeClubTacticSelections({ ...config, selected_tactic_id: config.selected_tactic_id === tactic.id ? null : config.selected_tactic_id }, tactics.map(item => item.id))
+    const next = { ...config, tactics, ...sanitized, selected_role_id: null }
     setConfig(next)
-    void persistPatch({ tactics: next.tactics, selected_tactic_id: null, selected_role_id: null })
+    void persistPatch({ tactics, ...sanitized, selected_role_id: null })
   }
 
   function selectTactic(id: string | null) {
-    const next = { ...config, selected_tactic_id: id, selected_role_id: null }
+    const selection = primaryTacticSelectionPatch(config, id)
+    const next = { ...config, ...selection, selected_role_id: null }
     setConfig(next)
-    void persistPatch({ selected_tactic_id: id, selected_role_id: null })
+    void persistPatch({ ...selection, selected_role_id: null })
   }
 
   function updatePhase(targetPhase: TacticPhase, transform: (items: Assignment[]) => Assignment[]) {

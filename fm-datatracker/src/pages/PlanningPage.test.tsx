@@ -104,6 +104,85 @@ describe('PlanningPage 3C', () => {
     expect(screen.getByText('Clube atual')).not.toBeNull()
   })
 
+  it('refreshes the tactic structure when Planning becomes active again', async () => {
+    const view = render(<MemoryRouter><PlanningPage active /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await waitFor(() => expect(view.container.querySelectorAll('.planning-set-legend').length).toBe(2))
+
+    mocks.loadConfig.mockResolvedValue({
+      planning: { groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }], slotAssignments: {}, setLayouts: {} },
+      tactics: [{
+        id: 'tactic', name: 'Tática',
+        ipAssignments: [{ playerId: 'slot-st', nodeId: '9', position: 'ST (C)', roleCode: 'AF', roleName: 'Advanced Forward' }],
+        oopAssignments: [{ playerId: 'slot-st', nodeId: '9', position: 'ST (C)', roleCode: 'PF', roleName: 'Pressing Forward' }],
+      }],
+      selected_tactic_id: 'tactic',
+      selected_tactic_id_by_club: { 'club-a': 'tactic' },
+    })
+
+    view.rerender(<MemoryRouter><PlanningPage active={false} /></MemoryRouter>)
+    view.rerender(<MemoryRouter><PlanningPage active /></MemoryRouter>)
+
+    await waitFor(() => {
+      const legends = [...view.container.querySelectorAll<HTMLElement>('.planning-set-legend')]
+      expect(legends).toHaveLength(1)
+      expect(legends[0].textContent).toContain('ST')
+    })
+    expect(mocks.loadPlayers).toHaveBeenCalledTimes(1)
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a deleted tactic from Planning and sanitizes its stale club selection on reactivation', async () => {
+    mocks.loadConfig.mockResolvedValue({
+      planning: { groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }], slotAssignments: {}, setLayouts: {} },
+      tactics: [
+        {
+          id: 'deleted', name: 'Tática excluída',
+          ipAssignments: [{ playerId: 'slot-dc', nodeId: '1', position: 'D (C)', roleCode: 'CD', roleName: 'Central Defender' }],
+          oopAssignments: [{ playerId: 'slot-dc', nodeId: '1', position: 'D (C)', roleCode: 'CB', roleName: 'Centre Back' }],
+        },
+        {
+          id: 'kept', name: 'Tática mantida',
+          ipAssignments: [{ playerId: 'slot-st', nodeId: '9', position: 'ST (C)', roleCode: 'AF', roleName: 'Advanced Forward' }],
+          oopAssignments: [{ playerId: 'slot-st', nodeId: '9', position: 'ST (C)', roleCode: 'PF', roleName: 'Pressing Forward' }],
+        },
+      ],
+      selected_tactic_id: 'deleted',
+      selected_tactic_id_by_club: { 'club-a': 'deleted' },
+    })
+
+    const view = render(<MemoryRouter><PlanningPage active /></MemoryRouter>)
+    expect(await screen.findByRole('option', { name: 'Tática excluída' })).not.toBeNull()
+
+    mocks.loadConfig.mockResolvedValue({
+      planning: { groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }], slotAssignments: {}, setLayouts: {} },
+      tactics: [{
+        id: 'kept', name: 'Tática mantida',
+        ipAssignments: [{ playerId: 'slot-st', nodeId: '9', position: 'ST (C)', roleCode: 'AF', roleName: 'Advanced Forward' }],
+        oopAssignments: [{ playerId: 'slot-st', nodeId: '9', position: 'ST (C)', roleCode: 'PF', roleName: 'Pressing Forward' }],
+      }],
+      selected_tactic_id: null,
+      selected_tactic_id_by_club: { 'club-a': 'deleted' },
+    })
+
+    view.rerender(<MemoryRouter><PlanningPage active={false} /></MemoryRouter>)
+    view.rerender(<MemoryRouter><PlanningPage active /></MemoryRouter>)
+
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Tática excluída' })).toBeNull())
+    expect(screen.getByRole('option', { name: 'Tática mantida' })).not.toBeNull()
+    await waitFor(() => {
+      const legends = [...view.container.querySelectorAll<HTMLElement>('.planning-set-legend')]
+      expect(legends).toHaveLength(1)
+      expect(legends[0].textContent).toContain('ST')
+    })
+    await waitFor(() => {
+      const patches = mocks.schedule.mock.calls.map(call => call[2] as Record<string, unknown>)
+      expect(patches.some(patch => (patch.selected_tactic_id_by_club as Record<string, string | null> | undefined)?.['club-a'] === null)).toBe(true)
+    })
+    expect(mocks.loadPlayers).toHaveBeenCalledTimes(1)
+    expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the compact set footprint to two visible card slots without adding a third vacancy', async () => {
     const secondSnapshot = { ...snapshot, id: 'snapshot-2' }
     mocks.loadPlayers.mockResolvedValue([

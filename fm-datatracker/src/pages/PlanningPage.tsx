@@ -37,6 +37,7 @@ import {
   resolveClubPlanning,
   resolveClubTacticId,
   resolvePlanningClubId,
+  sanitizeClubTacticSelections,
 } from '../lib/multiclub-planning'
 import {
   canGroupAdjacentPlanningSets,
@@ -226,7 +227,9 @@ function normalizePlanning(raw: (Planning & { assignments?: Record<string, strin
 
 function modelDiagnostic(result: { diagnostic?: string | null }) { return result.diagnostic ?? '' }
 
-export function PlanningPage() {
+type PlanningPageProps = { active?: boolean }
+
+export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const { selected } = useSaves()
   const navigate = useNavigate()
   const [players, setPlayers] = useState<Player[]>([])
@@ -308,8 +311,12 @@ export function PlanningPage() {
           ? normalizePlanning(resolveClubPlanning({ ...existing, planning_by_club: planningByClub }, nextClubId, primaryId, defaults))
           : normalizePlanning(existing.planning)
         const selectedTacticByClub = promoteLegacyPrimaryTacticId(existing, primaryId)
+        const tacticSelection = sanitizeClubTacticSelections(
+          { ...existing, selected_tactic_id_by_club: selectedTacticByClub },
+          (existing.tactics ?? []).map(item => item.id),
+        )
         const legacyPlanning = primaryId && planningByClub[primaryId] ? planningByClub[primaryId] : normalizePlanning(existing.planning)
-        setConfig({ ...existing, planning: legacyPlanning, planning_by_club: planningByClub, selected_tactic_id_by_club: selectedTacticByClub })
+        setConfig({ ...existing, ...tacticSelection, planning: legacyPlanning, planning_by_club: planningByClub })
         setSelectedClubId(nextClubId)
         if (typeof window !== 'undefined') {
           if (nextClubId) localStorage.setItem(planningClubStorageKey(selected.id), nextClubId)
@@ -332,14 +339,41 @@ export function PlanningPage() {
   }, [selected?.id])
 
   useEffect(() => {
+    if (!active || !loaded.current || !selected || !supabase) return
+    let current = true
+    void loadModelConfig(selected.id).then(modelConfig => {
+      if (!current || !loaded.current) return
+      const latest = modelConfig as Config
+      const tactics = latest.tactics ?? []
+      const promoted = promoteLegacyPrimaryTacticId(latest, primaryClubId)
+      const tacticSelection = sanitizeClubTacticSelections(
+        { ...latest, selected_tactic_id_by_club: promoted },
+        tactics.map(item => item.id),
+      )
+      setConfig(previous => ({
+        ...previous,
+        tactics,
+        role_weight_overrides: latest.role_weight_overrides ?? previous.role_weight_overrides,
+        ...tacticSelection,
+      }))
+      setExpandedSets(new Set())
+      setFocusedSetId(null)
+    }).catch(error => {
+      if (current) console.error('Falha ao sincronizar a tática de referência do Planejamento.', describeDbError(error).full)
+    })
+    return () => { current = false }
+  }, [active, selected?.id, primaryClubId])
+
+  useEffect(() => {
     if (!loaded.current || !selected || !supabase) return
     const patch: Record<string, unknown> = {
       planning_by_club: config.planning_by_club ?? {},
+      selected_tactic_id: config.selected_tactic_id ?? null,
       selected_tactic_id_by_club: config.selected_tactic_id_by_club ?? {},
     }
     if (config.planning !== undefined) patch.planning = config.planning
     scheduleModelConfigPatch(selected.id, '2.9.0', patch, saveStatus)
-  }, [config.planning, config.planning_by_club, config.selected_tactic_id_by_club, selected?.id])
+  }, [config.planning, config.planning_by_club, config.selected_tactic_id, config.selected_tactic_id_by_club, selected?.id])
 
   useEffect(() => {
     const close = () => setMenu(null)
