@@ -150,7 +150,7 @@
    room to expose multiple columns. */
 .tactics-workspace-planning .planning-flex-layout{
   display:grid!important;
-  grid-template-columns:minmax(610px,1.55fr) minmax(560px,1fr)!important;
+  grid-template-columns:minmax(650px,3fr) minmax(600px,2fr)!important;
   gap:var(--dt-space-3)!important;
   height:calc(100% - 54px)!important;
   min-height:520px!important;
@@ -255,81 +255,251 @@
   left:var(--planning-x,50%)!important;
   top:var(--planning-y,50%)!important;
   box-sizing:border-box!important;
-  display:flex!important;
-  flex-direction:column!important;
-  align-items:stretch!important;
-  justify-content:flex-start!important;
-  gap:var(--dt-space-1)!important;
-  width:clamp(145px,calc((100% - 64px) / var(--planning-row-count)),215px)!important;
+  display:block!important;
+  width:clamp(166px,calc((100% - 48px) / var(--planning-row-count)),228px)!important;
   min-width:0!important;
-  max-width:215px!important;
-  height:clamp(88px,14.5%,124px)!important;
-  min-height:88px!important;
-  padding:var(--dt-space-2)!important;
-  border:1px solid color-mix(in srgb,var(--set-accent) 50%,var(--dt-border))!important;
-  border-left:3px solid var(--set-accent)!important;
+  max-width:228px!important;
+  height:122px!important;
+  min-height:122px!important;
+  padding:15px 7px 7px!important;
+  border:1px solid color-mix(in srgb,var(--set-accent) 66%,var(--dt-border-strong))!important;
   border-radius:var(--dt-radius-card)!important;
-  background:color-mix(in srgb,var(--set-accent) 8%,rgba(8,18,15,.92))!important;
-  box-shadow:0 4px 14px rgba(0,0,0,.14)!important;
-  overflow:hidden!important;
+  background:color-mix(in srgb,var(--set-accent) 5%,rgba(8,18,15,.94))!important;
+  box-shadow:0 5px 16px rgba(0,0,0,.18)!important;
+  overflow:visible!important;
   transform:translate(-50%,-50%)!important;
   transition:left .16s ease,top .16s ease,width .16s ease,background .12s ease,box-shadow .12s ease!important;
 }
-.tactics-workspace-planning .planning-set-row:hover{background:color-mix(in srgb,var(--set-accent) 13%,rgba(8,18,15,.94))!important}
+.tactics-workspace-planning .planning-set-row:hover{background:color-mix(in srgb,var(--set-accent) 8%,rgba(8,18,15,.96))!important}
 .tactics-workspace-planning .planning-set-row.is-focused{
-  z-index:6!important;
-  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--set-accent) 65%,var(--dt-lime)),0 5px 16px rgba(0,0,0,.18)!important;
+  z-index:8!important;
+  border-color:color-mix(in srgb,var(--set-accent) 82%,var(--dt-lime))!important;
+  box-shadow:0 6px 18px rgba(0,0,0,.22),inset 0 0 0 1px color-mix(in srgb,var(--set-accent) 35%,transparent)!important;
 }
 .tactics-workspace-planning .planning-set-row.is-expanded{
-  z-index:12!important;
-  width:min(320px,34%)!important;
-  max-width:320px!important;
-  height:min(44%,330px)!important;
-  max-height:330px!important;
+  z-index:16!important;
+  width:min(420px,46%)!important;
+  max-width:420px!important;
 }
-.tactics-workspace-planning .planning-set-handle{display:none!important}
-.tactics-workspace-planning .planning-set-meta{
-  flex:0 0 auto!important;
-  display:block!important;
-  height:auto!important;
-  min-height:24px!important;
+.tactics-workspace-planning .planning-set-handle,
+.tactics-workspace-planning .planning-set-meta{display:none!important}
+.tactics-workspace-planning .planning-set-legend{
+  position:absolute!important;
+  z-index:4!important;
+  top:-11px!important;
+  left:10px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  width:auto!important;
+  min-width:0!important;
+  height:22px!important;
+  min-height:22px!important;
+  max-width:calc(100% - 20px)!important;
+  padding:0 8px!important;
+  margin:0!important;
+  border:1px solid color-mix(in srgb,var(--set-accent) 82%,var(--dt-border-strong))!important;
+  border-radius:999px!important;
+  background:color-mix(in srgb,var(--set-accent) 16%,var(--dt-bg-canvas))!important;
+  color:var(--dt-text-1)!important;
+  box-shadow:none!important;
+  font-size:.66rem!important;
+  font-weight:800!important;
+  line-height:20px!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
   cursor:pointer!important;
 }
-.tactics-workspace-planning .planning-set-position{gap:2px!important}
-.tactics-workspace-planning .planning-position-label{max-width:100%!important;font-size:10px!important;line-height:15px!important}
-.tactics-workspace-planning .planning-phase-line{grid-template-columns:24px minmax(0,1fr)!important;font-size:.52rem!important}
-.tactics-workspace-planning .planning-set-depth{display:none!important}
+.tactics-workspace-planning .planning-set-legend:hover,
+.tactics-workspace-planning .planning-set-legend:focus-visible{
+  background:color-mix(in srgb,var(--set-accent) 24%,var(--dt-bg-canvas))!important;
+  color:var(--dt-text-1)!important;
+  filter:none!important;
+  transform:none!important;
+}
 .tactics-workspace-planning .planning-set-cards{
-  flex:1 1 auto!important;
+  box-sizing:border-box!important;
   display:flex!important;
-  flex-direction:column!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
   align-items:stretch!important;
-  align-content:stretch!important;
-  gap:4px!important;
+  gap:5px!important;
+  width:100%!important;
+  height:100%!important;
   min-width:0!important;
   min-height:0!important;
-  max-height:none!important;
   padding:0!important;
-  overflow:auto!important;
+  overflow:hidden!important;
+}
+.tactics-workspace-planning .planning-set-row.is-expanded .planning-set-cards{
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  scrollbar-width:thin!important;
+  scrollbar-color:var(--dt-border-strong) transparent!important;
 }
 .tactics-workspace-planning .planning-set-player-card,
 .tactics-workspace-planning .planning-player-drop-placeholder{
   box-sizing:border-box!important;
-  flex:0 0 auto!important;
+  flex:0 0 clamp(56px,32%,70px)!important;
+  width:clamp(56px,32%,70px)!important;
+  min-width:56px!important;
+  max-width:70px!important;
+  height:96px!important;
+  min-height:96px!important;
+  max-height:96px!important;
+}
+.tactics-workspace-planning .planning-set-player-card.planning-vertical-player-card{
+  position:relative!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-template-rows:22px minmax(32px,1fr) 27px!important;
+  align-items:center!important;
+  gap:2px!important;
+  padding:4px!important;
+  border:1px solid color-mix(in srgb,var(--set-accent) 50%,var(--dt-border))!important;
+  border-radius:6px!important;
+  background:color-mix(in srgb,var(--set-accent) 5%,var(--dt-surface-1))!important;
+  overflow:hidden!important;
+}
+.tactics-workspace-planning .planning-set-player-card.planning-vertical-player-card:hover{
+  border-color:color-mix(in srgb,var(--set-accent) 78%,var(--dt-border-strong))!important;
+  background:color-mix(in srgb,var(--set-accent) 9%,var(--dt-surface-2))!important;
+}
+.tactics-workspace-planning .planning-set-player-card.planning-vertical-player-card.is-coverage{border-style:dashed!important;opacity:.78}
+.tactics-workspace-planning .planning-set-player-card.planning-vertical-player-card.is-out-of-position{outline:1px dashed var(--dt-warning)!important;outline-offset:-2px!important}
+.tactics-workspace-planning .planning-vertical-player-name{
+  grid-column:1!important;
+  grid-row:1!important;
+  display:block!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+  height:20px!important;
+  min-height:20px!important;
+  padding:0 1px!important;
+  margin:0!important;
+  border:0!important;
+  background:transparent!important;
+  color:var(--dt-text-1)!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+  text-align:center!important;
+  font-size:.55rem!important;
+  font-weight:750!important;
+  line-height:20px!important;
+}
+.tactics-workspace-planning .planning-vertical-player-name:hover{color:var(--dt-lime)!important;text-decoration:none!important;filter:none!important;transform:none!important}
+.tactics-workspace-planning .planning-player-silhouette{
+  grid-column:1!important;
+  grid-row:2!important;
+  align-self:center!important;
+  justify-self:center!important;
+  display:grid!important;
+  place-items:center!important;
+  width:34px!important;
+  height:34px!important;
+  color:var(--dt-text-3)!important;
+}
+.tactics-workspace-planning .planning-player-silhouette svg{width:32px!important;height:32px!important;overflow:visible!important}
+.tactics-workspace-planning .planning-player-silhouette circle{
+  fill:color-mix(in srgb,var(--dt-text-2) 58%,transparent)!important;
+  stroke:none!important;
+}
+.tactics-workspace-planning .planning-player-silhouette path{
+  fill:color-mix(in srgb,var(--dt-text-2) 58%,transparent)!important;
+  stroke:none!important;
+}
+.tactics-workspace-planning .planning-vertical-score-wrap{
+  grid-column:1!important;
+  grid-row:3!important;
+  align-self:end!important;
+  justify-self:stretch!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
   width:100%!important;
   min-width:0!important;
   max-width:none!important;
+  height:25px!important;
+  overflow:visible!important;
 }
-.tactics-workspace-planning .planning-set-player-card{min-height:38px!important}
-.tactics-workspace-planning .planning-set-empty{
+.tactics-workspace-planning .planning-vertical-score-wrap>.score-with-projection{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:3px!important;
   width:100%!important;
-  min-width:0!important;
-  min-height:34px!important;
-  white-space:normal!important;
+  max-width:100%!important;
 }
+.tactics-workspace-planning .planning-vertical-score-wrap .score-projection-separator,
+.tactics-workspace-planning .planning-vertical-score-wrap .score-projection-arrow{display:none!important}
+.tactics-workspace-planning .planning-vertical-score-wrap .score-current,
+.tactics-workspace-planning .planning-vertical-score-wrap .score-projected{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-width:0!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+}
+.tactics-workspace-planning .planning-vertical-score-wrap .score-badge-compact{
+  box-sizing:border-box!important;
+  width:26px!important;
+  min-width:26px!important;
+  max-width:26px!important;
+  min-height:21px!important;
+  height:21px!important;
+  padding:2px 2px 3px!important;
+  border-radius:4px!important;
+}
+.tactics-workspace-planning .planning-vertical-score-wrap .score-badge-compact b{font-size:.56rem!important;line-height:1!important}
+.tactics-workspace-planning .planning-vertical-score-wrap .projected-score-badge{outline:1px dashed color-mix(in srgb,var(--dt-warning) 62%,transparent)!important;outline-offset:-1px!important}
+.tactics-workspace-planning .planning-score-unavailable{color:var(--dt-text-3);font-size:.72rem}
+.tactics-workspace-planning .planning-set-vacancy,
 .tactics-workspace-planning .planning-set-expand,
-.tactics-workspace-planning .planning-set-collapse{align-self:flex-start!important}
-.tactics-workspace-planning .planning-set-drop-placeholder{display:none!important}
+.tactics-workspace-planning .planning-player-drop-placeholder{
+  box-sizing:border-box!important;
+  flex:0 0 42px!important;
+  width:42px!important;
+  min-width:42px!important;
+  max-width:42px!important;
+  height:96px!important;
+  min-height:96px!important;
+  display:grid!important;
+  place-items:center!important;
+  padding:0!important;
+  margin:0!important;
+  border:1px dashed color-mix(in srgb,var(--set-accent) 48%,var(--dt-border-strong))!important;
+  border-radius:6px!important;
+  background:color-mix(in srgb,var(--set-accent) 3%,transparent)!important;
+  color:color-mix(in srgb,var(--set-accent) 72%,var(--dt-text-2))!important;
+  box-shadow:none!important;
+  font-size:1.25rem!important;
+  font-weight:600!important;
+  line-height:1!important;
+}
+.tactics-workspace-planning .planning-set-vacancy span{transform:translateY(-1px)}
+.tactics-workspace-planning .planning-set-expand{font-size:.7rem!important;color:var(--dt-lime)!important;cursor:pointer!important}
+.tactics-workspace-planning .planning-set-expand:hover{border-color:color-mix(in srgb,var(--dt-lime) 60%,var(--dt-border-strong))!important;background:color-mix(in srgb,var(--dt-lime) 7%,transparent)!important;filter:none!important;transform:none!important}
+.tactics-workspace-planning .planning-player-drop-placeholder{animation:planning-drop-pulse .7s ease-in-out infinite alternate!important}
+.tactics-workspace-planning .planning-player-drop-placeholder span{font-size:.5rem!important;text-transform:uppercase!important;letter-spacing:.04em!important}
+.tactics-workspace-planning .planning-set-collapse{
+  flex:0 0 28px!important;
+  align-self:center!important;
+  width:28px!important;
+  min-width:28px!important;
+  height:28px!important;
+  padding:0!important;
+  border-radius:999px!important;
+}
+.tactics-workspace-planning .planning-set-empty,
+.tactics-workspace-planning .planning-set-drop-placeholder,
+.tactics-workspace-planning .planning-card-meta,
+.tactics-workspace-planning .planning-phase-line,
+.tactics-workspace-planning .planning-set-depth{display:none!important}
 
 /* Transfer groups retain their free market semantics. */
 .tactics-workspace-planning .planning-flex-board.is-transfer{
@@ -345,8 +515,9 @@
   grid-row:1!important;
   position:relative!important;
   box-sizing:border-box!important;
-  width:auto!important;
+  width:100%!important;
   min-width:0!important;
+  max-width:none!important;
   min-height:0!important;
   height:100%!important;
   display:flex!important;
@@ -406,6 +577,7 @@
 }
 .tactics-workspace-planning .planning-roster-player-name:hover{color:var(--dt-lime)!important;text-decoration:underline}
 .tactics-workspace-planning .planning-roster-positions,
+.tactics-workspace-planning .planning-roster-club,
 .tactics-workspace-planning .planning-roster-plan{
   display:block;
   min-width:0;
@@ -414,13 +586,19 @@
   white-space:nowrap;
   color:var(--dt-text-2);
 }
+.tactics-workspace-planning .planning-roster-age{display:block;text-align:center;color:var(--dt-text-2);font-variant-numeric:tabular-nums}
+.tactics-workspace-planning .planning-roster-age-cell{text-align:center!important}
 .tactics-workspace-planning .planning-roster-plan.is-conflict{color:var(--dt-warning)}
 .tactics-workspace-planning .planning-roster-score-cell{overflow:visible!important;text-align:center}
-.tactics-workspace-planning .planning-roster-score{display:inline-flex;justify-content:center;min-width:88px}
+.tactics-workspace-planning .planning-roster-score{display:inline-flex;justify-content:center;min-width:196px;white-space:nowrap}
 .tactics-workspace-planning .planning-roster-row-incompatible td{opacity:.65}
 .tactics-workspace-planning .planning-roster-row-incompatible td.planning-roster-name-cell{opacity:1}
 
 @media(max-width:1380px){
-  .tactics-workspace-planning .planning-flex-layout{grid-template-columns:minmax(540px,1.45fr) minmax(500px,1fr)!important}
-  .tactics-workspace-planning .planning-set-row{width:clamp(135px,calc((100% - 48px) / var(--planning-row-count)),190px)!important}
+  .tactics-workspace-planning .planning-flex-layout{grid-template-columns:minmax(560px,3fr) minmax(520px,2fr)!important}
+  .tactics-workspace-planning .planning-set-row{width:clamp(158px,calc((100% - 40px) / var(--planning-row-count)),205px)!important}
+  .tactics-workspace-planning .planning-set-player-card,
+  .tactics-workspace-planning .planning-player-drop-placeholder{flex-basis:64px!important;width:64px!important;min-width:64px!important;max-width:64px!important}
+  .tactics-workspace-planning .planning-set-vacancy,
+  .tactics-workspace-planning .planning-set-expand{flex-basis:36px!important;width:36px!important;min-width:36px!important;max-width:36px!important}
 }

@@ -93,6 +93,17 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('PlanningPage 3C', () => {
+  it('renders compact pitch sets as border legends with vertical vacancies and a wider decision table', async () => {
+    const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+
+    await waitFor(() => expect(view.container.querySelectorAll('.planning-set-legend').length).toBe(2))
+    expect(view.container.querySelectorAll('.planning-phase-line').length).toBe(0)
+    expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(2)
+    expect(screen.getByText('Idade')).not.toBeNull()
+    expect(screen.getByText('Clube atual')).not.toBeNull()
+  })
+
   it('uses the single best contextual pair and moves the player to a market group from the context menu', async () => {
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
     expect(await screen.findByText('Jogador Teste')).not.toBeNull()

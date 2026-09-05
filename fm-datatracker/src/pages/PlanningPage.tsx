@@ -14,11 +14,10 @@ import { canPlayPosition } from '../lib/positions'
 import { isPlanningFamiliar, isPlanningOutOfPosition, planningFamiliarity, planningFamiliarityLabel, planningFamiliarityTooltip, type PlanningFamiliarity } from '../lib/planning-familiarity'
 import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
-import { usePotential } from '../features/potential/PotentialContext'
 import { PlayerPeek } from '../components/PlayerPeek'
 import { loadModelConfig, patchModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
 import { describeDbError } from '../lib/db-error'
-import { calculatePlanningCardLayout, resolvePlanningInsertionBefore } from '../lib/planning-layout'
+import { resolvePlanningInsertionBefore } from '../lib/planning-layout'
 import { functionProjectionKey } from '../lib/projection-player'
 import { positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
@@ -95,7 +94,7 @@ type PlayerDropPreview = { setId: string; beforePlayerId: string | null }
 type FactFilter = 'all' | PlanningMembershipFactKind
 type PlanningUndo = Pick<Config, 'planning' | 'planning_by_club'>
 type PlanningWorkspaceFocus = 'field' | 'table' | null
-type PlanningRosterColumnId = 'name' | 'positions' | 'fact' | 'plan' | 'score'
+type PlanningRosterColumnId = 'name' | 'positions' | 'age' | 'club' | 'fact' | 'plan' | 'score'
 type PlanningRosterColumn = DataTableColumnLike & { id: PlanningRosterColumnId }
 type PlanningRosterRow = {
   player: Player
@@ -117,11 +116,13 @@ const canPlay = canPlayPosition
 const PLANNING_ROSTER_COLUMNS: PlanningRosterColumn[] = [
   { id: 'name', label: 'Jogador' },
   { id: 'positions', label: 'Posições' },
+  { id: 'age', label: 'Idade' },
+  { id: 'club', label: 'Clube atual' },
   { id: 'fact', label: 'Vínculo atual' },
   { id: 'plan', label: 'Plano' },
   { id: 'score', label: 'Nota' },
 ]
-const PLANNING_ROSTER_WIDTHS: Record<PlanningRosterColumnId, number> = { name: 220, positions: 170, fact: 160, plan: 170, score: 112 }
+const PLANNING_ROSTER_WIDTHS: Record<PlanningRosterColumnId, number> = { name: 210, positions: 130, age: 76, club: 150, fact: 150, plan: 150, score: 196 }
 const planningClubStorageKey = (saveId: string) => `fm-datatracker:planning-club:${saveId}`
 
 // Planning-local warm caches. They are intentionally scoped to exact source object
@@ -483,6 +484,8 @@ export function PlanningPage() {
     return rows.sort((left, right) => {
       if (rosterSort.key === 'name') return compareText(left.player.current_name, right.player.current_name)
       if (rosterSort.key === 'positions') return compareText(left.snapshot?.positions.join(', ') ?? '', right.snapshot?.positions.join(', ') ?? '')
+      if (rosterSort.key === 'age') return (((left.snapshot?.age ?? -Infinity) - (right.snapshot?.age ?? -Infinity)) * direction) || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
+      if (rosterSort.key === 'club') return compareText(left.fact.membership?.currentClub?.name ?? '', right.fact.membership?.currentClub?.name ?? '') || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
       if (rosterSort.key === 'fact') return (planningMembershipOrder(left.fact.kind) - planningMembershipOrder(right.fact.kind)) * direction || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
       if (rosterSort.key === 'plan') return compareText(left.plannedConflict.join(', ') || left.plannedClub || '', right.plannedConflict.join(', ') || right.plannedClub || '') || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
       return (((left.score ?? -Infinity) - (right.score ?? -Infinity)) * direction) || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
@@ -667,6 +670,8 @@ export function PlanningPage() {
       </div>
     }
     if (column.id === 'positions') return <span className="planning-roster-positions">{row.snapshot?.positions.join(', ') || '—'}</span>
+    if (column.id === 'age') return <span className="planning-roster-age">{row.snapshot?.age ?? '—'}</span>
+    if (column.id === 'club') return <span className="planning-roster-club" title={row.fact.membership?.currentClub?.name ?? undefined}>{row.fact.membership?.currentClub?.name ?? '—'}</span>
     if (column.id === 'fact') return <span className={`membership-badge is-${row.fact.kind}`} title={row.fact.detail}>{row.fact.label}</span>
     if (column.id === 'plan') {
       if (row.plannedConflict.length) return <span className="planning-roster-plan is-conflict" title={`Planejado simultaneamente em ${row.plannedConflict.join(', ')}`}>Conflito · {row.plannedConflict.join(', ')}</span>
@@ -767,7 +772,7 @@ export function PlanningPage() {
           rowKey={row => row.player.id}
           renderCell={renderRosterCell}
           getColumnWidth={column => rosterWidths[column.id]}
-          getColumnMinWidth={column => column.id === 'name' ? 170 : column.id === 'score' ? 112 : 110}
+          getColumnMinWidth={column => column.id === 'name' ? 170 : column.id === 'score' ? 196 : column.id === 'age' ? 68 : 110}
           getColumnMaxWidth={() => 420}
           onColumnWidthChange={(column, width) => setRosterWidths(current => ({ ...current, [column.id]: width }))}
           onColumnMove={moveRosterColumn}
@@ -780,7 +785,7 @@ export function PlanningPage() {
           loading={!players.length && (loading || isPending)}
           loadingMessage="Carregando elenco…"
           emptyMessage="Nenhum jogador disponível corresponde a este recorte."
-          getCellClassName={(_row, column) => column.id === 'score' ? 'planning-roster-score-cell' : column.id === 'name' ? 'planning-roster-name-cell' : undefined}
+          getCellClassName={(_row, column) => column.id === 'score' ? 'planning-roster-score-cell' : column.id === 'name' ? 'planning-roster-name-cell' : column.id === 'age' ? 'planning-roster-age-cell' : undefined}
           getRowClassName={row => !row.compatible ? 'planning-roster-row-incompatible' : undefined}
         />
       </article>
@@ -798,26 +803,12 @@ export function PlanningPage() {
   </div>
 }
 
-function useCompactCapacity(grouped: boolean, optionCount: number) {
+function useCompactCapacity() {
+  // The pitch intentionally shows the first two depth options as vertical cards.
+  // Additional players stay available through the existing +N expansion control;
+  // this keeps every positional set compact enough to preserve formation geometry.
   const ref = useRef<HTMLDivElement | null>(null)
-  const { showPotential } = usePotential()
-  const [capacity, setCapacity] = useState(grouped ? 8 : 4)
-  const [columns, setColumns] = useState(4)
-  useEffect(() => {
-    const node = ref.current
-    if (!node || typeof ResizeObserver === 'undefined') return
-    const update = () => {
-      const layout = calculatePlanningCardLayout(node.clientWidth, grouped, optionCount, showPotential)
-      node.style.setProperty('--planning-card-width', `${layout.cardWidth}px`)
-      setCapacity(layout.capacity)
-      setColumns(layout.columns)
-    }
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [grouped, optionCount, showPotential])
-  return { ref, capacity, columns }
+  return { ref, capacity: 2 }
 }
 
 function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY: number, draggingId: string | undefined, currentBeforeId: string | null | undefined) {
@@ -864,12 +855,11 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
   const coverageOptions = showCoverages ? coverages.filter(player => !members.some(member => member.id === player.id)) : []
   const options = [...members.map(player => ({ player, coverage: false as const })), ...coverageOptions.map(player => ({ player, coverage: true as const }))]
   const grouped = set.slotIds.length > 1
-  const { ref: cardsRef, capacity, columns } = useCompactCapacity(grouped, options.length)
+  const { ref: cardsRef, capacity } = useCompactCapacity()
   const visible = expanded ? options : options.slice(0, capacity)
   const hidden = Math.max(0, options.length - visible.length)
   const linePosition = pairs[0]?.ip.position ?? ''
-  const ipDescriptions = [...new Set(pairs.map(pair => `${pair.ip.position.replaceAll(' ', '')} · ${pair.ip.roleCode}`))]
-  const oopDescriptions = [...new Set(pairs.map(pair => `${pair.oop.position.replaceAll(' ', '')} · ${pair.oop.roleCode}`))]
+  const roleSummary = [...new Set(pairs.flatMap(pair => [`IP ${pair.ip.position.replaceAll(' ', '')} · ${pair.ip.roleCode}`, `OOP ${pair.oop.position.replaceAll(' ', '')} · ${pair.oop.roleCode}`]))].join(' / ')
   const activeFamiliarity = activePlayer ? familiarity(activePlayer) : 'unknown'
   const preview = playerDropPreview?.setId === set.id ? playerDropPreview.beforePlayerId : undefined
   const spatialStyle = spatial ? {
@@ -886,9 +876,9 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
     onDragOver={event => { if (activePlayer) { event.preventDefault(); previewPlayer(null) } }}
     onDrop={event => { if (!activePlayer) return; event.preventDefault(); dropPlayer(preview ?? null) }}
   >
-    <div className="planning-set-meta" onClick={focus}>
-      <div className="planning-set-position"><div className="planning-position-heading"><span className="planning-position-label">{displayLabel}</span>{grouped && <b>{set.slotIds.length} POS.</b>}</div><small className="planning-phase-line"><i>IP</i><span>{ipDescriptions.join(" / ") || "—"}</span></small><small className="planning-phase-line"><em>OOP</em><span>{oopDescriptions.join(" / ") || "—"}</span></small>{members.length > 0 && <small className="planning-set-depth">{members.length} jogador{members.length === 1 ? "" : "es"}{grouped ? ` · ${set.slotIds.length} posições` : ""}</small>}</div>
-    </div>
+    <button type="button" className="planning-set-legend" onClick={focus} title={roleSummary || displayLabel} aria-label={`Focar conjunto ${displayLabel}`}>
+      <span>{displayLabel}</span>
+    </button>
 
     <div ref={cardsRef} className={`planning-set-cards ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }}>
       {visible.map((option, index) => {
@@ -921,12 +911,11 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
             open={() => open(player.id)}
             context={event => context(event, player.id)}
           />
-          {grouped && index + 1 === columns && visible.length > columns && <span className="planning-card-row-break" aria-hidden="true" />}
         </Fragment>
       })}
       {preview === null && activePlayer && <PlayerDropPlaceholder />}
-      {!options.length && <div className="planning-set-empty">{activePlayer ? 'SOLTE PARA ADICIONAR' : 'Arraste jogadores aqui'}</div>}
-      {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggle() }}>+{hidden}</button>}
+      {!activePlayer && hidden === 0 && <div className="planning-set-vacancy" aria-hidden="true" title="Espaço para adicionar jogador"><span>+</span></div>}
+      {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggle() }} title={`Mostrar mais ${hidden} jogador${hidden === 1 ? '' : 'es'}`}>+{hidden}</button>}
       {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggle() }} title="Recolher" aria-label={`Recolher ${displayLabel}`}>−</button>}
     </div>
   </article>
@@ -957,11 +946,15 @@ function BoardPlayerCard({ player, snapshot, score, rank, rankPopulation, covera
   const out = snapshot ? isPlanningOutOfPosition(familiarity) : false
   const familiarityLabel = snapshot ? planningFamiliarityLabel(familiarity) : ''
   const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, snapshot ? `Atual: ${fact.label} — ${fact.detail}` : 'Sem observação no checkpoint atual. O planejamento foi preservado, mas nenhum dado histórico foi promovido a atual.', plannedConflict.length ? `Conflito: planejado simultaneamente em ${plannedConflict.join(', ')}` : plannedClub ? `Planejado: ${plannedClub}` : 'Sem destino planejado', out ? familiarityTooltip : null].filter(Boolean).join('\n\n')
-  return <article data-planning-player-id={player.id} className={`planning-set-player-card ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
-    <button className="player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
-    <span className="planning-score-wrap">{snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento. Não é a evolução mais provável nem o PA/CP do Football Manager.'} /> : <span title="Sem observação no checkpoint atual">—</span>}</span>
-    <div className="planning-card-meta">{snapshot ? <small>{snapshot.age ?? '—'} anos</small> : <small>Sem observação atual</small>}<span className="planning-card-badges">{snapshot ? <b className={`membership-badge is-${fact.kind}`} title={fact.detail}>{factBadgeLabel(fact)}</b> : <b className="membership-badge is-unknown" title="Ausência no checkpoint não prova saída do clube.">Atual ?</b>}{plannedConflict.length ? <b className="planning-conflict-badge" title={`Planejado em ${plannedConflict.join(', ')}`}>Conflito</b> : null}{coverage && <b className="coverage-badge">Cobertura</b>}{familiarityLabel && <b className="out-position-badge">{familiarityLabel.includes('IP/OOP') ? 'Fora pos. IP/OOP' : familiarityLabel.includes('IP') ? 'Fora pos. IP' : familiarityLabel.includes('OOP') ? 'Fora pos. OOP' : 'Fora pos.'}</b>}</span></div>
+  return <article data-planning-player-id={player.id} className={`planning-set-player-card planning-vertical-player-card ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
+    <button className="player-name planning-vertical-player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
+    <span className="planning-player-silhouette" aria-hidden="true"><PlanningPersonSilhouette /></span>
+    <span className="planning-score-wrap planning-vertical-score-wrap">{snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento. Não é a evolução mais provável nem o PA/CP do Football Manager.'} /> : <span className="planning-score-unavailable" title="Sem observação no checkpoint atual">—</span>}</span>
   </article>
+}
+
+function PlanningPersonSilhouette() {
+  return <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.35" /><path d="M5.5 20c.35-3.9 2.8-6.15 6.5-6.15s6.15 2.25 6.5 6.15Z" /></svg>
 }
 
 function RosterPlayerCard({ player, snapshot, score, rank, rankPopulation, compatible, contextual, scoreKey, fact, plannedClub, plannedConflict, drag, dragEnd, open, context }: { player: Player; snapshot: Snapshot | undefined; score: number | null; rank: number | null; rankPopulation: number[]; compatible: boolean; contextual: boolean; scoreKey?: string; fact: PlanningMembershipFact; plannedClub: string | null; plannedConflict: string[]; drag: (event: DragEvent<HTMLDivElement>) => void; dragEnd: () => void; open: () => void; context: (event: ReactMouseEvent) => void }) {

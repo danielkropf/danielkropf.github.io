@@ -7,13 +7,14 @@ Projeto de produção: `zuyvivzvicjuhphchhql`.
 O ledger remoto foi revalidado diretamente antes desta entrega e está reconciliado desde a migration inicial até:
 
 - `20260904030511 emc01b_fk_index_stabilization`
+- `20260905022045 datatracker_schema_info_permission_fix`
 
 Não reaplique migrations que já constem no ledger. Não edite migrations históricas aplicadas.
 
 O banco reporta atualmente:
 
 - `schema_version = 202609030001`
-- `app_version = 0.29.5`
+- `app_version = 0.29.6`
 - `factual_membership_emc01b = true`
 - retenção server-side de diagnósticos `.fm` ativa
 - migrations históricas de Phase 0, Analyzer, Multiclub e E-MC-01B registradas no ledger.
@@ -50,6 +51,7 @@ A ordem canônica inclui, entre outras, estas migrations já aplicadas em produ�
 - `20260903000100 emc01b_factual_membership`
 - `20260903191855 emc01b_phase0e_nested_reconciliation`
 - `20260904030511 emc01b_fk_index_stabilization`
+- `20260905022045 datatracker_schema_info_permission_fix`
 
 ## Diagnósticos `.fm`
 
@@ -69,6 +71,11 @@ O cleanup client-side continua sendo defesa complementar; a retenção não depe
 `20260903191855_emc01b_phase0e_nested_reconciliation.sql` corrige a reconciliação de evidência Phase0E quando o sinal confiável está em `provenance.fm_identity.resolution_method`, preservando histórico e removendo Structural Team ID residual de `clubs.fm_club_id` somente nos casos comprovados.
 
 `20260904030511_emc01b_fk_index_stabilization.sql` adiciona índices de cobertura para todas as FKs compostas novas das tabelas `club_structural_team_links` e `club_structural_team_link_evidence`. O Performance Advisor deixou de reportar `unindexed_foreign_keys` para essas tabelas após a aplicação. Índices recém-criados podem aparecer temporariamente como `unused_index`; isso não autoriza removê-los automaticamente.
+
+
+## Permission hotfix de `datatracker_schema_info`
+
+`20260905022045_datatracker_schema_info_permission_fix.sql` espelha o hotfix já aplicado em produção. A RPC permanece `SECURITY INVOKER`; a leitura opcional de `cron.job` captura apenas `insufficient_privilege` e retorna `diagnostics_server_retention=false` quando o papel autenticado não pode inspecionar `cron`. Não conceder `USAGE` de `cron` ao frontend e não promover a RPC a `SECURITY DEFINER` para contornar essa checagem.
 
 ## Bootstrap de ambiente novo
 
