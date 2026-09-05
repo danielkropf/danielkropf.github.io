@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generalScoreForSnapshot } from '../lib/base-position-score'
@@ -7,6 +7,8 @@ import { ScoreWithProjection } from '../components/ScoreWithProjection'
 import { SaveState } from '../components/SaveState'
 import { CustomSelect } from '../components/CustomSelect'
 import { PositionSelector, canonicalPosition } from '../components/PositionSelector'
+import { DataTable, type DataTableColumnLike } from '../components/data-table/DataTable'
+import { DATA_TABLE_PRESETS } from '../components/data-table/presets'
 import { generalReferencePercentile, generalReferenceScoresByFamily, percentile, referencePairedRoleScore, type ReferenceDataset } from '../lib/reference'
 import { canPlayPosition } from '../lib/positions'
 import { isPlanningFamiliar, isPlanningOutOfPosition, planningFamiliarity, planningFamiliarityLabel, planningFamiliarityTooltip, type PlanningFamiliarity } from '../lib/planning-familiarity'
@@ -20,6 +22,7 @@ import { calculatePlanningCardLayout, resolvePlanningInsertionBefore } from '../
 import { functionProjectionKey } from '../lib/projection-player'
 import { positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
+import { planningSpatialLayout, type PlanningPitchLine, type PlanningSpatialPlacement } from '../lib/planning-spatial-layout'
 import { loadPlanningMemberships } from '../lib/longitudinal-service'
 import { classifyPlanningMembership, planningMembershipOrder, resolveCurrentSnapshotMembership, type PlanningMembershipFact, type PlanningMembershipFactKind } from '../lib/planning-membership'
 import type { PlayerMembershipWithClubs } from '../types/domain'
@@ -89,14 +92,36 @@ type DragItem = { type: 'player'; id: string }
 type Menu = { x: number; y: number; playerId: string }
 type Familiarity = PlanningFamiliarity
 type PlayerDropPreview = { setId: string; beforePlayerId: string | null }
-type SetDropPreview = { beforeSetId: string | null }
 type FactFilter = 'all' | PlanningMembershipFactKind
 type PlanningUndo = Pick<Config, 'planning' | 'planning_by_club'>
+type PlanningWorkspaceFocus = 'field' | 'table' | null
+type PlanningRosterColumnId = 'name' | 'positions' | 'fact' | 'plan' | 'score'
+type PlanningRosterColumn = DataTableColumnLike & { id: PlanningRosterColumnId }
+type PlanningRosterRow = {
+  player: Player
+  snapshot: Snapshot | undefined
+  score: number | null
+  rank: number | null
+  rankPopulation: number[]
+  compatible: boolean
+  pair: Pair | undefined
+  fact: PlanningMembershipFact
+  plannedClub: string | null
+  plannedConflict: string[]
+}
 
 const transferGroups: Group[] = [{ id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }]
 const EMPTY_ROLE_OVERRIDES: Record<string, Record<string, number>> = {}
 const defaults = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }, ...transferGroups], slotAssignments: {}, setLayouts: {} })
 const canPlay = canPlayPosition
+const PLANNING_ROSTER_COLUMNS: PlanningRosterColumn[] = [
+  { id: 'name', label: 'Jogador' },
+  { id: 'positions', label: 'Posições' },
+  { id: 'fact', label: 'Vínculo atual' },
+  { id: 'plan', label: 'Plano' },
+  { id: 'score', label: 'Nota' },
+]
+const PLANNING_ROSTER_WIDTHS: Record<PlanningRosterColumnId, number> = { name: 220, positions: 170, fact: 160, plan: 170, score: 112 }
 const planningClubStorageKey = (saveId: string) => `fm-datatracker:planning-club:${saveId}`
 
 // Planning-local warm caches. They are intentionally scoped to exact source object
@@ -216,9 +241,7 @@ export function PlanningPage() {
   const [positionFilters, setPositionFilters] = useState<string[] | null>(null)
   const [factFilter, setFactFilter] = useState<FactFilter>('all')
   const [dragging, setDragging] = useState<DragItem | null>(null)
-  const [draggingSetId, setDraggingSetId] = useState<string | null>(null)
   const [playerDropPreview, setPlayerDropPreview] = useState<PlayerDropPreview | null>(null)
-  const [setDropPreview, setSetDropPreview] = useState<SetDropPreview | null>(null)
   const [managerSetDragging, setManagerSetDragging] = useState<string | null>(null)
   const [managerSetPreview, setManagerSetPreview] = useState<string | null | undefined>(undefined)
   const [managerGroupDragging, setManagerGroupDragging] = useState<string | null>(null)
@@ -231,6 +254,10 @@ export function PlanningPage() {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [showCoverages, setShowCoverages] = useState(false)
   const [expandedSets, setExpandedSets] = useState<Set<string>>(new Set())
+  const [workspaceFocus, setWorkspaceFocus] = useState<PlanningWorkspaceFocus>(null)
+  const [rosterSort, setRosterSort] = useState<{ key: PlanningRosterColumnId; direction: 1 | -1 }>({ key: 'score', direction: -1 })
+  const [rosterColumns, setRosterColumns] = useState<PlanningRosterColumn[]>(() => PLANNING_ROSTER_COLUMNS.map(column => ({ ...column })))
+  const [rosterWidths, setRosterWidths] = useState<Record<PlanningRosterColumnId, number>>({ ...PLANNING_ROSTER_WIDTHS })
   const [loading, setLoading] = useState(false)
   const [isPending, startTransition] = useTransition()
   const loaded = useRef(false)
@@ -252,7 +279,6 @@ export function PlanningPage() {
     setExpandedSets(new Set())
     setFocusedSetId(null)
     setPlayerDropPreview(null)
-    setSetDropPreview(null)
     setManagerSetDragging(null)
     setManagerSetPreview(undefined)
     setManagerGroupDragging(null)
@@ -359,6 +385,15 @@ export function PlanningPage() {
   const currentSets = useMemo(() => tactic && currentGroup && !isTransferGroup ? layoutsFor(planning, tactic.id, currentGroup.id, slotDescriptors) : [], [planning, tactic, currentGroup, isTransferGroup, slotDescriptors])
   const focusedSet = currentSets.find(set => set.id === focusedSetId) ?? null
   const displaySetLabel = (set: PlanningSetLayout) => planningSetDisplayLabel(set, currentSets, slotDescriptors)
+  const spatialPlacements = useMemo(() => {
+    const slotOrder = new Map(slotDescriptors.map((slot, index) => [slot.id, index]))
+    const items = currentSets.map(set => {
+      const firstSlot = set.slotIds.map(id => pairBySlot.get(id)).find((pair): pair is Pair => Boolean(pair))
+      const order = Math.min(...set.slotIds.map(id => slotOrder.get(id) ?? Number.MAX_SAFE_INTEGER))
+      return { key: set.id, line: planningLine(firstSlot?.ip.position ?? ''), label: firstSlot?.ip.position ?? 'M (C)', order }
+    }).sort((left, right) => left.order - right.order)
+    return new Map(planningSpatialLayout(items).map(item => [item.key, item]))
+  }, [currentSets, pairBySlot, slotDescriptors])
   useEffect(() => {
     if (focusedSetId && !currentSets.some(set => set.id === focusedSetId)) setFocusedSetId(null)
   }, [focusedSetId, currentSets])
@@ -429,6 +464,30 @@ export function PlanningPage() {
     players.forEach(player => { counts[membershipFact(player.id).kind] += 1 })
     return counts
   }, [players, membershipFacts])
+
+  const rosterRows = useMemo<PlanningRosterRow[]>(() => {
+    const rows = roster.map(row => ({
+      player: row.player,
+      snapshot: latestByPlayer.get(row.player.id),
+      score: row.score,
+      rank: row.rank,
+      rankPopulation: row.rankPopulation,
+      compatible: row.compatible,
+      pair: row.pair,
+      fact: row.fact,
+      plannedClub: plannedClubName(row.player.id),
+      plannedConflict: plannedClubConflict(row.player.id),
+    }))
+    const direction = rosterSort.direction
+    const compareText = (left: string, right: string) => left.localeCompare(right, 'pt-BR') * direction
+    return rows.sort((left, right) => {
+      if (rosterSort.key === 'name') return compareText(left.player.current_name, right.player.current_name)
+      if (rosterSort.key === 'positions') return compareText(left.snapshot?.positions.join(', ') ?? '', right.snapshot?.positions.join(', ') ?? '')
+      if (rosterSort.key === 'fact') return (planningMembershipOrder(left.fact.kind) - planningMembershipOrder(right.fact.kind)) * direction || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
+      if (rosterSort.key === 'plan') return compareText(left.plannedConflict.join(', ') || left.plannedClub || '', right.plannedConflict.join(', ') || right.plannedClub || '') || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
+      return (((left.score ?? -Infinity) - (right.score ?? -Infinity)) * direction) || left.player.current_name.localeCompare(right.player.current_name, 'pt-BR')
+    })
+  }, [roster, latestByPlayer, rosterSort, planningIndex, planningClubs])
 
   const activePlayer = players.find(player => player.id === dragging?.id)
   const currentGroupPlayerIds = useMemo(() => new Set(Object.values(planning.slotAssignments[currentGroup?.id ?? ''] ?? {}).flat().filter(Boolean)), [planning.slotAssignments, currentGroup?.id])
@@ -510,7 +569,6 @@ export function PlanningPage() {
     })
   }
   function stopPlayerDrag() { setDragging(null); setPlayerDropPreview(null) }
-  function stopSetDrag() { setDraggingSetId(null); setSetDropPreview(null) }
   function toggleSet(setId: string) { setExpandedSets(current => { const next = new Set(current); if (next.has(setId)) next.delete(setId); else next.add(setId); return next }) }
 
   function setScore(player: Player, set: PlanningSetLayout) {
@@ -555,11 +613,6 @@ export function PlanningPage() {
     } catch { /* status is already updated by the shared persistence layer */ }
   }
 
-  function commitSetDrop(beforeId: string | null) {
-    if (draggingSetId) reorderSet(draggingSetId, beforeId)
-    stopSetDrag()
-  }
-
   function openPlayerMenu(event: ReactMouseEvent, playerId: string) {
     event.preventDefault()
     event.stopPropagation()
@@ -580,6 +633,49 @@ export function PlanningPage() {
     setMenu(null)
   }
 
+  function toggleWorkspaceFocus(next: Exclude<PlanningWorkspaceFocus, null>) {
+    setWorkspaceFocus(current => current === next ? null : next)
+  }
+
+  function changeRosterSort(key: string) {
+    const nextKey = key as PlanningRosterColumnId
+    setRosterSort(current => current.key === nextKey ? { key: nextKey, direction: current.direction === 1 ? -1 : 1 } : { key: nextKey, direction: nextKey === 'score' ? -1 : 1 })
+  }
+
+  function moveRosterColumn(fromIndex: number, toIndex: number) {
+    setRosterColumns(current => {
+      const next = [...current]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
+  }
+
+  function renderRosterCell(row: PlanningRosterRow, column: PlanningRosterColumn): ReactNode {
+    if (column.id === 'name') {
+      const dragTitle = row.snapshot ? `Atual: ${row.fact.label} — ${row.fact.detail}` : 'Sem observação no checkpoint atual.'
+      return <div
+        className={`planning-roster-player-drag roster-player-card ${!row.compatible ? 'incompatible' : ''}`}
+        draggable
+        title={dragTitle}
+        onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', row.player.id); setDragging({ type: 'player', id: row.player.id }) }}
+        onDragEnd={stopPlayerDrag}
+        onContextMenu={event => openPlayerMenu(event, row.player.id)}
+      >
+        {row.snapshot && <PlayerPeek player={row.player} snapshot={row.snapshot} />}
+        <button type="button" className="player-name planning-roster-player-name" onClick={event => { event.stopPropagation(); navigate(`/players/${row.player.id}`) }}>{row.player.current_name}</button>
+      </div>
+    }
+    if (column.id === 'positions') return <span className="planning-roster-positions">{row.snapshot?.positions.join(', ') || '—'}</span>
+    if (column.id === 'fact') return <span className={`membership-badge is-${row.fact.kind}`} title={row.fact.detail}>{row.fact.label}</span>
+    if (column.id === 'plan') {
+      if (row.plannedConflict.length) return <span className="planning-roster-plan is-conflict" title={`Planejado simultaneamente em ${row.plannedConflict.join(', ')}`}>Conflito · {row.plannedConflict.join(', ')}</span>
+      return <span className="planning-roster-plan">{row.plannedClub ?? 'A definir'}</span>
+    }
+    const projectionKey = row.pair ? functionProjectionKey([{ phase: 'IP', position: row.pair.ip.position, roleCode: row.pair.ip.roleCode }, { phase: 'OOP', position: row.pair.oop.position, roleCode: row.pair.oop.roleCode }]) : undefined
+    return <span className="planning-roster-score">{row.snapshot ? <ScoreWithProjection playerId={row.player.id} currentScore={row.score} currentRank={row.rank} rankPopulation={row.rankPopulation} snapshot={row.snapshot} scoreType={contextualPairs.length > 0 ? 'function' : 'general'} scoreKey={projectionKey} variant="compact" currentTitle={contextualPairs.length > 0 ? 'Nota atual nesta função' : 'Nota atual'} /> : <span title="Sem observação no checkpoint atual">—</span>}</span>
+  }
+
   return <div className="screen-page planning-page planning-flex-page">
     <div className="title-row planning-title-row"><div><h1>Planejamento{selectedClub && planningClubs.length > 1 ? ` · ${selectedClub.club.name}` : ''}</h1>{(loading || isPending) && <span className="background-loading" role="status">Carregando em segundo plano…</span>}</div><SaveState status={status} detail={saveDetail} onRetry={status.startsWith('⚠') ? () => void retrySave() : undefined} /></div>
 
@@ -596,9 +692,64 @@ export function PlanningPage() {
       </div>
     </section>
 
-    <section className="planning-depth-layout planning-flex-layout">
+    <section className={`planning-depth-layout planning-flex-layout ${workspaceFocus === 'field' ? 'is-field-expanded' : workspaceFocus === 'table' ? 'is-table-expanded' : ''}`}>
+      <div className={`planning-flex-board ${expandedSets.size ? 'has-expanded' : ''} ${isTransferGroup ? 'is-transfer' : ''}`}>
+        <button
+          type="button"
+          className={`planning-panel-focus-button planning-field-focus-button ${workspaceFocus === 'field' ? 'active' : ''}`}
+          aria-label={workspaceFocus === 'field' ? 'Restaurar campo e tabela' : 'Expandir campo'}
+          title={workspaceFocus === 'field' ? 'Restaurar campo e tabela' : 'Expandir campo'}
+          aria-pressed={workspaceFocus === 'field'}
+          onClick={() => toggleWorkspaceFocus('field')}
+        >⛶</button>
+        {isTransferGroup && currentGroup ? <TransferGroupPanel group={currentGroup} playerIds={planning.slotAssignments[currentGroup.id]?.market ?? []} players={players} latest={latest} fact={membershipFact} plannedClub={plannedClubName} dragging={Boolean(activePlayer)} drop={() => { if (activePlayer) placePlayer(currentGroup.id, 'market', activePlayer.id); stopPlayerDrag() }} startDrag={id => setDragging({ type: 'player', id })} dragEnd={stopPlayerDrag} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} remove={removePlayer} />
+          : tactic && currentGroup ? <div className={`planning-set-list is-spatial-ready ${expandedSets.size ? 'has-expanded' : ''}`}>
+            {currentSets.map(set => <PlanningSetRow
+              key={set.id}
+              set={set}
+              spatial={spatialPlacements.get(set.id)}
+              displayLabel={displaySetLabel(set)}
+              pairs={setPairs(set)}
+              assignedIds={planning.slotAssignments[currentGroup.id]?.[set.id] ?? []}
+              players={players}
+              latest={latest}
+              expanded={expandedSets.has(set.id)}
+              focused={focusedSetId === set.id}
+              coverages={showCoverages ? coveragePlayers(set) : []}
+              showCoverages={showCoverages}
+              primaryLabel={primaryLabel}
+              activePlayer={activePlayer}
+              playerDropPreview={playerDropPreview}
+              score={player => setScore(player, set)}
+              familiarity={player => setFamiliarity(player, set)}
+              fact={membershipFact}
+              plannedClub={plannedClubName}
+              plannedConflict={plannedClubConflict}
+              toggle={() => toggleSet(set.id)}
+              focus={() => setFocusedSetId(current => current === set.id ? null : set.id)}
+              startPlayerDrag={(id, event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); setDragging({ type: 'player', id }); setPlayerDropPreview(null) }}
+              stopPlayerDrag={stopPlayerDrag}
+              previewPlayer={beforePlayerId => setPlayerDropPreview({ setId: set.id, beforePlayerId })}
+              dropPlayer={beforePlayerId => { if (activePlayer) placePlayer(currentGroup.id, set.id, activePlayer.id, beforePlayerId); stopPlayerDrag() }}
+              open={id => navigate(`/players/${id}`)}
+              context={openPlayerMenu}
+            />)}
+          </div> : <div className="empty planning-no-tactic"><h2>Nenhuma tática disponível</h2><p>Crie uma tática para organizar o elenco por posição e função.</p><button onClick={() => navigate('/tactics')}>Criar primeira tática</button></div>}
+      </div>
+
       <article className="planning-column roster-column">
-        <header><h2>{focusedSet ? `Elenco · ${focusedSet.label}` : 'Elenco'}</h2><span>{roster.length}</span></header>
+        <header>
+          <h2>{focusedSet ? `Elenco · ${displaySetLabel(focusedSet)}` : 'Elenco'}</h2>
+          <span>{rosterRows.length}</span>
+          <button
+            type="button"
+            className={`planning-panel-focus-button planning-table-focus-button ${workspaceFocus === 'table' ? 'active' : ''}`}
+            aria-label={workspaceFocus === 'table' ? 'Restaurar campo e tabela' : 'Expandir tabela'}
+            title={workspaceFocus === 'table' ? 'Restaurar campo e tabela' : 'Expandir tabela'}
+            aria-pressed={workspaceFocus === 'table'}
+            onClick={() => toggleWorkspaceFocus('table')}
+          >⛶</button>
+        </header>
         <div className="roster-filters"><input placeholder="Buscar" value={search} onChange={event => setSearch(event.target.value)} /><PositionSelector selected={positionFilters} availablePositions={availableFilterPositions} onChange={positions => { setPositionFilters(positions); if (positions?.length) setFocusedSetId(null) }} /></div>
         <div className="planning-fact-filters" aria-label="Filtrar por vínculo factual">
           <button className={factFilter === 'all' ? 'active' : ''} onClick={() => setFactFilter('all')}>Todos <b>{players.length}</b></button>
@@ -610,55 +761,29 @@ export function PlanningPage() {
         </div>
         {membershipDiagnostic && <div className="planning-membership-warning" title={membershipDiagnostic}>Contexto factual indisponível; o planejamento manual continua seguro.</div>}
         {contextualPairs.length > 0 && <div className="roster-context-note">Prioridade: nota específica da função</div>}
-        <div className="planning-player-list">
-          {!players.length && (loading || isPending) && <div className="background-loader-panel" role="status">Carregando elenco… você pode trocar de aba enquanto isso.</div>}
-          {roster.map(({ player, score, rank, rankPopulation, compatible, pair, fact }) => <RosterPlayerCard player={player} snapshot={latest(player)} score={score} rank={rank} rankPopulation={rankPopulation} compatible={compatible} contextual={contextualPairs.length > 0} scoreKey={pair ? functionProjectionKey([{ phase: 'IP', position: pair.ip.position, roleCode: pair.ip.roleCode }, { phase: 'OOP', position: pair.oop.position, roleCode: pair.oop.roleCode }]) : undefined} fact={fact} plannedClub={plannedClubName(player.id)} plannedConflict={plannedClubConflict(player.id)} drag={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', player.id); setDragging({ type: 'player', id: player.id }) }} dragEnd={stopPlayerDrag} open={() => navigate(`/players/${player.id}`)} context={event => openPlayerMenu(event, player.id)} key={player.id} />)}
-        </div>
+        <DataTable<PlanningRosterRow, PlanningRosterColumn>
+          rows={rosterRows}
+          columns={rosterColumns}
+          rowKey={row => row.player.id}
+          renderCell={renderRosterCell}
+          getColumnWidth={column => rosterWidths[column.id]}
+          getColumnMinWidth={column => column.id === 'name' ? 170 : column.id === 'score' ? 112 : 110}
+          getColumnMaxWidth={() => 420}
+          onColumnWidthChange={(column, width) => setRosterWidths(current => ({ ...current, [column.id]: width }))}
+          onColumnMove={moveRosterColumn}
+          frozenIndex={0}
+          fillContainer
+          sort={rosterSort}
+          onSort={changeRosterSort}
+          capabilities={DATA_TABLE_PRESETS.tactics}
+          className="planning-roster-table"
+          loading={!players.length && (loading || isPending)}
+          loadingMessage="Carregando elenco…"
+          emptyMessage="Nenhum jogador disponível corresponde a este recorte."
+          getCellClassName={(_row, column) => column.id === 'score' ? 'planning-roster-score-cell' : column.id === 'name' ? 'planning-roster-name-cell' : undefined}
+          getRowClassName={row => !row.compatible ? 'planning-roster-row-incompatible' : undefined}
+        />
       </article>
-
-      <div className={`planning-flex-board ${expandedSets.size ? 'has-expanded' : ''} ${isTransferGroup ? 'is-transfer' : ''}`}>
-        {isTransferGroup && currentGroup ? <TransferGroupPanel group={currentGroup} playerIds={planning.slotAssignments[currentGroup.id]?.market ?? []} players={players} latest={latest} fact={membershipFact} plannedClub={plannedClubName} dragging={Boolean(activePlayer)} drop={() => { if (activePlayer) placePlayer(currentGroup.id, 'market', activePlayer.id); stopPlayerDrag() }} startDrag={id => setDragging({ type: 'player', id })} dragEnd={stopPlayerDrag} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} remove={removePlayer} />
-          : tactic && currentGroup ? <div className={`planning-set-list ${expandedSets.size ? 'has-expanded' : ''}`}>
-            {currentSets.map((set, index) => <Fragment key={set.id}>
-              {draggingSetId && setDropPreview?.beforeSetId === set.id && draggingSetId !== set.id && <SetDropPlaceholder drop={() => commitSetDrop(set.id)} />}
-              <PlanningSetRow
-                set={set}
-                displayLabel={displaySetLabel(set)}
-                pairs={setPairs(set)}
-                assignedIds={planning.slotAssignments[currentGroup.id]?.[set.id] ?? []}
-                players={players}
-                latest={latest}
-                expanded={expandedSets.has(set.id)}
-                focused={focusedSetId === set.id}
-                coverages={showCoverages ? coveragePlayers(set) : []}
-                showCoverages={showCoverages}
-                primaryLabel={primaryLabel}
-                activePlayer={activePlayer}
-                draggingSetId={draggingSetId}
-                playerDropPreview={playerDropPreview}
-                nextSetId={currentSets[index + 1]?.id ?? null}
-                score={player => setScore(player, set)}
-                familiarity={player => setFamiliarity(player, set)}
-                fact={membershipFact}
-                plannedClub={plannedClubName}
-                plannedConflict={plannedClubConflict}
-                toggle={() => toggleSet(set.id)}
-                focus={() => setFocusedSetId(current => current === set.id ? null : set.id)}
-                startPlayerDrag={(id, event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); setDragging({ type: 'player', id }); setPlayerDropPreview(null) }}
-                stopPlayerDrag={stopPlayerDrag}
-                previewPlayer={beforePlayerId => setPlayerDropPreview({ setId: set.id, beforePlayerId })}
-                dropPlayer={beforePlayerId => { if (activePlayer) placePlayer(currentGroup.id, set.id, activePlayer.id, beforePlayerId); stopPlayerDrag() }}
-                startSetDrag={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', set.id); setDraggingSetId(set.id); setSetDropPreview({ beforeSetId: set.id }) }}
-                stopSetDrag={stopSetDrag}
-                previewSet={beforeSetId => setSetDropPreview({ beforeSetId })}
-                dropSet={beforeSetId => commitSetDrop(beforeSetId)}
-                open={id => navigate(`/players/${id}`)}
-                context={openPlayerMenu}
-              />
-            </Fragment>)}
-            {draggingSetId && setDropPreview?.beforeSetId === null && <SetDropPlaceholder drop={() => commitSetDrop(null)} />}
-          </div> : <div className="empty planning-no-tactic"><h2>Nenhuma tática disponível</h2><p>Crie uma tática para organizar o elenco por posição e função.</p><button onClick={() => navigate('/tactics')}>Criar primeira tática</button></div>}
-      </div>
     </section>
 
     {manageSquadsOpen && <div className="settings-overlay" onClick={() => setManageSquadsOpen(false)}><section className="squad-manager planning-squad-manager" onClick={event => event.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={() => setManageSquadsOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map((group, index) => { const fixed = transferGroups.some(item => item.id === group.id); const previewBefore = managerGroupPreview === group.id && managerGroupDragging !== group.id; return <Fragment key={group.id}>{previewBefore && <ManagerDropPlaceholder label="Mover elenco para cá" />}<div className={`planning-squad-manager-row ${fixed ? 'fixed-planning-group' : ''} ${managerGroupDragging === group.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerGroupPreview(event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null) }} onDrop={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderGroup(managerGroupDragging, event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null); setManagerGroupDragging(null); setManagerGroupPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', group.id); setManagerGroupDragging(group.id); setManagerGroupPreview(group.id) }} onDragEnd={() => { setManagerGroupDragging(null); setManagerGroupPreview(undefined) }} title={`Arrastar ${group.name}`} aria-label={`Reordenar ${group.name}`}>⠿</button><input value={group.name} readOnly={fixed} onChange={event => renameGroup(group.id, event.target.value)} />{fixed ? <span className="market-group-label">GRUPO MERCADO</span> : <button className="manager-trash" onClick={() => removeGroup(group.id)} title={`Excluir ${group.name}`} aria-label={`Excluir ${group.name}`}>🗑</button>}</div></Fragment> })}{managerGroupDragging && managerGroupPreview === null && <ManagerDropPlaceholder label="Mover elenco para o final" />}</div><footer className="planning-squad-manager-footer"><div className="planning-add-squad"><input placeholder="Novo elenco" value={newGroup} onChange={event => setNewGroup(event.target.value)} onKeyDown={event => event.key === 'Enter' && addGroup()} /><button onClick={addGroup}>+ Adicionar</button></div><button className="danger-button clear-all-squads" disabled={!Object.keys(assignmentIndex).length} onClick={clearPlanning}>Limpar todos os elencos</button></footer></section></div>}
@@ -706,8 +831,9 @@ function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY:
   return resolvePlanningInsertionBefore(cards, clientX, clientY, currentBeforeId)
 }
 
-function PlanningSetRow({ set, displayLabel, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, primaryLabel, activePlayer, draggingSetId, playerDropPreview, nextSetId, score, familiarity, fact, plannedClub, plannedConflict, toggle, focus, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, startSetDrag, stopSetDrag, previewSet, dropSet, open, context }: {
+function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, primaryLabel, activePlayer, playerDropPreview, score, familiarity, fact, plannedClub, plannedConflict, toggle, focus, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, open, context }: {
   set: PlanningSetLayout
+  spatial: PlanningSpatialPlacement | undefined
   displayLabel: string
   pairs: Pair[]
   assignedIds: string[]
@@ -719,9 +845,7 @@ function PlanningSetRow({ set, displayLabel, pairs, assignedIds, players, latest
   showCoverages: boolean
   primaryLabel: (playerId: string) => string
   activePlayer?: Player
-  draggingSetId: string | null
   playerDropPreview: PlayerDropPreview | null
-  nextSetId: string | null
   score: (player: Player) => { pair: Pair | null; value: number | null; rank: number | null; rankPopulation: number[] }
   familiarity: (player: Player) => Familiarity
   fact: (playerId: string) => PlanningMembershipFact
@@ -733,10 +857,6 @@ function PlanningSetRow({ set, displayLabel, pairs, assignedIds, players, latest
   stopPlayerDrag: () => void
   previewPlayer: (beforePlayerId: string | null) => void
   dropPlayer: (beforePlayerId?: string | null) => void
-  startSetDrag: (event: DragEvent<HTMLElement>) => void
-  stopSetDrag: () => void
-  previewSet: (beforeSetId: string | null) => void
-  dropSet: (beforeSetId: string | null) => void
   open: (id: string) => void
   context: (event: ReactMouseEvent, playerId: string) => void
 }) {
@@ -752,22 +872,21 @@ function PlanningSetRow({ set, displayLabel, pairs, assignedIds, players, latest
   const oopDescriptions = [...new Set(pairs.map(pair => `${pair.oop.position.replaceAll(' ', '')} · ${pair.oop.roleCode}`))]
   const activeFamiliarity = activePlayer ? familiarity(activePlayer) : 'unknown'
   const preview = playerDropPreview?.setId === set.id ? playerDropPreview.beforePlayerId : undefined
+  const spatialStyle = spatial ? {
+    '--planning-x': `${spatial.x}%`,
+    '--planning-y': `${spatial.y}%`,
+    '--planning-row-count': String(Math.max(spatial.rowCount, 1)),
+  } as CSSProperties : undefined
 
-  const lineDropTarget = (event: DragEvent<HTMLElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return event.clientY < rect.top + rect.height / 2 ? set.id : nextSetId
-  }
-
-  return <article className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${focused ? 'is-focused' : ''} ${draggingSetId === set.id ? 'is-line-dragging' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`} onDragOver={event => {
-    if (draggingSetId) { event.preventDefault(); previewSet(lineDropTarget(event)); return }
-    if (activePlayer) { event.preventDefault(); previewPlayer(null) }
-  }} onDrop={event => {
-    event.preventDefault()
-    if (draggingSetId) dropSet(lineDropTarget(event))
-    else if (activePlayer) dropPlayer(preview ?? null)
-  }}>
+  return <article
+    data-spatial-key={spatial?.key ?? set.id}
+    data-spatial-side={spatial?.side ?? 'center'}
+    style={spatialStyle}
+    className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${focused ? 'is-focused' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`}
+    onDragOver={event => { if (activePlayer) { event.preventDefault(); previewPlayer(null) } }}
+    onDrop={event => { if (!activePlayer) return; event.preventDefault(); dropPlayer(preview ?? null) }}
+  >
     <div className="planning-set-meta" onClick={focus}>
-      <button className="planning-set-handle" draggable onClick={event => event.stopPropagation()} onDragStart={event => { event.stopPropagation(); startSetDrag(event) }} onDragEnd={stopSetDrag} title="Arrastar para reordenar" aria-label={`Reordenar ${displayLabel}`}>⠿</button>
       <div className="planning-set-position"><div className="planning-position-heading"><span className="planning-position-label">{displayLabel}</span>{grouped && <b>{set.slotIds.length} POS.</b>}</div><small className="planning-phase-line"><i>IP</i><span>{ipDescriptions.join(" / ") || "—"}</span></small><small className="planning-phase-line"><em>OOP</em><span>{oopDescriptions.join(" / ") || "—"}</span></small>{members.length > 0 && <small className="planning-set-depth">{members.length} jogador{members.length === 1 ? "" : "es"}{grouped ? ` · ${set.slotIds.length} posições` : ""}</small>}</div>
     </div>
 
@@ -814,7 +933,6 @@ function PlanningSetRow({ set, displayLabel, pairs, assignedIds, players, latest
 }
 
 function PlayerDropPlaceholder() { return <div className="planning-player-drop-placeholder" aria-hidden="true"><span>destino</span></div> }
-function SetDropPlaceholder({ drop }: { drop: () => void }) { return <div className="planning-set-drop-placeholder" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); drop() }} aria-hidden="true"><span>soltar aqui</span></div> }
 
 function BoardPlayerCard({ player, snapshot, score, rank, rankPopulation, coverage, source, familiarity, fact, plannedClub, plannedConflict, projectionKey, familiarityTooltip, dragging, drag, dragEnd, open, context }: {
   player: Player
@@ -866,7 +984,7 @@ function factBadgeLabel(fact: PlanningMembershipFact) {
 
 function ManagerDropPlaceholder({ label }: { label: string }) { return <div className="manager-drop-placeholder" aria-hidden="true">{label}</div> }
 
-function planningLine(position: string) { const value = position.toUpperCase().replaceAll(' ', ''); if (value.startsWith('GK')) return 'gk'; if (value.startsWith('ST')) return 'st'; if (value.startsWith('AM')) return 'am'; if (value.startsWith('M')) return 'm'; if (value.startsWith('DM') || value.startsWith('WB')) return 'dm'; return 'd' }
+function planningLine(position: string): PlanningPitchLine { const value = position.toUpperCase().replaceAll(' ', ''); if (value.startsWith('GK')) return 'gk'; if (value.startsWith('ST')) return 'st'; if (value.startsWith('AM')) return 'am'; if (value.startsWith('M')) return 'm'; if (value.startsWith('DM') || value.startsWith('WB')) return 'dm'; return 'd' }
 const footLabel = (foot: string | null) => {
   if (!foot) return ''
   const normalized = foot.trim().toLowerCase()

@@ -1,0 +1,426 @@
+/* Táticas unified workspace — Estrutura / Planejamento.
+   Domain/persistence stay in the existing pages. This layer owns only the
+   shared shell and the approved R2 planning composition. */
+
+.tactics-workspace-page{
+  position:relative;
+  width:100%;
+  height:100%;
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+/* Shared header: the save state gets a dedicated line above the tab selector,
+   so it can never overlap Estrutura / Planejamento. */
+.tactics-workspace-header{
+  position:relative;
+  flex:0 0 64px;
+  min-width:0;
+  min-height:64px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:var(--dt-space-4);
+  padding:0 0 5px;
+  border-bottom:1px solid var(--dt-border);
+}
+.tactics-workspace-header h1{
+  margin:0!important;
+  color:var(--dt-text-1);
+  line-height:1;
+}
+.tactics-workspace-tabs{
+  display:flex;
+  align-items:center;
+  gap:var(--dt-space-1);
+  flex:0 0 auto;
+  padding:var(--dt-space-1);
+  border:1px solid var(--dt-border);
+  border-radius:var(--dt-radius-card);
+  background:var(--dt-surface-1);
+}
+.tactics-workspace-tabs button{
+  min-width:118px!important;
+  height:30px!important;
+  min-height:30px!important;
+  padding:0 var(--dt-space-3)!important;
+  margin:0!important;
+  border:1px solid transparent!important;
+  border-radius:var(--dt-radius-control)!important;
+  background:transparent!important;
+  color:var(--dt-text-2)!important;
+  box-shadow:none!important;
+  transform:none!important;
+}
+.tactics-workspace-tabs button:hover{
+  background:var(--dt-surface-3)!important;
+  color:var(--dt-text-1)!important;
+  filter:none!important;
+  transform:none!important;
+}
+.tactics-workspace-tabs button.active{
+  border-color:color-mix(in srgb,var(--dt-lime) 48%,var(--dt-border-strong))!important;
+  background:color-mix(in srgb,var(--dt-lime) 8%,var(--dt-surface-2))!important;
+  color:var(--dt-lime)!important;
+}
+.tactics-workspace-tabs button:focus-visible{
+  outline:2px solid color-mix(in srgb,var(--dt-lime) 70%,transparent);
+  outline-offset:2px;
+}
+
+.tactics-workspace-body{
+  flex:1 1 auto;
+  min-width:0;
+  min-height:0;
+  padding-top:var(--dt-space-2);
+  overflow:hidden;
+}
+.tactics-workspace-surface{
+  width:100%;
+  height:100%;
+  min-width:0;
+  min-height:0;
+}
+.tactics-workspace-surface[hidden]{display:none!important}
+.tactics-workspace-surface>.route-loading{height:100%;display:grid;place-items:center}
+
+/* Child pages still own SaveState. Their page title is hidden because the
+   unified workspace already renders Táticas. SaveState is pinned to the free
+   top-right line, above (not on top of) the tabs. */
+.tactics-workspace-surface .tactics-title-row,
+.tactics-workspace-surface .planning-title-row{
+  position:absolute!important;
+  z-index:45!important;
+  top:2px!important;
+  right:6px!important;
+  width:auto!important;
+  min-width:0!important;
+  min-height:16px!important;
+  height:16px!important;
+  margin:0!important;
+  padding:0!important;
+  justify-content:flex-end!important;
+  align-items:center!important;
+  pointer-events:none;
+}
+.tactics-workspace-surface .tactics-title-row>div:first-child,
+.tactics-workspace-surface .planning-title-row>div:first-child{display:none!important}
+.tactics-workspace-surface .tactics-title-row .save-state-control,
+.tactics-workspace-surface .planning-title-row .save-state-control{
+  width:auto!important;
+  min-width:0!important;
+  min-height:16px!important;
+  height:16px!important;
+  margin:0!important;
+  padding:0 4px!important;
+  justify-content:flex-end!important;
+  font-size:.66rem!important;
+  line-height:16px!important;
+  pointer-events:auto;
+}
+
+.tactics-workspace-tactics .tactic-tabs{display:none!important}
+.tactics-workspace-tactics .tactic-topbar{
+  grid-template-columns:minmax(0,1fr)!important;
+  margin-bottom:var(--dt-space-2)!important;
+}
+
+/* ---------------------------- Planejamento R2 ---------------------------- */
+.tactics-workspace-planning .planning-flex-page{
+  height:100%!important;
+  min-height:0!important;
+}
+.tactics-workspace-planning .planning-flex-toolbar{
+  display:flex!important;
+  align-items:center!important;
+  flex-wrap:nowrap!important;
+  gap:var(--dt-space-2)!important;
+  min-width:0!important;
+  padding:0 0 var(--dt-space-2)!important;
+}
+.tactics-workspace-planning .planning-flex-toolbar>.tactic-custom-select{flex:0 1 300px!important;min-width:210px!important}
+.tactics-workspace-planning .planning-flex-toolbar>.planning-group-selector{flex:0 1 370px!important;min-width:260px!important}
+.tactics-workspace-planning .planning-flex-toolbar>.coverage-toggle{flex:0 0 auto!important}
+.tactics-workspace-planning .planning-flex-actions{margin-left:auto!important;min-width:0!important}
+
+/* Field remains dominant, but the roster is a real decision table with enough
+   room to expose multiple columns. */
+.tactics-workspace-planning .planning-flex-layout{
+  display:grid!important;
+  grid-template-columns:minmax(610px,1.55fr) minmax(560px,1fr)!important;
+  gap:var(--dt-space-3)!important;
+  height:calc(100% - 54px)!important;
+  min-height:520px!important;
+  overflow:hidden!important;
+}
+.tactics-workspace-planning .planning-flex-board{
+  grid-column:1!important;
+  grid-row:1!important;
+  position:relative!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:100%!important;
+  overflow:hidden!important;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-panel)!important;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.018) 50%,transparent 50%) 0 0/20% 100%,
+    linear-gradient(180deg,#123523 0%,#164328 48%,#123923 100%)!important;
+  box-shadow:inset 0 0 0 1px rgba(230,239,233,.26)!important;
+}
+.tactics-workspace-planning .planning-flex-board:not(.is-transfer)::before{
+  content:'';
+  position:absolute;
+  z-index:0;
+  inset:3%;
+  border:1px solid rgba(230,239,233,.42);
+  border-radius:4px;
+  pointer-events:none;
+  background:linear-gradient(180deg,transparent calc(50% - .5px),rgba(230,239,233,.42) calc(50% - .5px),rgba(230,239,233,.42) calc(50% + .5px),transparent calc(50% + .5px));
+}
+.tactics-workspace-planning .planning-flex-board:not(.is-transfer)::after{
+  content:'';
+  position:absolute;
+  z-index:0;
+  left:50%;
+  top:50%;
+  width:112px;
+  height:112px;
+  border:1px solid rgba(230,239,233,.42);
+  border-radius:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+
+/* Both panels expose a visible, native control. Expansion is mutually
+   exclusive and the same button restores split mode. */
+.tactics-workspace-planning .planning-panel-focus-button{
+  position:absolute!important;
+  z-index:60!important;
+  top:7px!important;
+  right:8px!important;
+  display:grid!important;
+  place-items:center!important;
+  width:30px!important;
+  min-width:30px!important;
+  height:30px!important;
+  min-height:30px!important;
+  padding:0!important;
+  margin:0!important;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:var(--dt-radius-control)!important;
+  background:color-mix(in srgb,var(--dt-surface-1) 92%,transparent)!important;
+  color:var(--dt-text-2)!important;
+  box-shadow:none!important;
+  font-size:16px!important;
+  line-height:1!important;
+}
+.tactics-workspace-planning .planning-panel-focus-button:hover,
+.tactics-workspace-planning .planning-panel-focus-button.active{
+  border-color:color-mix(in srgb,var(--dt-lime) 45%,var(--dt-border-strong))!important;
+  background:color-mix(in srgb,var(--dt-lime) 8%,var(--dt-surface-2))!important;
+  color:var(--dt-lime)!important;
+}
+.tactics-workspace-planning .planning-flex-layout.is-field-expanded,
+.tactics-workspace-planning .planning-flex-layout.is-table-expanded{
+  grid-template-columns:minmax(0,1fr)!important;
+}
+.tactics-workspace-planning .planning-flex-layout.is-field-expanded>.roster-column{display:none!important}
+.tactics-workspace-planning .planning-flex-layout.is-table-expanded>.planning-flex-board{display:none!important}
+.tactics-workspace-planning .planning-flex-layout.is-table-expanded>.roster-column{
+  grid-column:1!important;
+  width:100%!important;
+}
+
+/* Deterministic formation-aware depth map. Sets are always rendered, including
+   when empty. Only players are draggable on the field. */
+.tactics-workspace-planning .planning-set-list{
+  position:relative!important;
+  z-index:1!important;
+  box-sizing:border-box!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  display:block!important;
+  padding:var(--dt-space-4)!important;
+  overflow:hidden!important;
+  opacity:1!important;
+}
+.tactics-workspace-planning .planning-set-row{
+  --planning-row-count:4;
+  position:absolute!important;
+  left:var(--planning-x,50%)!important;
+  top:var(--planning-y,50%)!important;
+  box-sizing:border-box!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  justify-content:flex-start!important;
+  gap:var(--dt-space-1)!important;
+  width:clamp(145px,calc((100% - 64px) / var(--planning-row-count)),215px)!important;
+  min-width:0!important;
+  max-width:215px!important;
+  height:clamp(88px,14.5%,124px)!important;
+  min-height:88px!important;
+  padding:var(--dt-space-2)!important;
+  border:1px solid color-mix(in srgb,var(--set-accent) 50%,var(--dt-border))!important;
+  border-left:3px solid var(--set-accent)!important;
+  border-radius:var(--dt-radius-card)!important;
+  background:color-mix(in srgb,var(--set-accent) 8%,rgba(8,18,15,.92))!important;
+  box-shadow:0 4px 14px rgba(0,0,0,.14)!important;
+  overflow:hidden!important;
+  transform:translate(-50%,-50%)!important;
+  transition:left .16s ease,top .16s ease,width .16s ease,background .12s ease,box-shadow .12s ease!important;
+}
+.tactics-workspace-planning .planning-set-row:hover{background:color-mix(in srgb,var(--set-accent) 13%,rgba(8,18,15,.94))!important}
+.tactics-workspace-planning .planning-set-row.is-focused{
+  z-index:6!important;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--set-accent) 65%,var(--dt-lime)),0 5px 16px rgba(0,0,0,.18)!important;
+}
+.tactics-workspace-planning .planning-set-row.is-expanded{
+  z-index:12!important;
+  width:min(320px,34%)!important;
+  max-width:320px!important;
+  height:min(44%,330px)!important;
+  max-height:330px!important;
+}
+.tactics-workspace-planning .planning-set-handle{display:none!important}
+.tactics-workspace-planning .planning-set-meta{
+  flex:0 0 auto!important;
+  display:block!important;
+  height:auto!important;
+  min-height:24px!important;
+  cursor:pointer!important;
+}
+.tactics-workspace-planning .planning-set-position{gap:2px!important}
+.tactics-workspace-planning .planning-position-label{max-width:100%!important;font-size:10px!important;line-height:15px!important}
+.tactics-workspace-planning .planning-phase-line{grid-template-columns:24px minmax(0,1fr)!important;font-size:.52rem!important}
+.tactics-workspace-planning .planning-set-depth{display:none!important}
+.tactics-workspace-planning .planning-set-cards{
+  flex:1 1 auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  align-content:stretch!important;
+  gap:4px!important;
+  min-width:0!important;
+  min-height:0!important;
+  max-height:none!important;
+  padding:0!important;
+  overflow:auto!important;
+}
+.tactics-workspace-planning .planning-set-player-card,
+.tactics-workspace-planning .planning-player-drop-placeholder{
+  box-sizing:border-box!important;
+  flex:0 0 auto!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+.tactics-workspace-planning .planning-set-player-card{min-height:38px!important}
+.tactics-workspace-planning .planning-set-empty{
+  width:100%!important;
+  min-width:0!important;
+  min-height:34px!important;
+  white-space:normal!important;
+}
+.tactics-workspace-planning .planning-set-expand,
+.tactics-workspace-planning .planning-set-collapse{align-self:flex-start!important}
+.tactics-workspace-planning .planning-set-drop-placeholder{display:none!important}
+
+/* Transfer groups retain their free market semantics. */
+.tactics-workspace-planning .planning-flex-board.is-transfer{
+  background:var(--dt-surface-1)!important;
+  box-shadow:none!important;
+  overflow:auto!important;
+}
+.tactics-workspace-planning .planning-flex-board.is-transfer .planning-free-group{position:relative;z-index:1}
+
+/* Canonical DataTable roster — no card-list emulation. */
+.tactics-workspace-planning .roster-column{
+  grid-column:2!important;
+  grid-row:1!important;
+  position:relative!important;
+  box-sizing:border-box!important;
+  width:auto!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:100%!important;
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+  border:1px solid var(--dt-border)!important;
+  border-radius:var(--dt-radius-panel)!important;
+  background:var(--dt-surface-1)!important;
+}
+.tactics-workspace-planning .roster-column>header{
+  position:relative!important;
+  order:0;
+  flex:0 0 40px!important;
+  min-height:40px!important;
+  padding:0 46px 0 var(--dt-space-3)!important;
+  border-bottom:1px solid var(--dt-border)!important;
+}
+.tactics-workspace-planning .roster-filters{order:1;margin:var(--dt-space-2)!important}
+.tactics-workspace-planning .planning-fact-filters{order:2;margin:0 var(--dt-space-2) var(--dt-space-2)!important;overflow-x:auto!important}
+.tactics-workspace-planning .planning-membership-warning,
+.tactics-workspace-planning .roster-context-note{order:3;margin:0 var(--dt-space-2) var(--dt-space-2)!important}
+.tactics-workspace-planning .planning-roster-table.dt-table-shell{
+  order:10;
+  flex:1 1 auto!important;
+  min-height:0!important;
+  width:100%!important;
+  max-height:none!important;
+  border:0!important;
+  border-top:1px solid var(--dt-border)!important;
+  border-radius:0!important;
+}
+.tactics-workspace-planning .planning-roster-table .dt-table th{height:38px!important}
+.tactics-workspace-planning .planning-roster-table .dt-table td{height:50px!important}
+.tactics-workspace-planning .planning-roster-player-drag{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  width:100%;
+  cursor:grab;
+}
+.tactics-workspace-planning .planning-roster-player-drag:active{cursor:grabbing}
+.tactics-workspace-planning .planning-roster-player-drag.incompatible{opacity:.58}
+.tactics-workspace-planning .planning-roster-player-name{
+  min-width:0!important;
+  min-height:0!important;
+  height:auto!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  color:var(--dt-text-1)!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+  text-align:left!important;
+}
+.tactics-workspace-planning .planning-roster-player-name:hover{color:var(--dt-lime)!important;text-decoration:underline}
+.tactics-workspace-planning .planning-roster-positions,
+.tactics-workspace-planning .planning-roster-plan{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--dt-text-2);
+}
+.tactics-workspace-planning .planning-roster-plan.is-conflict{color:var(--dt-warning)}
+.tactics-workspace-planning .planning-roster-score-cell{overflow:visible!important;text-align:center}
+.tactics-workspace-planning .planning-roster-score{display:inline-flex;justify-content:center;min-width:88px}
+.tactics-workspace-planning .planning-roster-row-incompatible td{opacity:.65}
+.tactics-workspace-planning .planning-roster-row-incompatible td.planning-roster-name-cell{opacity:1}
+
+@media(max-width:1380px){
+  .tactics-workspace-planning .planning-flex-layout{grid-template-columns:minmax(540px,1.45fr) minmax(500px,1fr)!important}
+  .tactics-workspace-planning .planning-set-row{width:clamp(135px,calc((100% - 48px) / var(--planning-row-count)),190px)!important}
+}

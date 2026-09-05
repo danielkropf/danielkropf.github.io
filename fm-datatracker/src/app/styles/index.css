@@ -33,6 +33,8 @@
 @import './phase-2-cleanup.css';
 /* Tactics is the first full Phase 3 surface migration after DataTable QA. */
 @import './tactics.css';
+/* Unified Tactics / Planning workspace composition. */
+@import './tactics-workspace.css';
 /* Analyzer comparison surface — Phase 1B. */
 @import './player-comparison.css';
 /* Shared Configurações/Novo import window behavior. */
