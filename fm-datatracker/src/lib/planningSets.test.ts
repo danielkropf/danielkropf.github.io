@@ -62,6 +62,30 @@ describe('flexible planning sets', () => {
     expect(planningSetDisplayLabel(renamedSets[0], renamedSets, repeated)).toBe('MC esquerdo')
   })
 
+
+  it('updates an automatic single-set label and numbering from the current tactic structure', () => {
+    const original = [{ id: 'moving', position: 'DM(C)', x: 50 }]
+    const stored = defaultPlanningSets(original)
+    expect(stored[0].label).toBe('DM(C)')
+
+    const moved = [
+      { id: 'left', position: 'M(C)', x: 29 },
+      { id: 'moving', position: 'M(C)', x: 50 },
+      { id: 'right', position: 'M(C)', x: 71 },
+    ]
+    const reconciled = layoutsFor({ groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: {}, setLayouts: { t1: { principal: stored } } }, 't1', 'principal', moved)
+    expect(planningSetDisplayLabel(reconciled.find(set => set.id === 'moving')!, reconciled, moved)).toBe('M(C) 2')
+  })
+
+  it('preserves an explicit custom set label when the tactic position moves', () => {
+    const original = [{ id: 'moving', position: 'DM(C)', x: 29 }]
+    const sets = defaultPlanningSets(original)
+    const renamed = renamePlanningSet({ groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: {} }, 't1', 'principal', sets, 'moving', 'Volante construtor')
+    const stored = layoutsFor(renamed, 't1', 'principal', original)
+    const moved = [{ id: 'moving', position: 'M(C)', x: 50 }]
+    expect(planningSetDisplayLabel(stored[0], stored, moved)).toBe('Volante construtor')
+  })
+
   it('reorders squads without touching their assignments', () => {
     const planning: FlexiblePlanning = {
       groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }],

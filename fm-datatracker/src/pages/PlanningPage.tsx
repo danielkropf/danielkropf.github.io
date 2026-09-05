@@ -19,7 +19,7 @@ import { loadModelConfig, patchModelConfig, retryModelConfigPatch, scheduleModel
 import { describeDbError } from '../lib/db-error'
 import { resolvePlanningInsertionBefore } from '../lib/planning-layout'
 import { functionProjectionKey } from '../lib/projection-player'
-import { positionGroup } from '../lib/tactics'
+import { PITCH_NODES, positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
 import { planningSpatialLayout, type PlanningPitchLine, type PlanningSpatialPlacement } from '../lib/planning-spatial-layout'
 import { loadPlanningMemberships } from '../lib/longitudinal-service'
@@ -387,7 +387,8 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const scopedTacticId = selectedClubId ? resolveClubTacticId(config, selectedClubId, primaryClubId, tactics.map(item => item.id)) : config.selected_tactic_id ?? null
   const tactic = tactics.find(item => item.id === scopedTacticId) ?? (!selectedClubId || selectedClubId === primaryClubId ? tactics[0] : undefined)
   const pairs: Pair[] = useMemo(() => tactic ? tactic.ipAssignments.map(ip => ({ ip, oop: tactic.oopAssignments.find(oop => oop.playerId === ip.playerId) ?? ip })) : [], [tactic])
-  const slotDescriptors: TacticSlotDescriptor[] = useMemo(() => pairs.map(pair => ({ id: pair.ip.playerId, position: pair.ip.position, oopPosition: pair.oop.position })), [pairs])
+  const pitchNodeX = useMemo(() => new Map(PITCH_NODES.map(node => [node.id, node.x])), [])
+  const slotDescriptors: TacticSlotDescriptor[] = useMemo(() => pairs.map(pair => ({ id: pair.ip.playerId, position: pair.ip.position, oopPosition: pair.oop.position, nodeId: pair.ip.nodeId, x: pitchNodeX.get(pair.ip.nodeId) })), [pairs, pitchNodeX])
   const pairBySlot = useMemo(() => new Map(pairs.map(pair => [pair.ip.playerId, pair])), [pairs])
   const roleOverrides = config.role_weight_overrides ?? EMPTY_ROLE_OVERRIDES
   const latestByPlayer = useMemo(() => new Map(players.map(player => [player.id, player.player_snapshots[0]])), [players])
@@ -421,14 +422,15 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const focusedSet = currentSets.find(set => set.id === focusedSetId) ?? null
   const displaySetLabel = (set: PlanningSetLayout) => planningSetDisplayLabel(set, currentSets, slotDescriptors)
   const spatialPlacements = useMemo(() => {
-    const slotOrder = new Map(slotDescriptors.map((slot, index) => [slot.id, index]))
     const items = currentSets.map(set => {
-      const firstSlot = set.slotIds.map(id => pairBySlot.get(id)).find((pair): pair is Pair => Boolean(pair))
-      const order = Math.min(...set.slotIds.map(id => slotOrder.get(id) ?? Number.MAX_SAFE_INTEGER))
-      return { key: set.id, line: planningLine(firstSlot?.ip.position ?? ''), label: firstSlot?.ip.position ?? 'M (C)', order }
-    }).sort((left, right) => left.order - right.order)
+      const setPairs = set.slotIds.map(id => pairBySlot.get(id)).filter((pair): pair is Pair => Boolean(pair))
+      const firstSlot = setPairs[0]
+      const anchors = setPairs.map(pair => pitchNodeX.get(pair.ip.nodeId)).filter((value): value is number => Number.isFinite(value))
+      const anchorX = anchors.length ? anchors.reduce((sum, value) => sum + value, 0) / anchors.length : undefined
+      return { key: set.id, line: planningLine(firstSlot?.ip.position ?? ''), label: firstSlot?.ip.position ?? 'M (C)', anchorX }
+    })
     return new Map(planningSpatialLayout(items).map(item => [item.key, item]))
-  }, [currentSets, pairBySlot, slotDescriptors])
+  }, [currentSets, pairBySlot, pitchNodeX])
   useEffect(() => {
     if (focusedSetId && !currentSets.some(set => set.id === focusedSetId)) setFocusedSetId(null)
   }, [focusedSetId, currentSets])
@@ -948,7 +950,6 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
         </Fragment>
       })}
       {preview === null && activePlayer && <PlayerDropPlaceholder />}
-      {!activePlayer && hidden === 0 && visible.length < capacity && <div className="planning-set-vacancy" aria-hidden="true" title="Espaço para adicionar jogador"><span>+</span></div>}
       {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggle() }} title={`Mostrar mais ${hidden} jogador${hidden === 1 ? '' : 'es'}`}>+{hidden}</button>}
       {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggle() }} title="Recolher" aria-label={`Recolher ${displayLabel}`}>−</button>}
     </div>

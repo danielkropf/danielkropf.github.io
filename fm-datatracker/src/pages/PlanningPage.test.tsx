@@ -93,13 +93,13 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('PlanningPage 3C', () => {
-  it('renders compact pitch sets as border legends with vertical vacancies and a wider decision table', async () => {
+  it('renders compact pitch sets as border legends without persistent vacancy squares and with a wider decision table', async () => {
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
     expect(await screen.findByText('Jogador Teste')).not.toBeNull()
 
     await waitFor(() => expect(view.container.querySelectorAll('.planning-set-legend').length).toBe(2))
     expect(view.container.querySelectorAll('.planning-phase-line').length).toBe(0)
-    expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(2)
+    expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(0)
     expect(screen.getByText('Idade')).not.toBeNull()
     expect(screen.getByText('Clube atual')).not.toBeNull()
   })
@@ -183,7 +183,7 @@ describe('PlanningPage 3C', () => {
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the compact set footprint to two visible card slots without adding a third vacancy', async () => {
+  it('keeps two visible player cards without rendering a persistent vacancy square', async () => {
     const secondSnapshot = { ...snapshot, id: 'snapshot-2' }
     mocks.loadPlayers.mockResolvedValue([
       { id: 'player', current_name: 'Jogador Teste', nationality: 'BRA', player_snapshots: [snapshot] },
@@ -215,7 +215,7 @@ describe('PlanningPage 3C', () => {
     expect(set).not.toBeNull()
     expect(set!.querySelectorAll('.planning-set-player-card').length).toBe(2)
     expect(set!.querySelectorAll('.planning-set-vacancy').length).toBe(0)
-    expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(1)
+    expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(0)
   })
 
   it('uses the single best contextual pair and moves the player to a market group from the context menu', async () => {

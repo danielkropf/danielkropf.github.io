@@ -1,6 +1,6 @@
 export type PlanningGroup = { id: string; name: string }
-export type TacticSlotDescriptor = { id: string; position: string; oopPosition?: string }
-export type PlanningSetLayout = { id: string; label: string; slotIds: string[]; slotLabels?: Record<string, string> }
+export type TacticSlotDescriptor = { id: string; position: string; oopPosition?: string; nodeId?: string; x?: number }
+export type PlanningSetLayout = { id: string; label: string; slotIds: string[]; slotLabels?: Record<string, string>; customLabel?: boolean }
 export type PlanningSetLayouts = Record<string, Record<string, PlanningSetLayout[]>>
 export type FlexiblePlanning = {
   groups: PlanningGroup[]
@@ -32,6 +32,15 @@ export function defaultSetLabel(position: string, count = 1): string {
   return position
 }
 
+function looksLikeGeneratedSingleLabel(label: string): boolean {
+  const value = label.trim().toUpperCase().replace(/\s+/g, '')
+  return /^(GK|D(?:\([LCR]\)|[LCR])|WB(?:\([LR]\)|[LR])|DM(?:\([LCR]\)|[LCR])|M(?:\([LCR]\)|[LCR]|C)|AM(?:\([LCR]\)|[LCR])|ST(?:\([LCR]\)|[LCR])?)(?:\d+)?$/.test(value)
+}
+
+function slotHorizontalOrder(slot: TacticSlotDescriptor | undefined, fallback: number): number {
+  return typeof slot?.x === 'number' && Number.isFinite(slot.x) ? slot.x : 1000 + fallback
+}
+
 
 export function planningSetDisplayLabel(set: PlanningSetLayout, sets: PlanningSetLayout[], slots: TacticSlotDescriptor[]): string {
   if (set.slotIds.length > 1) return set.label
@@ -40,15 +49,19 @@ export function planningSetDisplayLabel(set: PlanningSetLayout, sets: PlanningSe
   if (!position) return set.label
   const base = defaultSetLabel(position)
   const stored = set.label.trim()
-  if (stored && stored !== base) return stored
+  // Old automatic labels were persisted as plain text. When the tactic slot moves,
+  // they must follow the new position instead of masquerading as a custom rename.
+  // Explicit renames (and legacy free-text labels) remain untouched.
+  if (set.customLabel || (stored && !looksLikeGeneratedSingleLabel(stored))) return stored
   const identity = positionIdentity(position)
   const peers = sets.filter(candidate => {
     if (candidate.slotIds.length !== 1) return false
     const candidatePosition = slotById.get(candidate.slotIds[0])?.position
     return Boolean(candidatePosition && positionIdentity(candidatePosition) === identity)
-  })
-  if (peers.length < 2) return stored || base
-  const index = peers.findIndex(candidate => candidate.id === set.id)
+  }).map((candidate, fallback) => ({ candidate, fallback, slot: slotById.get(candidate.slotIds[0]) }))
+    .sort((a, b) => slotHorizontalOrder(a.slot, a.fallback) - slotHorizontalOrder(b.slot, b.fallback))
+  if (peers.length < 2) return base
+  const index = peers.findIndex(({ candidate }) => candidate.id === set.id)
   return `${base} ${Math.max(0, index) + 1}`
 }
 
@@ -61,9 +74,10 @@ export function planningSlotDisplayLabel(set: PlanningSetLayout, slotId: string,
   const peers = set.slotIds.filter(id => {
     const candidate = slots.find(item => item.id === id)
     return candidate && positionIdentity(candidate.position) === positionIdentity(slot.position)
-  })
+  }).map((id, fallback) => ({ id, fallback, slot: slots.find(item => item.id === id) }))
+    .sort((a, b) => slotHorizontalOrder(a.slot, a.fallback) - slotHorizontalOrder(b.slot, b.fallback))
   if (peers.length < 2) return defaultSetLabel(slot.position)
-  return `${defaultSetLabel(slot.position)} ${peers.indexOf(slotId) + 1}`
+  return `${defaultSetLabel(slot.position)} ${peers.findIndex(peer => peer.id === slotId) + 1}`
 }
 
 export function planningSlotCompatibilityKey(slot: TacticSlotDescriptor): string {
@@ -127,7 +141,7 @@ function withLayouts(planning: FlexiblePlanning, tacticId: string, groupId: stri
 }
 
 export function renamePlanningSet(planning: FlexiblePlanning, tacticId: string, groupId: string, sets: PlanningSetLayout[], setId: string, label: string): FlexiblePlanning {
-  const next = sets.map(set => set.id === setId ? { ...set, label: label.trim() || set.label } : set)
+  const next = sets.map(set => set.id === setId ? { ...set, label: label.trim() || set.label, customLabel: true } : set)
   return withLayouts(planning, tacticId, groupId, next)
 }
 
