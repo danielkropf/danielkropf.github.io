@@ -7,7 +7,7 @@ import { ScoreWithProjection } from '../components/ScoreWithProjection'
 import { SaveState } from '../components/SaveState'
 import { CustomSelect } from '../components/CustomSelect'
 import { PositionSelector, canonicalPosition } from '../components/PositionSelector'
-import { DataTable, type DataTableColumnLike } from '../components/data-table/DataTable'
+import { DataTable, type DataTableColumnLike, type DataTableContextMenuItem } from '../components/data-table/DataTable'
 import { DATA_TABLE_PRESETS } from '../components/data-table/presets'
 import { generalReferencePercentile, generalReferenceScoresByFamily, percentile, referencePairedRoleScore, type ReferenceDataset } from '../lib/reference'
 import { canPlayPosition } from '../lib/positions'
@@ -22,6 +22,7 @@ import { functionProjectionKey } from '../lib/projection-player'
 import { PITCH_NODES, positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
 import { planningSpatialLayout, type PlanningPitchLine, type PlanningSpatialPlacement } from '../lib/planning-spatial-layout'
+import { resolvePlanningSetExpansion, type PlanningSetExpansion, type PlanningSetRect } from '../lib/planning-set-expansion'
 import { loadPlanningMemberships } from '../lib/longitudinal-service'
 import { classifyPlanningMembership, planningMembershipOrder, resolveCurrentSnapshotMembership, type PlanningMembershipFact, type PlanningMembershipFactKind } from '../lib/planning-membership'
 import type { PlayerMembershipWithClubs } from '../types/domain'
@@ -262,6 +263,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const [rosterSort, setRosterSort] = useState<{ key: PlanningRosterColumnId; direction: 1 | -1 }>({ key: 'score', direction: -1 })
   const [rosterColumns, setRosterColumns] = useState<PlanningRosterColumn[]>(() => PLANNING_ROSTER_COLUMNS.map(column => ({ ...column })))
   const [rosterWidths, setRosterWidths] = useState<Record<PlanningRosterColumnId, number>>({ ...PLANNING_ROSTER_WIDTHS })
+  const [rosterFrozenIndex, setRosterFrozenIndex] = useState(0)
   const [loading, setLoading] = useState(false)
   const [isPending, startTransition] = useTransition()
   const loaded = useRef(false)
@@ -690,6 +692,40 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     })
   }
 
+  function removeRosterColumn(index: number) {
+    if (rosterColumns[index]?.id === 'name') return
+    setRosterColumns(current => current.filter((_, columnIndex) => columnIndex !== index))
+    setRosterFrozenIndex(current => current < 0 ? -1 : Math.max(0, Math.min(current - (index <= current ? 1 : 0), rosterColumns.length - 2)))
+  }
+
+  function addRosterColumn(column: PlanningRosterColumn, insertAfter: number) {
+    setRosterColumns(current => current.some(item => item.id === column.id)
+      ? current
+      : [...current.slice(0, insertAfter + 1), { ...column }, ...current.slice(insertAfter + 1)])
+  }
+
+  function resetRosterTable() {
+    setRosterColumns(PLANNING_ROSTER_COLUMNS.map(column => ({ ...column })))
+    setRosterWidths({ ...PLANNING_ROSTER_WIDTHS })
+    setRosterFrozenIndex(0)
+  }
+
+  function rosterHeaderContextItems(column: PlanningRosterColumn, index: number): DataTableContextMenuItem[] {
+    const missing = PLANNING_ROSTER_COLUMNS.filter(candidate => !rosterColumns.some(current => current.id === candidate.id))
+    return [
+      { id: 'freeze', label: 'Congelar até esta coluna', onSelect: () => setRosterFrozenIndex(index) },
+      { id: 'unfreeze', label: 'Remover congelamento', disabled: rosterFrozenIndex < 0, onSelect: () => setRosterFrozenIndex(-1) },
+      { id: 'remove', label: 'Remover coluna', disabled: column.id === 'name', onSelect: () => removeRosterColumn(index) },
+      ...missing.map((candidate, missingIndex): DataTableContextMenuItem => ({
+        id: `add-${candidate.id}`,
+        label: `Adicionar ${candidate.label}`,
+        separatorBefore: missingIndex === 0,
+        onSelect: () => addRosterColumn(candidate, index),
+      })),
+      { id: 'reset', label: 'Restaurar tabela padrão', separatorBefore: true, onSelect: resetRosterTable },
+    ]
+  }
+
   function renderRosterCell(row: PlanningRosterRow, column: PlanningRosterColumn): ReactNode {
     if (column.id === 'name') {
       const dragTitle = row.snapshot ? `Atual: ${row.fact.label} — ${row.fact.detail}` : 'Sem observação no checkpoint atual.'
@@ -812,10 +848,12 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
           getColumnMaxWidth={() => 420}
           onColumnWidthChange={(column, width) => setRosterWidths(current => ({ ...current, [column.id]: width }))}
           onColumnMove={moveRosterColumn}
-          frozenIndex={0}
+          frozenIndex={rosterFrozenIndex}
           fillContainer
           sort={rosterSort}
           onSort={changeRosterSort}
+          onRowContextMenu={(event, row) => openPlayerMenu(event, row.player.id)}
+          getHeaderContextMenuItems={rosterHeaderContextItems}
           capabilities={DATA_TABLE_PRESETS.tactics}
           className="planning-roster-table"
           loading={!players.length && (loading || isPending)}
@@ -892,23 +930,98 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
   const options = [...members.map(player => ({ player, coverage: false as const })), ...coverageOptions.map(player => ({ player, coverage: true as const }))]
   const grouped = set.slotIds.length > 1
   const { ref: cardsRef, capacity } = useCompactCapacity()
+  const articleRef = useRef<HTMLElement | null>(null)
+  const compactRectRef = useRef<PlanningSetRect | null>(null)
+  const [expansionLayout, setExpansionLayout] = useState<PlanningSetExpansion | null>(null)
   const visible = expanded ? options : options.slice(0, capacity)
   const hidden = Math.max(0, options.length - visible.length)
   const linePosition = pairs[0]?.ip.position ?? ''
   const roleSummary = [...new Set(pairs.flatMap(pair => [`IP ${pair.ip.position.replaceAll(' ', '')} · ${pair.ip.roleCode}`, `OOP ${pair.oop.position.replaceAll(' ', '')} · ${pair.oop.roleCode}`]))].join(' / ')
   const activeFamiliarity = activePlayer ? familiarity(activePlayer) : 'unknown'
   const preview = playerDropPreview?.setId === set.id ? playerDropPreview.beforePlayerId : undefined
-  const spatialStyle = spatial ? {
-    '--planning-x': `${spatial.x}%`,
-    '--planning-y': `${spatial.y}%`,
-    '--planning-row-count': String(Math.max(spatial.rowCount, 1)),
-  } as CSSProperties : undefined
+
+  function rectRelativeTo(rect: DOMRect, parentRect: DOMRect): PlanningSetRect {
+    return { left: rect.left - parentRect.left, top: rect.top - parentRect.top, width: rect.width, height: rect.height }
+  }
+
+  function measuredExpansion(compactOverride?: PlanningSetRect | null) {
+    const article = articleRef.current
+    const pitch = article?.parentElement
+    if (!article || !pitch) return null
+    const pitchRect = pitch.getBoundingClientRect()
+    const compact = compactOverride ?? rectRelativeTo(article.getBoundingClientRect(), pitchRect)
+    const computed = getComputedStyle(article)
+    const numberVar = (name: string, fallback: number) => {
+      const parsed = Number.parseFloat(computed.getPropertyValue(name))
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+    }
+    const obstacles = [...pitch.querySelectorAll<HTMLElement>('.planning-set-row')]
+      .filter(item => item !== article)
+      .map(item => rectRelativeTo(item.getBoundingClientRect(), pitchRect))
+    return resolvePlanningSetExpansion({
+      pitchWidth: pitchRect.width,
+      pitchHeight: pitchRect.height,
+      compact,
+      obstacles,
+      playerCount: options.length,
+      cardWidth: numberVar('--planning-depth-card-width', 82),
+      cardHeight: numberVar('--planning-depth-card-height', 96),
+      gap: numberVar('--planning-depth-card-gap', 6),
+    })
+  }
+
+  function toggleExpansion() {
+    if (expanded) {
+      compactRectRef.current = null
+      setExpansionLayout(null)
+      toggle()
+      return
+    }
+    const article = articleRef.current
+    const pitch = article?.parentElement
+    if (article && pitch) {
+      const compact = rectRelativeTo(article.getBoundingClientRect(), pitch.getBoundingClientRect())
+      compactRectRef.current = compact
+      setExpansionLayout(measuredExpansion(compact))
+    }
+    toggle()
+  }
+
+  useEffect(() => {
+    if (!expanded) {
+      compactRectRef.current = null
+      setExpansionLayout(null)
+      return
+    }
+    const refresh = () => {
+      if (compactRectRef.current) setExpansionLayout(measuredExpansion(compactRectRef.current))
+    }
+    refresh()
+    window.addEventListener('resize', refresh)
+    return () => window.removeEventListener('resize', refresh)
+  }, [expanded, options.length])
+
+  const spatialStyle = {
+    ...(spatial ? {
+      '--planning-x': `${spatial.x}%`,
+      '--planning-y': `${spatial.y}%`,
+      '--planning-row-count': String(Math.max(spatial.rowCount, 1)),
+    } : {}),
+    ...(expansionLayout ? {
+      '--planning-expanded-left': `${expansionLayout.left}px`,
+      '--planning-expanded-top': `${expansionLayout.top}px`,
+      '--planning-expanded-width': `${expansionLayout.width}px`,
+      '--planning-expanded-height': `${expansionLayout.height}px`,
+    } : {}),
+  } as CSSProperties
 
   return <article
+    ref={articleRef}
     data-spatial-key={spatial?.key ?? set.id}
     data-spatial-side={spatial?.side ?? 'center'}
+    data-expansion-direction={expansionLayout?.direction}
     style={spatialStyle}
-    className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${focused ? 'is-focused' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`}
+    className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${expansionLayout ? `is-expansion-${expansionLayout.axis} is-expand-${expansionLayout.direction}` : ''} ${focused ? 'is-focused' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`}
     onDragOver={event => { if (activePlayer) { event.preventDefault(); previewPlayer(null) } }}
     onDrop={event => { if (!activePlayer) return; event.preventDefault(); dropPlayer(preview ?? null) }}
   >
@@ -917,7 +1030,7 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
     </button>
 
     <div ref={cardsRef} className={`planning-set-cards ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }}>
-      {visible.map((option, index) => {
+      {visible.map(option => {
         const player = option.player
         const snapshot = latest(player)
         const rating = score(player)
@@ -950,9 +1063,9 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
         </Fragment>
       })}
       {preview === null && activePlayer && <PlayerDropPlaceholder />}
-      {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggle() }} title={`Mostrar mais ${hidden} jogador${hidden === 1 ? '' : 'es'}`}>+{hidden}</button>}
-      {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggle() }} title="Recolher" aria-label={`Recolher ${displayLabel}`}>−</button>}
     </div>
+    {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggleExpansion() }} title={`Mostrar mais ${hidden} jogador${hidden === 1 ? '' : 'es'}`} aria-label={`Expandir ${displayLabel}`}>+{hidden}</button>}
+    {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggleExpansion() }} title="Recolher" aria-label={`Recolher ${displayLabel}`}>−</button>}
   </article>
 }
 

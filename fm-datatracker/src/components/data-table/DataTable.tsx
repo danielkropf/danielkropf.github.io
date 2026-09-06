@@ -36,6 +36,7 @@ type DataTableProps<Row, Column extends DataTableColumnLike> = {
   onSort?: (key: string) => void
   selectedRowKey?: string | null
   onSelectRow?: (row: Row) => void
+  onRowContextMenu?: (event: MouseEvent<HTMLTableRowElement>, row: Row) => void
   capabilities?: DataTableCapabilities
   className?: string
   loading?: boolean
@@ -77,6 +78,7 @@ export function DataTable<Row, Column extends DataTableColumnLike>({
   onSort,
   selectedRowKey = null,
   onSelectRow,
+  onRowContextMenu,
   capabilities,
   className = '',
   loading = false,
@@ -338,6 +340,7 @@ export function DataTable<Row, Column extends DataTableColumnLike>({
                 aria-selected={enabled.selection ? selected : undefined}
                 aria-disabled={disabled || undefined}
                 onClick={clickable ? () => onSelectRow?.(row) : undefined}
+                onContextMenu={onRowContextMenu ? (event: MouseEvent<HTMLTableRowElement>) => onRowContextMenu(event, row) : undefined}
               >
                 {columns.map((column, index) => {
                   const frozen = enabled.freezing && index <= frozenIndex

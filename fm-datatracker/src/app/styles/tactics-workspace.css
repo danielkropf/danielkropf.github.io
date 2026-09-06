@@ -282,8 +282,13 @@
 }
 .tactics-workspace-planning .planning-set-row.is-expanded{
   z-index:16!important;
-  width:min(420px,46%)!important;
-  max-width:420px!important;
+  left:var(--planning-expanded-left,var(--planning-x,50%))!important;
+  top:var(--planning-expanded-top,var(--planning-y,50%))!important;
+  width:var(--planning-expanded-width,calc(var(--planning-depth-card-width) + var(--planning-depth-card-width) + var(--planning-depth-card-gap) + 14px))!important;
+  max-width:none!important;
+  height:var(--planning-expanded-height,122px)!important;
+  min-height:122px!important;
+  transform:none!important;
 }
 .tactics-workspace-planning .planning-set-handle,
 .tactics-workspace-planning .planning-set-meta{display:none!important}
@@ -340,10 +345,26 @@
 }
 
 .tactics-workspace-planning .planning-set-row.is-expanded .planning-set-cards{
-  overflow-x:auto!important;
-  overflow-y:hidden!important;
   scrollbar-width:thin!important;
   scrollbar-color:var(--dt-border-strong) transparent!important;
+}
+.tactics-workspace-planning .planning-set-row.is-expanded.is-expansion-vertical .planning-set-cards{
+  display:grid!important;
+  grid-template-columns:repeat(2,var(--planning-depth-card-width))!important;
+  grid-auto-rows:var(--planning-depth-card-height)!important;
+  align-content:start!important;
+  justify-content:center!important;
+  gap:var(--planning-depth-card-gap)!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+}
+.tactics-workspace-planning .planning-set-row.is-expanded.is-expansion-horizontal .planning-set-cards{
+  display:flex!important;
+  flex-flow:row nowrap!important;
+  align-items:stretch!important;
+  justify-content:flex-start!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
 }
 .tactics-workspace-planning .planning-set-player-card,
 .tactics-workspace-planning .planning-player-drop-placeholder{
@@ -489,11 +510,14 @@
   font-weight:600!important;
   line-height:1!important;
 }
-.tactics-workspace-planning .planning-set-expand{
+.tactics-workspace-planning .planning-set-expand,
+.tactics-workspace-planning .planning-set-collapse{
   position:absolute!important;
-  z-index:6!important;
-  right:8px!important;
-  bottom:-10px!important;
+  z-index:20!important;
+  left:50%!important;
+  right:auto!important;
+  bottom:-11px!important;
+  transform:translateX(-50%)!important;
   width:auto!important;
   min-width:30px!important;
   height:22px!important;
@@ -509,18 +533,15 @@
   line-height:20px!important;
   cursor:pointer!important;
 }
-.tactics-workspace-planning .planning-set-expand:hover{border-color:color-mix(in srgb,var(--dt-lime) 60%,var(--dt-border-strong))!important;background:color-mix(in srgb,var(--dt-lime) 7%,transparent)!important;filter:none!important;transform:none!important}
+.tactics-workspace-planning .planning-set-expand:hover,
+.tactics-workspace-planning .planning-set-collapse:hover{
+  border-color:color-mix(in srgb,var(--dt-lime) 60%,var(--dt-border-strong))!important;
+  background:color-mix(in srgb,var(--dt-lime) 7%,transparent)!important;
+  filter:none!important;
+  transform:translateX(-50%)!important;
+}
 .tactics-workspace-planning .planning-player-drop-placeholder{animation:planning-drop-pulse .7s ease-in-out infinite alternate!important}
 .tactics-workspace-planning .planning-player-drop-placeholder span{font-size:.5rem!important;text-transform:uppercase!important;letter-spacing:.04em!important}
-.tactics-workspace-planning .planning-set-collapse{
-  flex:0 0 28px!important;
-  align-self:center!important;
-  width:28px!important;
-  min-width:28px!important;
-  height:28px!important;
-  padding:0!important;
-  border-radius:999px!important;
-}
 .tactics-workspace-planning .planning-set-empty,
 .tactics-workspace-planning .planning-set-drop-placeholder,
 .tactics-workspace-planning .planning-card-meta,
@@ -548,7 +569,7 @@
   height:100%!important;
   display:flex!important;
   flex-direction:column!important;
-  overflow:hidden!important;
+  overflow:visible!important;
   border:1px solid var(--dt-border)!important;
   border-radius:var(--dt-radius-panel)!important;
   background:var(--dt-surface-1)!important;
@@ -561,8 +582,25 @@
   padding:0 46px 0 var(--dt-space-3)!important;
   border-bottom:1px solid var(--dt-border)!important;
 }
-.tactics-workspace-planning .roster-filters{order:1;margin:var(--dt-space-2)!important}
-.tactics-workspace-planning .planning-fact-filters{order:2;margin:0 var(--dt-space-2) var(--dt-space-2)!important;overflow-x:auto!important}
+.tactics-workspace-planning .roster-filters{
+  order:1;
+  flex:0 0 auto!important;
+  margin:var(--dt-space-2)!important;
+  overflow:visible!important;
+  position:relative!important;
+  z-index:18!important;
+}
+.tactics-workspace-planning .planning-fact-filters{
+  order:2;
+  flex:0 0 auto!important;
+  min-height:33px!important;
+  margin:0 var(--dt-space-2) var(--dt-space-2)!important;
+  padding:4px 0!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+}
+.tactics-workspace-planning .planning-fact-filters>button{flex:0 0 auto!important}
+.tactics-workspace-planning .roster-filters .dt-position-menu{z-index:6300!important}
 .tactics-workspace-planning .planning-membership-warning,
 .tactics-workspace-planning .roster-context-note{order:3;margin:0 var(--dt-space-2) var(--dt-space-2)!important}
 .tactics-workspace-planning .planning-roster-table.dt-table-shell{

@@ -218,6 +218,20 @@ describe('PlanningPage 3C', () => {
     expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(0)
   })
 
+  it('uses the canonical header context menu to remove and restore Planning roster columns', async () => {
+    render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+
+    fireEvent.contextMenu(screen.getByText('Posições').closest('th')!)
+    expect(screen.getByText('Remover coluna')).not.toBeNull()
+    fireEvent.click(screen.getByText('Remover coluna'))
+    expect(screen.queryByText('Posições')).toBeNull()
+
+    fireEvent.contextMenu(screen.getByText('Jogador').closest('th')!)
+    fireEvent.click(screen.getByText('Adicionar Posições'))
+    expect(screen.getByText('Posições')).not.toBeNull()
+  })
+
   it('uses the single best contextual pair and moves the player to a market group from the context menu', async () => {
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
     expect(await screen.findByText('Jogador Teste')).not.toBeNull()
@@ -225,7 +239,7 @@ describe('PlanningPage 3C', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Duas posições' }))
     await waitFor(() => expect(screen.getByTestId('projection-key').textContent).toBe('IP:M(C):AP|OOP:DM(C):DM'))
 
-    fireEvent.contextMenu(screen.getByText('Jogador Teste').closest('.roster-player-card')!)
+    fireEvent.contextMenu(screen.getByText('Jogador Teste').closest('tr')!)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Adicionar a Venda' }))
 
     await waitFor(() => expect(screen.getByText('Área livre de mercado')).not.toBeNull())
