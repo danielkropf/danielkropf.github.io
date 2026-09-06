@@ -22,6 +22,8 @@ type ResolvePlanningSetExpansionInput = {
   cardWidth: number
   cardHeight: number
   gap: number
+  verticalItemsPerRow?: number
+  horizontalItemsPerColumn?: number
   horizontalPadding?: number
   verticalPadding?: number
   boundaryMargin?: number
@@ -70,6 +72,8 @@ export function resolvePlanningSetExpansion({
   cardWidth,
   cardHeight,
   gap,
+  verticalItemsPerRow = 2,
+  horizontalItemsPerColumn = 1,
   horizontalPadding = 14,
   verticalPadding = 22,
   boundaryMargin = 14,
@@ -82,9 +86,13 @@ export function resolvePlanningSetExpansion({
   const compactRight = right(compact)
   const compactBottom = bottom(compact)
 
-  const rows = Math.max(1, Math.ceil(Math.max(playerCount, 1) / 2))
+  const safeVerticalItemsPerRow = Math.max(1, Math.floor(verticalItemsPerRow))
+  const safeHorizontalItemsPerColumn = Math.max(1, Math.floor(horizontalItemsPerColumn))
+  const itemCount = Math.max(playerCount, 1)
+  const rows = Math.max(1, Math.ceil(itemCount / safeVerticalItemsPerRow))
+  const columns = Math.max(1, Math.ceil(itemCount / safeHorizontalItemsPerColumn))
   const desiredVerticalHeight = Math.max(compact.height, rows * cardHeight + Math.max(0, rows - 1) * gap + verticalPadding)
-  const desiredHorizontalWidth = Math.max(compact.width, Math.max(playerCount, 1) * cardWidth + Math.max(0, playerCount - 1) * gap + horizontalPadding)
+  const desiredHorizontalWidth = Math.max(compact.width, columns * cardWidth + Math.max(0, columns - 1) * gap + horizontalPadding)
   const desiredVerticalExtra = Math.max(1, desiredVerticalHeight - compact.height)
   const desiredHorizontalExtra = Math.max(1, desiredHorizontalWidth - compact.width)
 

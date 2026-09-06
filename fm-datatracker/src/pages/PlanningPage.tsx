@@ -117,12 +117,12 @@ const defaults = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal
 const canPlay = canPlayPosition
 const PLANNING_ROSTER_COLUMNS: PlanningRosterColumn[] = [
   { id: 'name', label: 'Jogador' },
+  { id: 'score', label: 'Nota' },
   { id: 'positions', label: 'Posições' },
   { id: 'age', label: 'Idade' },
   { id: 'club', label: 'Clube atual' },
   { id: 'fact', label: 'Vínculo atual' },
   { id: 'plan', label: 'Plano' },
-  { id: 'score', label: 'Nota' },
 ]
 const PLANNING_ROSTER_WIDTHS: Record<PlanningRosterColumnId, number> = { name: 210, positions: 130, age: 76, club: 150, fact: 150, plan: 150, score: 196 }
 const planningClubStorageKey = (saveId: string) => `fm-datatracker:planning-club:${saveId}`
@@ -263,7 +263,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const [rosterSort, setRosterSort] = useState<{ key: PlanningRosterColumnId; direction: 1 | -1 }>({ key: 'score', direction: -1 })
   const [rosterColumns, setRosterColumns] = useState<PlanningRosterColumn[]>(() => PLANNING_ROSTER_COLUMNS.map(column => ({ ...column })))
   const [rosterWidths, setRosterWidths] = useState<Record<PlanningRosterColumnId, number>>({ ...PLANNING_ROSTER_WIDTHS })
-  const [rosterFrozenIndex, setRosterFrozenIndex] = useState(0)
+  const [rosterFrozenIndex, setRosterFrozenIndex] = useState(1)
   const [loading, setLoading] = useState(false)
   const [isPending, startTransition] = useTransition()
   const loaded = useRef(false)
@@ -707,7 +707,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   function resetRosterTable() {
     setRosterColumns(PLANNING_ROSTER_COLUMNS.map(column => ({ ...column })))
     setRosterWidths({ ...PLANNING_ROSTER_WIDTHS })
-    setRosterFrozenIndex(0)
+    setRosterFrozenIndex(1)
   }
 
   function rosterHeaderContextItems(column: PlanningRosterColumn, index: number): DataTableContextMenuItem[] {
@@ -878,11 +878,11 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
 }
 
 function useCompactCapacity() {
-  // The pitch intentionally shows the first two depth options as vertical cards.
-  // Additional players stay available through the existing +N expansion control;
-  // this keeps every positional set compact enough to preserve formation geometry.
+  // Planning uses a compact depth list. Three rows fit the existing set footprint
+  // without competing with adjacent positional sets; additional depth remains
+  // accessible through the existing +N expansion control.
   const ref = useRef<HTMLDivElement | null>(null)
-  return { ref, capacity: 2 }
+  return { ref, capacity: 3 }
 }
 
 function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY: number, draggingId: string | undefined, currentBeforeId: string | null | undefined) {
@@ -964,9 +964,11 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
       compact,
       obstacles,
       playerCount: options.length,
-      cardWidth: numberVar('--planning-depth-card-width', 82),
-      cardHeight: numberVar('--planning-depth-card-height', 96),
-      gap: numberVar('--planning-depth-card-gap', 6),
+      cardWidth: numberVar('--planning-depth-list-width', 170),
+      cardHeight: numberVar('--planning-depth-row-height', 28),
+      gap: numberVar('--planning-depth-row-gap', 1),
+      verticalItemsPerRow: 1,
+      horizontalItemsPerColumn: 3,
     })
   }
 
@@ -1094,16 +1096,12 @@ function BoardPlayerCard({ player, snapshot, score, rank, rankPopulation, covera
   const out = snapshot ? isPlanningOutOfPosition(familiarity) : false
   const familiarityLabel = snapshot ? planningFamiliarityLabel(familiarity) : ''
   const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, snapshot ? `Atual: ${fact.label} — ${fact.detail}` : 'Sem observação no checkpoint atual. O planejamento foi preservado, mas nenhum dado histórico foi promovido a atual.', plannedConflict.length ? `Conflito: planejado simultaneamente em ${plannedConflict.join(', ')}` : plannedClub ? `Planejado: ${plannedClub}` : 'Sem destino planejado', out ? familiarityTooltip : null].filter(Boolean).join('\n\n')
-  return <article data-planning-player-id={player.id} className={`planning-set-player-card planning-vertical-player-card ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
-    <button className="player-name planning-vertical-player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
-    <span className="planning-player-silhouette" aria-hidden="true"><PlanningPersonSilhouette /></span>
-    <span className="planning-score-wrap planning-vertical-score-wrap">{snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento. Não é a evolução mais provável nem o PA/CP do Football Manager.'} /> : <span className="planning-score-unavailable" title="Sem observação no checkpoint atual">—</span>}</span>
+  return <article data-planning-player-id={player.id} className={`planning-set-player-card planning-depth-player-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
+    <button className="player-name planning-depth-player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
+    <span className="planning-score-wrap planning-depth-score-wrap">{snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento. Não é a evolução mais provável nem o PA/CP do Football Manager.'} /> : <span className="planning-score-unavailable" title="Sem observação no checkpoint atual">—</span>}</span>
   </article>
 }
 
-function PlanningPersonSilhouette() {
-  return <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.35" /><path d="M5.5 20c.35-3.9 2.8-6.15 6.5-6.15s6.15 2.25 6.5 6.15Z" /></svg>
-}
 
 function RosterPlayerCard({ player, snapshot, score, rank, rankPopulation, compatible, contextual, scoreKey, fact, plannedClub, plannedConflict, drag, dragEnd, open, context }: { player: Player; snapshot: Snapshot | undefined; score: number | null; rank: number | null; rankPopulation: number[]; compatible: boolean; contextual: boolean; scoreKey?: string; fact: PlanningMembershipFact; plannedClub: string | null; plannedConflict: string[]; drag: (event: DragEvent<HTMLDivElement>) => void; dragEnd: () => void; open: () => void; context: (event: ReactMouseEvent) => void }) {
   const title = [snapshot ? `Atual: ${fact.label} — ${fact.detail}` : 'Sem observação no checkpoint atual. Dados anteriores continuam apenas históricos.', plannedConflict.length ? `Conflito de destino: ${plannedConflict.join(', ')}` : plannedClub ? `Planejado: ${plannedClub}` : 'Sem destino planejado'].join('\n')

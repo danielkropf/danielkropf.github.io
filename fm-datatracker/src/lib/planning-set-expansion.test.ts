@@ -47,4 +47,22 @@ describe('resolvePlanningSetExpansion', () => {
     expect(result.direction).toBe('left')
     expect(result.left + result.width).toBeLessThanOrEqual(base.pitchWidth - 14)
   })
+
+  it('supports list-shaped depth sets with one player per vertical row', () => {
+    const result = resolvePlanningSetExpansion({
+      pitchWidth: 800,
+      pitchHeight: 700,
+      compact: { left: 300, top: 280, width: 184, height: 122 },
+      obstacles: [],
+      playerCount: 6,
+      cardWidth: 170,
+      cardHeight: 28,
+      gap: 1,
+      verticalItemsPerRow: 1,
+      horizontalItemsPerColumn: 3,
+    })
+    expect(result.axis).toBe('vertical')
+    expect(result.height).toBeGreaterThan(122)
+  })
+
 })

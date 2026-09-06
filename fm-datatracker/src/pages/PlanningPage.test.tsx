@@ -183,16 +183,20 @@ describe('PlanningPage 3C', () => {
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps two visible player cards without rendering a persistent vacancy square', async () => {
+  it('uses a three-row compact depth list and keeps extra players behind +N', async () => {
     const secondSnapshot = { ...snapshot, id: 'snapshot-2' }
+    const thirdSnapshot = { ...snapshot, id: 'snapshot-3' }
+    const fourthSnapshot = { ...snapshot, id: 'snapshot-4' }
     mocks.loadPlayers.mockResolvedValue([
       { id: 'player', current_name: 'Jogador Teste', nationality: 'BRA', player_snapshots: [snapshot] },
       { id: 'player-2', current_name: 'Segundo Jogador', nationality: 'BRA', player_snapshots: [secondSnapshot] },
+      { id: 'player-3', current_name: 'Terceiro Jogador', nationality: 'BRA', player_snapshots: [thirdSnapshot] },
+      { id: 'player-4', current_name: 'Quarto Jogador', nationality: 'BRA', player_snapshots: [fourthSnapshot] },
     ])
     mocks.loadConfig.mockResolvedValue({
       planning: {
         groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }],
-        slotAssignments: { principal: { 'slot-1': ['player', 'player-2'] } },
+        slotAssignments: { principal: { 'slot-1': ['player', 'player-2', 'player-3', 'player-4'] } },
         setLayouts: {},
       },
       tactics: [{
@@ -210,10 +214,13 @@ describe('PlanningPage 3C', () => {
     })
 
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    const secondPlayer = await screen.findByText('Segundo Jogador')
-    const set = secondPlayer.closest('.planning-set-row')
+    const firstPlayer = await screen.findAllByText('Jogador Teste')
+    const set = firstPlayer.map(node => node.closest('.planning-set-row')).find(Boolean)
     expect(set).not.toBeNull()
-    expect(set!.querySelectorAll('.planning-set-player-card').length).toBe(2)
+    expect(set!.querySelectorAll('.planning-set-player-card').length).toBe(3)
+    expect(set!.querySelectorAll('.planning-depth-player-row').length).toBe(3)
+    expect(set!.querySelectorAll('.planning-player-silhouette').length).toBe(0)
+    expect(set!.querySelector('.planning-set-expand')?.textContent).toBe('+1')
     expect(set!.querySelectorAll('.planning-set-vacancy').length).toBe(0)
     expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(0)
   })
