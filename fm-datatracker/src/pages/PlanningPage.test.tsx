@@ -43,9 +43,9 @@ vi.mock('../lib/planning-familiarity', () => ({
   planningFamiliarity: () => 'familiar', isPlanningFamiliar: () => true,
   isPlanningOutOfPosition: () => false, planningFamiliarityLabel: () => '', planningFamiliarityTooltip: () => '',
 }))
-vi.mock('../components/ScoreWithProjection', () => ({ ScoreWithProjection: ({ scoreKey }: { scoreKey?: string }) => <span data-testid="projection-key">{scoreKey ?? 'general'}</span> }))
+vi.mock('../components/ScoreWithProjection', () => ({ ScoreWithProjection: ({ scoreKey, currentScore }: { scoreKey?: string; currentScore?: number | null }) => <span data-testid="projection-key" data-current-score={currentScore ?? ''}>{scoreKey ?? 'general'}</span> }))
 vi.mock('../components/SaveState', () => ({ SaveState: () => null }))
-vi.mock('../components/PlayerPeek', () => ({ PlayerPeek: () => null }))
+vi.mock('../components/PlayerPeek', () => ({ PlayerPeek: ({ player }: { player: { current_name: string } }) => <button type="button" data-testid="player-peek" aria-label={`Prévia de ${player.current_name}`}>peek</button> }))
 vi.mock('../components/CustomSelect', () => ({ CustomSelect: ({ value, options, onChange, ariaLabel }: { value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; ariaLabel: string }) => <select aria-label={ariaLabel} value={value} onChange={event => onChange(event.target.value)}>{options.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select> }))
 vi.mock('../components/PositionSelector', () => ({
   canonicalPosition: (value: string) => value,
@@ -223,6 +223,62 @@ describe('PlanningPage 3C', () => {
     expect(set!.querySelector('.planning-set-expand')?.textContent).toBe('+1')
     expect(set!.querySelectorAll('.planning-set-vacancy').length).toBe(0)
     expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(0)
+  })
+
+  it('shows a Player Peek in pitch rows, exposes a score detail hover, and can hide pitch scores without changing the roster score column', async () => {
+    mocks.loadConfig.mockResolvedValue({
+      planning: {
+        groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }],
+        slotAssignments: { principal: { 'slot-1': ['player'] } },
+        setLayouts: {},
+      },
+      tactics: [{
+        id: 'tactic', name: 'Tática',
+        ipAssignments: [
+          { playerId: 'slot-1', nodeId: '1', position: 'D (C)', roleCode: 'CD', roleName: 'Central Defender' },
+          { playerId: 'slot-2', nodeId: '2', position: 'M (C)', roleCode: 'AP', roleName: 'Advanced Playmaker' },
+        ],
+        oopAssignments: [
+          { playerId: 'slot-1', nodeId: '1', position: 'D (C)', roleCode: 'CB', roleName: 'Centre Back' },
+          { playerId: 'slot-2', nodeId: '2', position: 'DM (C)', roleCode: 'DM', roleName: 'Defensive Midfielder' },
+        ],
+      }],
+      selected_tactic_id: 'tactic',
+    })
+
+    const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    const pitchRow = view.container.querySelector<HTMLElement>('.planning-depth-player-row')
+    expect(pitchRow).not.toBeNull()
+    expect(pitchRow!.querySelector('[data-testid="player-peek"]')).not.toBeNull()
+    expect(pitchRow!.querySelector('.planning-score-peek-trigger')).not.toBeNull()
+
+    fireEvent.mouseEnter(pitchRow!.querySelector('.planning-score-peek-trigger')!)
+    expect(await screen.findByText('Notas na tática atual')).not.toBeNull()
+    expect(screen.getByText('Nota geral')).not.toBeNull()
+    expect(screen.getByText('11')).not.toBeNull()
+    expect(screen.getByText('13')).not.toBeNull()
+
+    const notesToggle = screen.getByRole('checkbox', { name: 'Mostrar notas' })
+    expect((notesToggle as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(notesToggle)
+    expect(pitchRow!.querySelector('.planning-score-peek-trigger')).toBeNull()
+    expect(pitchRow!.classList.contains('is-score-hidden')).toBe(true)
+    expect(screen.getByText('Nota')).not.toBeNull()
+  })
+
+  it('uses a draggable field/table separator and restores the canonical 60/40 split on double click', async () => {
+    const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    const layout = view.container.querySelector<HTMLElement>('.planning-flex-layout')!
+    const separator = screen.getByRole('separator', { name: 'Ajustar largura do campo e da tabela' })
+    expect(layout.style.getPropertyValue('--planning-field-share')).toBe('60%')
+    expect(view.container.querySelector('.planning-panel-focus-button')).toBeNull()
+
+    fireEvent.keyDown(separator, { key: 'ArrowRight' })
+    expect(layout.style.getPropertyValue('--planning-field-share')).toBe('62%')
+    fireEvent.doubleClick(separator)
+    expect(layout.style.getPropertyValue('--planning-field-share')).toBe('60%')
   })
 
   it('uses the canonical header context menu to remove and restore Planning roster columns', async () => {
