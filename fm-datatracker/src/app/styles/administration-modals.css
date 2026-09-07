@@ -1,4 +1,11 @@
 /* Administration windows that preserve the current screen underneath. */
+/* Modal windows are global blocking layers. They must sit above every page-level
+   control (including Planning resize handles) and own pointer hit-testing while open. */
+.settings-overlay{
+  z-index:1000!important;
+  pointer-events:auto!important;
+}
+
 .import-modal{
   position:relative;
   width:min(1480px,96vw);
@@ -35,7 +42,7 @@
 }
 
 /* Import history moved out of Configurações and opens as a secondary, smaller window. */
-.import-history-overlay{z-index:45}
+.import-history-overlay{z-index:1010!important}
 .import-history-modal{
   position:relative;
   width:min(1040px,88vw);
