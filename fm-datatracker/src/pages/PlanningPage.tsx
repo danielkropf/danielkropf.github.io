@@ -22,7 +22,7 @@ import { resolvePlanningInsertionBefore } from '../lib/planning-layout'
 import { functionProjectionKey } from '../lib/projection-player'
 import { PITCH_NODES, positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
-import { PLANNING_PITCH_LIST_CAPACITY, planningPitchSetHeader } from '../lib/planning-pitch-list'
+import { PLANNING_PITCH_LIST_CAPACITY, planningPitchPositionLabel, planningPitchSetHeader } from '../lib/planning-pitch-list'
 import { planningSpatialLayout, type PlanningPitchLine, type PlanningSpatialPlacement } from '../lib/planning-spatial-layout'
 import { resolvePlanningSetExpansion, type PlanningSetExpansion, type PlanningSetRect } from '../lib/planning-set-expansion'
 import { loadPlanningMemberships } from '../lib/longitudinal-service'
@@ -305,8 +305,9 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const setPairs = (set: PlanningSetLayout) => set.slotIds.map(id => pairBySlot.get(id)).filter((pair): pair is Pair => Boolean(pair))
   const setHeaderLabel = (set: PlanningSetLayout) => {
     const localPairs = setPairs(set)
+    const positions = [...new Set(localPairs.map(pair => planningPitchPositionLabel(pair.ip.position, pair.ip.nodeId)))]
     return planningPitchSetHeader(
-      displaySetLabel(set),
+      positions.join(' / ') || displaySetLabel(set).replace(/\s+\d+$/, ''),
       localPairs.map(pair => pair.ip.roleCode || pair.ip.roleName),
       localPairs.map(pair => pair.oop.roleCode || pair.oop.roleName),
     )
@@ -542,7 +543,7 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
   const spatialStyle = { ...(spatial ? { '--planning-x': `${spatial.x}%`, '--planning-y': `${spatial.y}%`, '--planning-grid-row': String(spatial.gridRow), '--planning-grid-column': String(spatial.gridColumn), '--planning-row-count': String(Math.max(spatial.rowCount, 1)) } : {}), ...(expansionLayout ? { '--planning-expanded-left': `${expansionLayout.left}px`, '--planning-expanded-top': `${expansionLayout.top}px`, '--planning-expanded-width': `${expansionLayout.width}px`, '--planning-expanded-height': `${expansionLayout.height}px` } : {}) } as CSSProperties
   return <article ref={articleRef} data-spatial-key={spatial?.key ?? set.id} data-spatial-side={spatial?.side ?? 'center'} data-grid-row={spatial?.gridRow} data-grid-column={spatial?.gridColumn} data-set-label={displayLabel} data-grid-locked={spatial?.isGoalkeeper ? 'goalkeeper' : undefined} style={spatialStyle} className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${focused ? 'is-focused' : ''} ${visualGridPreview !== null ? 'is-visual-position-dragging' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`} onPointerDown={startVisualDrag} onPointerMove={moveVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={cancelVisualDrag} onLostPointerCapture={event => { if (visualDragRef.current?.pointerId === event.pointerId) cancelVisualDrag(event) }} onDragOver={event => { if (activePlayer) { event.preventDefault(); previewPlayer(null) } }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); dropPlayer(preview ?? null) }}>
     {visualGridOverlay}
-    <button type="button" className="planning-set-legend" onClick={() => { if (suppressLegendClickRef.current) { suppressLegendClickRef.current = false; return }; focus() }} title={spatial?.isGoalkeeper ? headerLabel : `${headerLabel} · arraste pela grade 5×5 sem alterar a tática`}><span>{headerLabel}</span></button>
+    <button type="button" className="planning-set-legend" onClick={() => { if (suppressLegendClickRef.current) { suppressLegendClickRef.current = false; return }; focus() }} title={spatial?.isGoalkeeper ? headerLabel : `${headerLabel} · arraste pela grade 5×5 sem alterar a tática`}><span className="planning-set-legend-position">{headerLabel.split('\n')[0]}</span><span className="planning-set-legend-roles">{headerLabel.split('\n')[1] ?? ''}</span></button>
     <button type="button" className="planning-set-add-player" title={`Adicionar jogador a ${displayLabel}`} aria-label={`Adicionar jogador a ${displayLabel}`} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); addPlayer() }}>+</button>
     <div className={`planning-pitch-depth-list ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }}>
       {rowItems.map((option, index) => {

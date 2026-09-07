@@ -6,18 +6,13 @@ const PlanningPage = lazy(() => import('./PlanningPage').then(module => ({ defau
 
 type WorkspaceMode = 'structure' | 'planning'
 
-const MODES: { id: WorkspaceMode; label: string }[] = [
-  { id: 'structure', label: 'Estrutura' },
-  { id: 'planning', label: 'Planejamento' },
-]
-
 function resolveMode(value: string | null): WorkspaceMode {
   return value === 'planning' ? 'planning' : 'structure'
 }
 
 /**
  * TacticsPage still owns its historical Structure/Jogadores tab state. The
- * unified workspace is now the only navigation authority, so keep the legacy
+ * Elenco sidebar group is now the navigation authority, so keep the legacy
  * page pinned to Structure while its duplicated tab strip remains hidden.
  */
 function TacticsModeBridge({ host }: { host: RefObject<HTMLDivElement | null> }) {
@@ -56,28 +51,7 @@ export function TacticsWorkspacePage() {
     }
   }, [requestedMode, searchParams, setSearchParams])
 
-  function selectMode(nextMode: WorkspaceMode) {
-    const next = new URLSearchParams(searchParams)
-    if (nextMode === 'structure') next.delete('mode')
-    else next.set('mode', nextMode)
-    setSearchParams(next)
-  }
-
   return <div className={`tactics-workspace-page tactics-workspace-mode-${mode}`}>
-    <header className="tactics-workspace-header">
-      <h1>Táticas</h1>
-      <nav className="tactics-workspace-tabs" role="tablist" aria-label="Área de Táticas">
-        {MODES.map(item => <button
-          type="button"
-          role="tab"
-          aria-selected={mode === item.id}
-          className={mode === item.id ? 'active' : ''}
-          onClick={() => selectMode(item.id)}
-          key={item.id}
-        >{item.label}</button>)}
-      </nav>
-    </header>
-
     <div className="tactics-workspace-body">
       <div ref={tacticsHost} className="tactics-workspace-surface tactics-workspace-tactics" hidden={mode !== 'structure'}>
         <TacticsModeBridge host={tacticsHost} />

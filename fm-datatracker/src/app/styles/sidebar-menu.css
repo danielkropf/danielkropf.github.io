@@ -11,3 +11,90 @@
 .shell>aside .sidebar-footer{
   margin-top:auto;
 }
+
+/* v0.32.0 — Elenco becomes the navigation home for roster + tactical planning. */
+.shell>aside nav .sidebar-nav-group{
+  display:grid;
+  gap:3px;
+  min-width:0;
+  padding:3px;
+  border:1px solid transparent;
+  border-radius:var(--dt-radius-card);
+}
+.shell>aside nav .sidebar-nav-group.is-active{
+  border-color:var(--dt-border);
+  background:color-mix(in srgb,var(--dt-surface-1) 72%,transparent);
+}
+.shell>aside nav .sidebar-nav-group-title{
+  display:flex;
+  align-items:center;
+  min-height:30px;
+  padding:0 9px;
+  color:var(--dt-text-2);
+  font-size:.79rem;
+  font-weight:750;
+}
+.shell>aside nav .sidebar-nav-group.is-active .sidebar-nav-group-title{color:var(--dt-text-1)}
+.shell>aside nav .sidebar-nav-subitems{
+  display:grid;
+  gap:2px;
+  padding:0 0 2px 9px;
+  border-left:1px solid var(--dt-border-strong);
+  margin-left:9px;
+}
+.shell>aside nav .sidebar-nav-subitems a{
+  min-height:32px;
+  padding:0 10px;
+  border-radius:5px;
+  font-size:.75rem;
+  font-weight:650;
+}
+.shell>aside nav .sidebar-nav-subitems a.active{
+  border-color:color-mix(in srgb,var(--dt-lime) 48%,var(--dt-border));
+  background:color-mix(in srgb,var(--dt-lime) 6%,var(--dt-surface-1));
+}
+
+/* All autosave surfaces publish into this single shell slot instead of page headers. */
+.shell>aside .sidebar-save-state{
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  width:100%;
+  min-height:20px;
+  margin-top:5px;
+  padding:0 3px;
+  color:var(--dt-text-3);
+}
+.shell>aside .sidebar-save-state:empty{visibility:hidden}
+.shell>aside .sidebar-save-state .save-state-control{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  gap:5px!important;
+  width:auto!important;
+  min-width:0!important;
+  min-height:18px!important;
+  height:auto!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  color:var(--dt-text-3)!important;
+  font-size:.62rem!important;
+  line-height:18px!important;
+  white-space:nowrap;
+}
+.shell>aside .sidebar-save-state .save-state-control.save-state-saved{color:#7ed899!important}
+.shell>aside .sidebar-save-state .save-state-control.save-state-saving{color:var(--dt-warning)!important}
+.shell>aside .sidebar-save-state .save-state-control.save-state-failed{color:var(--dt-danger)!important}
+.shell>aside .sidebar-save-state .save-state-control button{
+  min-height:18px!important;
+  height:18px!important;
+  padding:0 5px!important;
+  margin:0!important;
+  font-size:.58rem!important;
+  line-height:16px!important;
+}
+.save-state-marker{display:none!important}

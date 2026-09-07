@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { AppVersion } from '../components/AppVersion'
 import { CurrentCheckpointCalendar } from '../components/CurrentCheckpointCalendar'
+import { SaveStateOutlet, SaveStateProvider } from '../components/SaveState'
 import { usePotential } from '../features/potential/PotentialContext'
 import { useSaves } from '../features/saves/SaveContext'
 import { supabase } from '../lib/supabase'
@@ -11,10 +12,13 @@ import { SettingsModal } from './SettingsModal'
 import { preloadSave } from '../lib/dataCache'
 import { flushAllModelConfigPatches } from '../lib/model-config'
 
-const primaryNavigation = [['/', 'Visão Geral'], ['/squad', 'Elenco'], ['/tactics', 'Táticas']] as const
 const secondaryNavigation = [['/network', 'Rede'], ['/academy', 'Academia'], ['/history', 'História']] as const
 
 export function AppShell() {
+  return <SaveStateProvider><AppShellContent /></SaveStateProvider>
+}
+
+function AppShellContent() {
   const { saves, selected, select, currentCheckpoint } = useSaves()
   const location = useLocation()
   const potential = usePotential()
@@ -34,6 +38,11 @@ export function AppShell() {
   }, [])
   const currentPlayerId = /^\/players\/([^/]+)$/.exec(location.pathname)?.[1] ?? null
   const compareTo = currentPlayerId ? `/compare?a=${encodeURIComponent(currentPlayerId)}` : '/compare'
+  const tacticsMode = new URLSearchParams(location.search).get('mode')
+  const squadActive = location.pathname === '/squad'
+  const structureActive = location.pathname === '/tactics' && tacticsMode !== 'planning'
+  const planningActive = location.pathname === '/tactics' && tacticsMode === 'planning'
+  const elencoGroupActive = squadActive || structureActive || planningActive
   const potentialTitle = potential.available
     ? 'Mostra os melhores scores plausíveis em um cenário positivo de carreira, na Nota Geral e por função. Não é a evolução mais provável e o PA/CP do Football Manager não é exibido.'
     : potential.detail
@@ -58,7 +67,21 @@ export function AppShell() {
       <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'has-load-error' : ''}`} onClick={() => potential.setShowPotential(!potential.showPotential)} title={potentialTitle} aria-pressed={potential.showPotential}>
         <span><b aria-hidden="true">↗</b> Mostrar potencial</span><span className="potential-switch" aria-hidden="true" />
       </button>
-      <nav>{primaryNavigation.map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}<NavLink to={compareTo}>Comparar</NavLink><div className="sidebar-nav-divider" aria-hidden="true" />{secondaryNavigation.map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}</nav>
+      <div className="sidebar-save-state" aria-label="Estado de salvamento"><SaveStateOutlet /></div>
+      <nav>
+        <NavLink to="/">Visão Geral</NavLink>
+        <div className={`sidebar-nav-group sidebar-elenco-group ${elencoGroupActive ? 'is-active' : ''}`} role="group" aria-label="Elenco">
+          <span className="sidebar-nav-group-title">Elenco</span>
+          <div className="sidebar-nav-subitems">
+            <NavLink to="/squad" className={() => squadActive ? 'active' : ''}>Elenco</NavLink>
+            <NavLink to="/tactics" className={() => structureActive ? 'active' : ''}>Estrutura</NavLink>
+            <NavLink to="/tactics?mode=planning" className={() => planningActive ? 'active' : ''}>Planejamento</NavLink>
+          </div>
+        </div>
+        <NavLink to={compareTo}>Comparar</NavLink>
+        <div className="sidebar-nav-divider" aria-hidden="true" />
+        {secondaryNavigation.map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}
+      </nav>
       <div className="sidebar-footer">
         <div className="sidebar-actions">
           <button className="ghost sidebar-import" type="button" onClick={() => { setSettings(false); setImportOpen(true) }}>↥ Import</button>

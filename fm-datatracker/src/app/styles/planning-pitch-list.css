@@ -34,7 +34,7 @@
 /* 5x5 outfield grid + fixed sixth GK row remains owned by the existing set
    geometry. This layer only changes the set interior. */
 .tactics-workspace-planning .planning-pitch-list-page .planning-set-row{
-  padding:10px 5px 5px!important;
+  padding:17px 5px 5px!important;
   background:color-mix(in srgb,var(--set-accent) 5%,rgba(7,17,14,.88))!important;
 }
 
@@ -42,14 +42,35 @@
   top:0!important;
   left:50%!important;
   transform:translate(-50%,-50%)!important;
-  height:18px!important;
-  min-height:18px!important;
+  display:grid!important;
+  place-items:center!important;
+  height:30px!important;
+  min-height:30px!important;
   max-width:calc(100% - 30px)!important;
-  padding:0 6px!important;
-  font-size:.61rem!important;
-  line-height:16px!important;
+  padding:2px 7px!important;
   text-align:center!important;
   justify-content:center!important;
+  white-space:normal!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+}
+.tactics-workspace-planning .planning-pitch-list-page .planning-set-legend-position{
+  display:block;
+  font-size:.64rem;
+  font-weight:850;
+  line-height:12px;
+  white-space:nowrap;
+}
+.tactics-workspace-planning .planning-pitch-list-page .planning-set-legend-roles{
+  display:block;
+  max-width:100%;
+  overflow:hidden;
+  color:var(--dt-text-2);
+  font-size:.54rem;
+  font-weight:700;
+  line-height:11px;
+  white-space:nowrap;
+  text-overflow:ellipsis;
 }
 .tactics-workspace-planning .planning-pitch-list-page .planning-set-legend:hover,
 .tactics-workspace-planning .planning-pitch-list-page .planning-set-legend:focus-visible{
@@ -550,7 +571,9 @@
     --planning-pitch-row-peek-size:16px;
     --planning-pitch-score-box-width:40px;
   }
-  .tactics-workspace-planning .planning-pitch-list-page .planning-set-legend{font-size:.56rem!important;padding:0 5px!important}
+  .tactics-workspace-planning .planning-pitch-list-page .planning-set-legend{padding:2px 5px!important}
+  .tactics-workspace-planning .planning-pitch-list-page .planning-set-legend-position{font-size:.58rem}
+  .tactics-workspace-planning .planning-pitch-list-page .planning-set-legend-roles{font-size:.5rem}
   .tactics-workspace-planning .planning-pitch-list-page .planning-pitch-depth-row{column-gap:3px!important;padding:2px!important}
   .tactics-workspace-planning .planning-pitch-list-page .planning-pitch-row-peek .player-peek svg{width:11px!important;height:11px!important}
   .tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name{font-size:.64rem!important}
