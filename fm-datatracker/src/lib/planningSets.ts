@@ -22,7 +22,9 @@ export type FlexiblePlanning = {
 
 export const PLANNING_VISUAL_GRID_SIZE = 5 as const
 export const PLANNING_VISUAL_GRID_COLUMNS = [10, 30, 50, 70, 90] as const
-export const PLANNING_VISUAL_GRID_ROWS = [9, 27, 45, 63, 81] as const
+export const PLANNING_VISUAL_GRID_ROWS = [8.3333, 25, 41.6667, 58.3333, 75] as const
+/** Sixth equal-height Planning row reserved for the goalkeeper. */
+export const PLANNING_VISUAL_GOALKEEPER_Y = 91.6667 as const
 /** Backward-compatible name used by the v0.31.13 horizontal preference. */
 export const PLANNING_VISUAL_ANCHORS = PLANNING_VISUAL_GRID_COLUMNS
 

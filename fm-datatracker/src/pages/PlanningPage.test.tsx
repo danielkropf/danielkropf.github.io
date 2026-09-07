@@ -331,14 +331,44 @@ describe('PlanningPage 3C', () => {
     expect(await screen.findByText('Jogador Teste')).not.toBeNull()
     const dcSet = [...view.container.querySelectorAll<HTMLElement>('.planning-set-row')].find(row => row.querySelector('.planning-set-legend')?.textContent?.includes('D'))!
     expect(dcSet.style.getPropertyValue('--planning-x')).toBe('90%')
-    expect(dcSet.style.getPropertyValue('--planning-y')).toBe('27%')
+    expect(dcSet.style.getPropertyValue('--planning-y')).toBe('25%')
     expect(dcSet.dataset.gridRow).toBe('2')
     expect(dcSet.dataset.gridColumn).toBe('5')
 
     fireEvent.click(screen.getByRole('button', { name: 'Organizar posições' }))
     fireEvent.click(screen.getByRole('button', { name: 'Restaurar posições do campo' }))
-    await waitFor(() => expect(dcSet.style.getPropertyValue('--planning-y')).not.toBe('27%'))
-    expect(screen.getByText('Organização visual de Principal; arraste as legendas livremente pela grade 5×5. A tática não é alterada.')).not.toBeNull()
+    await waitFor(() => expect(dcSet.style.getPropertyValue('--planning-y')).not.toBe('25%'))
+    expect(screen.getByText('Organização visual de Principal; arraste os conjuntos livremente pela grade 5×5. A tática não é alterada.')).not.toBeNull()
+  })
+
+  it('previews a set move on the 5x5 grid without moving the real set until pointer release', async () => {
+    const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    const pitch = view.container.querySelector<HTMLElement>('.planning-set-list')!
+    pitch.getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 600, width: 1000, height: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    const movable = [...view.container.querySelectorAll<HTMLElement>('.planning-set-row')].find(row => row.dataset.gridLocked !== 'goalkeeper')!
+    const originX = movable.style.getPropertyValue('--planning-x')
+    const originY = movable.style.getPropertyValue('--planning-y')
+    const originRow = movable.dataset.gridRow
+    const originColumn = movable.dataset.gridColumn
+
+    fireEvent.pointerDown(movable, { pointerId: 31, button: 0, clientX: 500, clientY: 450 })
+    fireEvent.pointerMove(movable, { pointerId: 31, clientX: 900, clientY: 50 })
+
+    expect(view.container.querySelector('.planning-visual-grid-overlay')).not.toBeNull()
+    expect(view.container.querySelectorAll('.planning-visual-grid-cell')).toHaveLength(25)
+    expect(view.container.querySelector('.planning-visual-grid-ghost')).not.toBeNull()
+    expect(movable.style.getPropertyValue('--planning-x')).toBe(originX)
+    expect(movable.style.getPropertyValue('--planning-y')).toBe(originY)
+    expect(movable.dataset.gridRow).toBe(originRow)
+    expect(movable.dataset.gridColumn).toBe(originColumn)
+
+    fireEvent.pointerUp(movable, { pointerId: 31, clientX: 900, clientY: 50 })
+    await waitFor(() => {
+      expect(movable.dataset.gridRow).toBe('1')
+      expect(movable.dataset.gridColumn).toBe('5')
+    })
+    expect(view.container.querySelector('.planning-visual-grid-overlay')).toBeNull()
   })
 
   it('uses the canonical header context menu to remove and restore Planning roster columns', async () => {

@@ -48,6 +48,7 @@ import {
   layoutsFor,
   PLANNING_VISUAL_GRID_COLUMNS,
   PLANNING_VISUAL_GRID_ROWS,
+  PLANNING_VISUAL_GOALKEEPER_Y,
   movePlanningSetVisualGrid,
   planningVisualGridCellForSet,
   movePlayerToSet,
@@ -455,7 +456,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       const placement = tacticDerived.get(set.id)
       if (!placement) continue
       if (placement.line === 'gk') {
-        placements.set(set.id, { ...placement, x: 50, y: 95, gridRow: 6, gridColumn: 3, isGoalkeeper: true })
+        placements.set(set.id, { ...placement, x: 50, y: PLANNING_VISUAL_GOALKEEPER_Y, gridRow: 6, gridColumn: 3, isGoalkeeper: true })
         continue
       }
       const cell = planningVisualGridCellForSet(set, placement.x, placement.line)
@@ -973,7 +974,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
 
     {manageSquadsOpen && <div className="settings-overlay" onClick={() => setManageSquadsOpen(false)}><section className="squad-manager planning-squad-manager" onClick={event => event.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={() => setManageSquadsOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map((group, index) => { const fixed = transferGroups.some(item => item.id === group.id); const previewBefore = managerGroupPreview === group.id && managerGroupDragging !== group.id; return <Fragment key={group.id}>{previewBefore && <ManagerDropPlaceholder label="Mover elenco para cá" />}<div className={`planning-squad-manager-row ${fixed ? 'fixed-planning-group' : ''} ${managerGroupDragging === group.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerGroupPreview(event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null) }} onDrop={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderGroup(managerGroupDragging, event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null); setManagerGroupDragging(null); setManagerGroupPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', group.id); setManagerGroupDragging(group.id); setManagerGroupPreview(group.id) }} onDragEnd={() => { setManagerGroupDragging(null); setManagerGroupPreview(undefined) }} title={`Arrastar ${group.name}`} aria-label={`Reordenar ${group.name}`}>⠿</button><input value={group.name} readOnly={fixed} onChange={event => renameGroup(group.id, event.target.value)} />{fixed ? <span className="market-group-label">GRUPO MERCADO</span> : <button className="manager-trash" onClick={() => removeGroup(group.id)} title={`Excluir ${group.name}`} aria-label={`Excluir ${group.name}`}>🗑</button>}</div></Fragment> })}{managerGroupDragging && managerGroupPreview === null && <ManagerDropPlaceholder label="Mover elenco para o final" />}</div><footer className="planning-squad-manager-footer"><div className="planning-add-squad"><input placeholder="Novo elenco" value={newGroup} onChange={event => setNewGroup(event.target.value)} onKeyDown={event => event.key === 'Enter' && addGroup()} /><button onClick={addGroup}>+ Adicionar</button></div><button className="danger-button clear-all-squads" disabled={!Object.keys(assignmentIndex).length} onClick={clearPlanning}>Limpar todos os elencos</button></footer></section></div>}
 
-    {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Organizar posições</h2><p>Organização visual de {currentGroup.name}; arraste as legendas livremente pela grade 5×5. A tática não é alterada.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => { const effectiveLabel = displaySetLabel(set); const previewBefore = managerSetPreview === set.id && managerSetDragging !== set.id; const nextSet = currentSets[index + 1]; const canGroupNext = Boolean(nextSet && canGroupAdjacentPlanningSets(set, nextSet, slotDescriptors)); return <Fragment key={set.id}>{previewBefore && <ManagerDropPlaceholder label="Mover posição para cá" />}<div className={`planning-squad-manager-row ${set.slotIds.length > 1 ? 'is-grouped-manager-row' : ''} ${managerSetDragging === set.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerSetPreview(event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null) }} onDrop={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderSet(managerSetDragging, event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null); setManagerSetDragging(null); setManagerSetPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', set.id); setManagerSetDragging(set.id); setManagerSetPreview(set.id) }} onDragEnd={() => { setManagerSetDragging(null); setManagerSetPreview(undefined) }} title={`Arrastar ${effectiveLabel}`} aria-label={`Reordenar ${effectiveLabel}`}>⠿</button>{set.slotIds.length > 1 ? <><button className="split-set-button" onClick={() => splitSet(set.id)} title="Desagrupar" aria-label={`Desagrupar ${effectiveLabel}`}>−</button><div className="grouped-set-fields"><label>Nome geral<input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /></label>{set.slotIds.map((slotId, slotIndex) => <label key={slotId}>Posição {slotIndex + 1}<input value={planningSlotDisplayLabel(set, slotId, slotDescriptors)} onChange={event => renameSetSlot(set.id, slotId, event.target.value)} /></label>)}</div></> : <><span className="set-manager-order">{index + 1}</span><input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /><small>1 posição</small></>}</div>{canGroupNext && <button className="adjacent-group-button" type="button" title={`Agrupar ${effectiveLabel} e ${displaySetLabel(nextSet)}`} onClick={() => groupSet(set.id, nextSet.id)}>+</button>}</Fragment> })}{managerSetDragging && managerSetPreview === null && <ManagerDropPlaceholder label="Mover posição para o final" />}</div><footer className="planning-set-manager-footer"><div><button className="ghost" onClick={restoreSetVisualPositions}>Restaurar posições do campo</button><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button></div><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
+    {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Organizar posições</h2><p>Organização visual de {currentGroup.name}; arraste os conjuntos livremente pela grade 5×5. A tática não é alterada.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => { const effectiveLabel = displaySetLabel(set); const previewBefore = managerSetPreview === set.id && managerSetDragging !== set.id; const nextSet = currentSets[index + 1]; const canGroupNext = Boolean(nextSet && canGroupAdjacentPlanningSets(set, nextSet, slotDescriptors)); return <Fragment key={set.id}>{previewBefore && <ManagerDropPlaceholder label="Mover posição para cá" />}<div className={`planning-squad-manager-row ${set.slotIds.length > 1 ? 'is-grouped-manager-row' : ''} ${managerSetDragging === set.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerSetPreview(event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null) }} onDrop={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderSet(managerSetDragging, event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null); setManagerSetDragging(null); setManagerSetPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', set.id); setManagerSetDragging(set.id); setManagerSetPreview(set.id) }} onDragEnd={() => { setManagerSetDragging(null); setManagerSetPreview(undefined) }} title={`Arrastar ${effectiveLabel}`} aria-label={`Reordenar ${effectiveLabel}`}>⠿</button>{set.slotIds.length > 1 ? <><button className="split-set-button" onClick={() => splitSet(set.id)} title="Desagrupar" aria-label={`Desagrupar ${effectiveLabel}`}>−</button><div className="grouped-set-fields"><label>Nome geral<input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /></label>{set.slotIds.map((slotId, slotIndex) => <label key={slotId}>Posição {slotIndex + 1}<input value={planningSlotDisplayLabel(set, slotId, slotDescriptors)} onChange={event => renameSetSlot(set.id, slotId, event.target.value)} /></label>)}</div></> : <><span className="set-manager-order">{index + 1}</span><input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /><small>1 posição</small></>}</div>{canGroupNext && <button className="adjacent-group-button" type="button" title={`Agrupar ${effectiveLabel} e ${displaySetLabel(nextSet)}`} onClick={() => groupSet(set.id, nextSet.id)}>+</button>}</Fragment> })}{managerSetDragging && managerSetPreview === null && <ManagerDropPlaceholder label="Mover posição para o final" />}</div><footer className="planning-set-manager-footer"><div><button className="ghost" onClick={restoreSetVisualPositions}>Restaurar posições do campo</button><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button></div><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
 
     {menu && <div className="planning-context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onClick={event => event.stopPropagation()}>
       <button role="menuitem" onClick={() => moveMenuPlayer('loan')}>Adicionar a Empréstimo</button>
@@ -984,9 +985,8 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
 }
 
 function useCompactCapacity(capacity = 3) {
-  // The free 5x5 grid reserves three compact depth rows per outfield set. The
-  // goalkeeper lives in its own shorter lane, so it shows one row and uses +N
-  // for additional depth instead of crushing multiple rows vertically.
+  // Every Planning set, including the goalkeeper in the reserved sixth row,
+  // exposes the same three compact depth rows before +N expansion.
   const ref = useRef<HTMLDivElement | null>(null)
   return { ref, capacity }
 }
@@ -1039,12 +1039,13 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
   const coverageOptions = showCoverages ? coverages.filter(player => !members.some(member => member.id === player.id)) : []
   const options = [...members.map(player => ({ player, coverage: false as const })), ...coverageOptions.map(player => ({ player, coverage: true as const }))]
   const grouped = set.slotIds.length > 1
-  const { ref: cardsRef, capacity } = useCompactCapacity(spatial?.isGoalkeeper ? 1 : 3)
+  const { ref: cardsRef, capacity } = useCompactCapacity(3)
   const articleRef = useRef<HTMLElement | null>(null)
   const compactRectRef = useRef<PlanningSetRect | null>(null)
   const [expansionLayout, setExpansionLayout] = useState<PlanningSetExpansion | null>(null)
-  const [visualGridPreview, setVisualGridPreview] = useState<PlanningVisualGridCell | null>(null)
-  const visualDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; moved: boolean } | null>(null)
+  const [visualGridPreview, setVisualGridPreview] = useState<{ cell: PlanningVisualGridCell; occupantLabel: string | null } | null>(null)
+  const visualGridPreviewRef = useRef<{ cell: PlanningVisualGridCell; occupantLabel: string | null } | null>(null)
+  const visualDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; moved: boolean; startedOnLegend: boolean; captureElement: HTMLElement } | null>(null)
   const suppressLegendClickRef = useRef(false)
   const visible = expanded ? options : options.slice(0, capacity)
   const hidden = Math.max(0, options.length - visible.length)
@@ -1128,40 +1129,99 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
     return { row, column }
   }
 
-  function startVisualDrag(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0 || expanded || !spatial || spatial.isGoalkeeper) return
-    event.stopPropagation()
-    visualDragRef.current = { pointerId: event.pointerId, startClientX: event.clientX, startClientY: event.clientY, moved: false }
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+  function visualGridOccupant(cell: PlanningVisualGridCell) {
+    const article = articleRef.current
+    const pitch = article?.parentElement
+    if (!article || !pitch) return null
+    const occupant = [...pitch.querySelectorAll<HTMLElement>('.planning-set-row')].find(item =>
+      item !== article
+      && item.dataset.gridLocked !== 'goalkeeper'
+      && Number(item.dataset.gridRow) === cell.row
+      && Number(item.dataset.gridColumn) === cell.column)
+    return occupant?.dataset.setLabel ?? null
   }
 
-  function moveVisualDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+  function setVisualPreview(cell: PlanningVisualGridCell | null) {
+    const next = cell ? { cell, occupantLabel: visualGridOccupant(cell) } : null
+    visualGridPreviewRef.current = next
+    setVisualGridPreview(next)
+  }
+
+  function visualSetDragBlocked(target: EventTarget | null) {
+    const element = target instanceof Element ? target : null
+    if (!element) return true
+    if (element.closest('[data-planning-player-id], .planning-set-expand, .planning-set-collapse')) return true
+    const interactive = element.closest('button,a,input,select,textarea,[contenteditable="true"]')
+    return Boolean(interactive && !interactive.classList.contains('planning-set-legend'))
+  }
+
+  function startVisualDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0 || expanded || !spatial || spatial.isGoalkeeper || visualSetDragBlocked(event.target)) return
+    event.stopPropagation()
+    const legend = event.target instanceof Element ? event.target.closest<HTMLElement>('.planning-set-legend') : null
+    const captureElement = legend ?? event.currentTarget
+    visualDragRef.current = { pointerId: event.pointerId, startClientX: event.clientX, startClientY: event.clientY, moved: false, startedOnLegend: Boolean(legend), captureElement }
+    captureElement.setPointerCapture?.(event.pointerId)
+  }
+
+  function moveVisualDrag(event: ReactPointerEvent<HTMLElement>) {
     const drag = visualDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     const distance = Math.hypot(event.clientX - drag.startClientX, event.clientY - drag.startClientY)
     if (!drag.moved && distance < 4) return
     drag.moved = true
     event.preventDefault()
-    suppressLegendClickRef.current = true
-    setVisualGridPreview(snappedVisualGridCell(event.clientX, event.clientY))
+    if (drag.startedOnLegend) suppressLegendClickRef.current = true
+    setVisualPreview(snappedVisualGridCell(event.clientX, event.clientY))
   }
 
-  function finishVisualDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+  function finishVisualDrag(event: ReactPointerEvent<HTMLElement>) {
     const drag = visualDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    try { drag.captureElement.releasePointerCapture?.(event.pointerId) } catch { /* pointer capture can already be gone */ }
     visualDragRef.current = null
-    const target = drag.moved ? snappedVisualGridCell(event.clientX, event.clientY) : null
-    setVisualGridPreview(null)
+    const target = drag.moved ? (visualGridPreviewRef.current?.cell ?? snappedVisualGridCell(event.clientX, event.clientY)) : null
+    setVisualPreview(null)
     if (target) moveVisualGrid(target)
+    if (drag.moved && drag.startedOnLegend) window.setTimeout(() => { suppressLegendClickRef.current = false }, 0)
+    else suppressLegendClickRef.current = false
   }
+
+  function cancelVisualDrag(event?: ReactPointerEvent<HTMLElement>) {
+    const drag = visualDragRef.current
+    if (!drag || (event && drag.pointerId !== event.pointerId)) return
+    try { drag.captureElement.releasePointerCapture?.(drag.pointerId) } catch { /* pointer capture can already be gone */ }
+    visualDragRef.current = null
+    suppressLegendClickRef.current = false
+    setVisualPreview(null)
+  }
+
+  useEffect(() => {
+    const cancelOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') cancelVisualDrag() }
+    window.addEventListener('keydown', cancelOnEscape)
+    return () => window.removeEventListener('keydown', cancelOnEscape)
+  }, [])
+
+  const visualGridOverlay = visualGridPreview && spatial && !spatial.isGoalkeeper && articleRef.current?.parentElement
+    ? createPortal(<div className="planning-visual-grid-overlay" aria-hidden="true">
+      {Array.from({ length: 25 }, (_, index) => {
+        const cell = { row: Math.floor(index / 5) + 1, column: (index % 5) + 1 }
+        const active = cell.row === visualGridPreview.cell.row && cell.column === visualGridPreview.cell.column
+        return <div key={`${cell.row}-${cell.column}`} className={`planning-visual-grid-cell ${active ? 'is-target' : ''}`} style={{ '--planning-preview-x': `${PLANNING_VISUAL_GRID_COLUMNS[cell.column - 1]}%`, '--planning-preview-y': `${PLANNING_VISUAL_GRID_ROWS[cell.row - 1]}%` } as CSSProperties} />
+      })}
+      <div className={`planning-visual-grid-ghost planning-line-${planningLine(linePosition)} ${visualGridPreview.occupantLabel ? 'is-swap' : ''}`} style={{ '--planning-preview-x': `${PLANNING_VISUAL_GRID_COLUMNS[visualGridPreview.cell.column - 1]}%`, '--planning-preview-y': `${PLANNING_VISUAL_GRID_ROWS[visualGridPreview.cell.row - 1]}%` } as CSSProperties}>
+        <strong>{displayLabel}</strong>
+        {visualGridPreview.occupantLabel && <span>↔ {visualGridPreview.occupantLabel}</span>}
+      </div>
+    </div>, articleRef.current.parentElement)
+    : null
 
   const spatialStyle = {
     ...(spatial ? {
-      '--planning-x': `${visualGridPreview ? PLANNING_VISUAL_GRID_COLUMNS[visualGridPreview.column - 1] : spatial.x}%`,
-      '--planning-y': `${visualGridPreview ? PLANNING_VISUAL_GRID_ROWS[visualGridPreview.row - 1] : spatial.y}%`,
-      '--planning-grid-row': String(visualGridPreview?.row ?? spatial.gridRow),
-      '--planning-grid-column': String(visualGridPreview?.column ?? spatial.gridColumn),
+      '--planning-x': `${spatial.x}%`,
+      '--planning-y': `${spatial.y}%`,
+      '--planning-grid-row': String(spatial.gridRow),
+      '--planning-grid-column': String(spatial.gridColumn),
       '--planning-row-count': String(Math.max(spatial.rowCount, 1)),
     } : {}),
     ...(expansionLayout ? {
@@ -1179,20 +1239,23 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
     data-spatial-side={spatial?.side ?? 'center'}
     data-grid-row={spatial?.gridRow}
     data-grid-column={spatial?.gridColumn}
+    data-set-label={displayLabel}
     data-grid-locked={spatial?.isGoalkeeper ? 'goalkeeper' : undefined}
     data-expansion-direction={expansionLayout?.direction}
     style={spatialStyle}
     className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${expansionLayout ? `is-expansion-${expansionLayout.axis} is-expand-${expansionLayout.direction}` : ''} ${focused ? 'is-focused' : ''} ${visualGridPreview !== null ? 'is-visual-position-dragging' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`}
+    onPointerDown={startVisualDrag}
+    onPointerMove={moveVisualDrag}
+    onPointerUp={finishVisualDrag}
+    onPointerCancel={cancelVisualDrag}
+    onLostPointerCapture={event => { if (visualDragRef.current?.pointerId === event.pointerId) cancelVisualDrag(event) }}
     onDragOver={event => { if (activePlayer) { event.preventDefault(); previewPlayer(null) } }}
     onDrop={event => { if (!activePlayer) return; event.preventDefault(); dropPlayer(preview ?? null) }}
   >
+    {visualGridOverlay}
     <button
       type="button"
       className="planning-set-legend"
-      onPointerDown={startVisualDrag}
-      onPointerMove={moveVisualDrag}
-      onPointerUp={finishVisualDrag}
-      onPointerCancel={finishVisualDrag}
       onClick={() => { if (suppressLegendClickRef.current) { suppressLegendClickRef.current = false; return } focus() }}
       title={spatial?.isGoalkeeper ? (roleSummary || displayLabel) : expanded ? `${roleSummary || displayLabel} · recolha o conjunto para reposicionar` : `${roleSummary || displayLabel} · arraste livremente pela grade 5×5 sem alterar a posição tática`}
       aria-label={spatial?.isGoalkeeper ? `Focar o conjunto ${displayLabel}` : `Focar ou reposicionar visualmente o conjunto ${displayLabel} na grade 5 por 5`}
@@ -1273,7 +1336,7 @@ function BoardPlayerCard({ player, snapshot, score, generalScore, scoreDetails, 
   const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, snapshot ? `Atual: ${fact.label} — ${fact.detail}` : 'Sem observação no checkpoint atual. O planejamento foi preservado, mas nenhum dado histórico foi promovido a atual.', plannedConflict.length ? `Conflito: planejado simultaneamente em ${plannedConflict.join(', ')}` : plannedClub ? `Planejado: ${plannedClub}` : 'Sem destino planejado', out ? familiarityTooltip : null].filter(Boolean).join('\n\n')
   return <article data-planning-player-id={player.id} className={`planning-set-player-card planning-depth-player-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
     <span className="planning-depth-peek-slot">{snapshot && <PlayerPeek player={player} snapshot={snapshot} />}</span>
-    <button className="player-name planning-depth-player-name" onClick={event => { event.stopPropagation(); open() }}>{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</button>
+    <button className="player-name planning-depth-player-name" onClick={event => { event.stopPropagation(); open() }}><span className="planning-depth-player-name-text">{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</span></button>
     {showScores && <PlanningScorePeek playerName={player.current_name} generalScore={generalScore} details={scoreDetails}>
       <span className="planning-score-wrap planning-depth-score-wrap">{snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento. Não é a evolução mais provável nem o PA/CP do Football Manager.'} /> : <span className="planning-score-unavailable" title="Sem observação no checkpoint atual">—</span>}</span>
     </PlanningScorePeek>}

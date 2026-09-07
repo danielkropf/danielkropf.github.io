@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canGroupAdjacentPlanningSets, defaultPlanningSets, groupAdjacentPlanningSets, groupEquivalentSets, layoutsFor, movePlanningSetVisualGrid, movePlayerToSet, planningSetDisplayLabel, planningSlotDisplayLabel, planningVisualGridCellForSet, positionFamily, primarySetForPlayer, renamePlanningSet, renamePlanningSlotLabel, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, restorePlanningSetVisualGrid, splitPlanningSet, type FlexiblePlanning } from './planningSets'
+import { canGroupAdjacentPlanningSets, defaultPlanningSets, groupAdjacentPlanningSets, groupEquivalentSets, layoutsFor, movePlanningSetVisualGrid, movePlayerToSet, PLANNING_VISUAL_GOALKEEPER_Y, PLANNING_VISUAL_GRID_ROWS, planningSetDisplayLabel, planningSlotDisplayLabel, planningVisualGridCellForSet, positionFamily, primarySetForPlayer, renamePlanningSet, renamePlanningSlotLabel, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, restorePlanningSetVisualGrid, splitPlanningSet, type FlexiblePlanning } from './planningSets'
 
 const slots = [
   { id: 'dc-l', position: 'DCL' },
@@ -163,6 +163,17 @@ describe('flexible planning sets', () => {
       { id: 'mc', row: undefined, column: undefined, legacy: undefined },
     ])
     expect(restored.slotAssignments).toEqual(planning.slotAssignments)
+  })
+
+  it('reserves an equal sixth visual row for the goalkeeper without expanding the free outfield grid', () => {
+    const centres = [...PLANNING_VISUAL_GRID_ROWS, PLANNING_VISUAL_GOALKEEPER_Y]
+    expect(centres).toHaveLength(6)
+    expect(centres[0]).toBeCloseTo(100 / 12, 3)
+    expect(centres[5]).toBeCloseTo(1100 / 12, 3)
+    for (let index = 1; index < centres.length; index += 1) {
+      expect(centres[index] - centres[index - 1]).toBeCloseTo(100 / 6, 3)
+    }
+    expect(planningVisualGridCellForSet(defaultPlanningSets([{ id: 'st', position: 'ST(C)', x: 50 }])[0], 50, 'st').row).toBe(1)
   })
 
 })
