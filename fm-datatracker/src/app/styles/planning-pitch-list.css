@@ -31,11 +31,22 @@
   min-height:0!important;
 }
 
-/* 5x5 outfield grid + fixed sixth GK row remains owned by the existing set
-   geometry. This layer only changes the set interior. */
+/* 5x5 outfield grid + fixed sixth GK row. The two-line legend stays centered
+   on the upper border. Its 15px upper half is part of every set's vertical
+   footprint, so the body is shortened and shifted down inside the same sixth-row
+   allocation instead of special-casing the first row. */
 .tactics-workspace-planning .planning-pitch-list-page .planning-set-row{
   padding:17px 5px 5px!important;
   background:color-mix(in srgb,var(--set-accent) 5%,rgba(7,17,14,.88))!important;
+}
+.tactics-workspace-planning .planning-pitch-list-page .planning-set-row:not(.is-expanded){
+  height:calc(16.6666667% - 25px)!important;
+  transform:translate(-50%,calc(-50% + 7.5px))!important;
+}
+.tactics-workspace-planning .planning-pitch-list-page .planning-visual-grid-cell,
+.tactics-workspace-planning .planning-pitch-list-page .planning-visual-grid-ghost{
+  height:calc(16.6666667% - 25px)!important;
+  transform:translate(-50%,calc(-50% + 7.5px))!important;
 }
 
 .tactics-workspace-planning .planning-pitch-list-page .planning-set-legend{

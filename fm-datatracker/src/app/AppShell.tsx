@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { AppVersion } from '../components/AppVersion'
 import { CurrentCheckpointCalendar } from '../components/CurrentCheckpointCalendar'
@@ -24,6 +24,9 @@ function AppShellContent() {
   const potential = usePotential()
   const [importOpen, setImportOpen] = useState(false)
   const [settings, setSettings] = useState(false)
+  const [elencoMenuOpen, setElencoMenuOpen] = useState(false)
+  const elencoOpenTimerRef = useRef<number | null>(null)
+  const elencoCloseTimerRef = useRef<number | null>(null)
   useEffect(() => { if (selected) preloadSave(selected.id) }, [selected?.id])
   useEffect(() => {
     const flush = () => { void flushAllModelConfigPatches() }
@@ -36,13 +39,46 @@ function AppShellContent() {
       flush()
     }
   }, [])
+  useEffect(() => () => {
+    if (elencoOpenTimerRef.current !== null) window.clearTimeout(elencoOpenTimerRef.current)
+    if (elencoCloseTimerRef.current !== null) window.clearTimeout(elencoCloseTimerRef.current)
+  }, [])
+  const cancelElencoOpen = () => {
+    if (elencoOpenTimerRef.current !== null) window.clearTimeout(elencoOpenTimerRef.current)
+    elencoOpenTimerRef.current = null
+  }
+  const cancelElencoClose = () => {
+    if (elencoCloseTimerRef.current !== null) window.clearTimeout(elencoCloseTimerRef.current)
+    elencoCloseTimerRef.current = null
+  }
+  const scheduleElencoOpen = () => {
+    cancelElencoClose()
+    if (elencoMenuOpen) return
+    cancelElencoOpen()
+    elencoOpenTimerRef.current = window.setTimeout(() => {
+      elencoOpenTimerRef.current = null
+      setElencoMenuOpen(true)
+    }, 420)
+  }
+  const scheduleElencoClose = () => {
+    cancelElencoOpen()
+    cancelElencoClose()
+    elencoCloseTimerRef.current = window.setTimeout(() => {
+      elencoCloseTimerRef.current = null
+      setElencoMenuOpen(false)
+    }, 160)
+  }
   const currentPlayerId = /^\/players\/([^/]+)$/.exec(location.pathname)?.[1] ?? null
   const compareTo = currentPlayerId ? `/compare?a=${encodeURIComponent(currentPlayerId)}` : '/compare'
   const tacticsMode = new URLSearchParams(location.search).get('mode')
   const squadActive = location.pathname === '/squad'
   const structureActive = location.pathname === '/tactics' && tacticsMode !== 'planning'
-  const planningActive = location.pathname === '/tactics' && tacticsMode === 'planning'
+  const planningActive = (location.pathname === '/tactics' && tacticsMode === 'planning') || location.pathname === '/planning'
   const elencoGroupActive = squadActive || structureActive || planningActive
+  const elencoMenuVisible = elencoGroupActive || elencoMenuOpen
+  useEffect(() => {
+    if (!elencoGroupActive) setElencoMenuOpen(false)
+  }, [elencoGroupActive])
   const potentialTitle = potential.available
     ? 'Mostra os melhores scores plausíveis em um cenário positivo de carreira, na Nota Geral e por função. Não é a evolução mais provável e o PA/CP do Football Manager não é exibido.'
     : potential.detail
@@ -70,13 +106,13 @@ function AppShellContent() {
       <div className="sidebar-save-state" aria-label="Estado de salvamento"><SaveStateOutlet /></div>
       <nav>
         <NavLink to="/">Visão Geral</NavLink>
-        <div className={`sidebar-nav-group sidebar-elenco-group ${elencoGroupActive ? 'is-active' : ''}`} role="group" aria-label="Elenco">
-          <span className="sidebar-nav-group-title">Elenco</span>
-          <div className="sidebar-nav-subitems">
-            <NavLink to="/squad" className={() => squadActive ? 'active' : ''}>Elenco</NavLink>
-            <NavLink to="/tactics" className={() => structureActive ? 'active' : ''}>Estrutura</NavLink>
-            <NavLink to="/tactics?mode=planning" className={() => planningActive ? 'active' : ''}>Planejamento</NavLink>
-          </div>
+        <div className={`sidebar-nav-group sidebar-elenco-group ${elencoGroupActive ? 'is-active' : ''} ${elencoMenuVisible ? 'is-open' : ''}`} onPointerLeave={scheduleElencoClose}>
+          <NavLink to="/squad" className={() => `sidebar-nav-group-main ${squadActive ? 'active' : ''}`} aria-haspopup="menu" aria-expanded={elencoMenuVisible} onPointerEnter={scheduleElencoOpen} onPointerMove={() => { if (!elencoMenuVisible) scheduleElencoOpen() }} onClick={() => { cancelElencoOpen(); setElencoMenuOpen(false) }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowRight') { event.preventDefault(); cancelElencoOpen(); cancelElencoClose(); setElencoMenuOpen(true) } }}>Elenco</NavLink>
+          {elencoMenuVisible && <div className="sidebar-nav-subitems" role="menu" onPointerEnter={cancelElencoClose}>
+            <NavLink to="/squad" role="menuitem" className={() => squadActive ? 'active' : ''} onClick={() => setElencoMenuOpen(false)}>Elenco</NavLink>
+            <NavLink to="/tactics" role="menuitem" className={() => structureActive ? 'active' : ''} onClick={() => setElencoMenuOpen(false)}>Tática</NavLink>
+            <NavLink to="/tactics?mode=planning" role="menuitem" className={() => planningActive ? 'active' : ''} onClick={() => setElencoMenuOpen(false)}>Planejamento</NavLink>
+          </div>}
         </div>
         <NavLink to={compareTo}>Comparar</NavLink>
         <div className="sidebar-nav-divider" aria-hidden="true" />

@@ -12,29 +12,41 @@
   margin-top:auto;
 }
 
-/* v0.32.0 — Elenco becomes the navigation home for roster + tactical planning. */
+/* v0.32.2 — Elenco is the single resting entry. Its submenu opens after
+   deliberate pointer dwell and remains expanded while Elenco, Tática or
+   Planejamento is the active surface. */
 .shell>aside nav .sidebar-nav-group{
   display:grid;
   gap:3px;
   min-width:0;
-  padding:3px;
-  border:1px solid transparent;
-  border-radius:var(--dt-radius-card);
 }
-.shell>aside nav .sidebar-nav-group.is-active{
-  border-color:var(--dt-border);
-  background:color-mix(in srgb,var(--dt-surface-1) 72%,transparent);
+.shell>aside nav .sidebar-nav-group-main{
+  position:relative;
+  padding-right:28px!important;
 }
-.shell>aside nav .sidebar-nav-group-title{
-  display:flex;
-  align-items:center;
-  min-height:30px;
-  padding:0 9px;
-  color:var(--dt-text-2);
-  font-size:.79rem;
-  font-weight:750;
+.shell>aside nav .sidebar-nav-group-main::after{
+  content:'›';
+  position:absolute;
+  right:10px;
+  top:50%;
+  color:var(--dt-text-3);
+  font-size:.9rem;
+  font-weight:800;
+  line-height:1;
+  transform:translateY(-50%) rotate(0deg);
+  transform-origin:center;
+  transition:transform .12s ease,color .12s ease;
+  pointer-events:none;
 }
-.shell>aside nav .sidebar-nav-group.is-active .sidebar-nav-group-title{color:var(--dt-text-1)}
+.shell>aside nav .sidebar-nav-group.is-open>.sidebar-nav-group-main::after{
+  color:var(--dt-text-1);
+  transform:translateY(-50%) rotate(90deg);
+}
+.shell>aside nav .sidebar-nav-group.is-active>.sidebar-nav-group-main:not(.active){
+  border-color:color-mix(in srgb,var(--dt-lime) 30%,var(--dt-border));
+  background:color-mix(in srgb,var(--dt-lime) 4%,var(--dt-surface-1));
+  color:var(--dt-text-1);
+}
 .shell>aside nav .sidebar-nav-subitems{
   display:grid;
   gap:2px;
