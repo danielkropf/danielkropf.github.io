@@ -544,7 +544,7 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
     {visualGridOverlay}
     <button type="button" className="planning-set-legend" onClick={() => { if (suppressLegendClickRef.current) { suppressLegendClickRef.current = false; return }; focus() }} title={spatial?.isGoalkeeper ? headerLabel : `${headerLabel} · arraste pela grade 5×5 sem alterar a tática`}><span>{headerLabel}</span></button>
     <button type="button" className="planning-set-add-player" title={`Adicionar jogador a ${displayLabel}`} aria-label={`Adicionar jogador a ${displayLabel}`} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); addPlayer() }}>+</button>
-    <div className={`planning-set-cards planning-set-list-rows ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }}>
+    <div className={`planning-pitch-depth-list ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }}>
       {rowItems.map((option, index) => {
         if (!option) return <EmptyPlayerRow key={`empty-${index}`} showScores={showScores} />
         const player = option.player; const snapshot = latest(player); const rating = score(player); const beforeId = player.id; const playerFamiliarity = familiarity(player); const projectionPairs = rating.pair ? [rating.pair] : pairs; const projectionKey = snapshot ? functionProjectionKey(projectionPairs.flatMap(pair => [{ phase: 'IP', position: pair.ip.position, roleCode: pair.ip.roleCode }, { phase: 'OOP', position: pair.oop.position, roleCode: pair.oop.roleCode }])) : ''
@@ -557,27 +557,48 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
   </article>
 }
 
-function EmptyPlayerRow({ showScores }: { showScores: boolean }) {
+function PlanningPitchRowCells({ peek, identity, score, showScores, emptyScore = false }: { peek?: ReactNode; identity?: ReactNode; score?: ReactNode; showScores: boolean; emptyScore?: boolean }) {
   const { showPotential } = usePotential()
-  return <div className={`planning-depth-player-row planning-depth-empty-row ${!showScores ? 'is-score-hidden' : ''}`} aria-hidden="true">
-    <span className="planning-depth-peek-slot" />
-    <span className="planning-depth-player-copy" />
-    {showScores && <span className="planning-depth-score-wrap planning-empty-score-wrap">
-      <span className="planning-empty-score-box" />
-      {showPotential && <><span className="planning-empty-score-separator">›</span><span className="planning-empty-score-box planning-empty-potential-box" /></>}
+  return <>
+    <span className="planning-pitch-row-peek">{peek}</span>
+    <span className="planning-pitch-row-identity">{identity}</span>
+    {showScores && <span className={`planning-pitch-row-score ${showPotential ? 'is-potential-mode' : ''}`}>
+      {emptyScore ? <span className="planning-pitch-empty-score-content">
+        <span className="planning-pitch-empty-score-box" />
+        {showPotential && <><span className="planning-pitch-score-separator">›</span><span className="planning-pitch-empty-score-box is-potential" /></>}
+      </span> : score}
     </span>}
+  </>
+}
+
+function EmptyPlayerRow({ showScores }: { showScores: boolean }) {
+  return <div className={`planning-pitch-depth-row is-empty ${!showScores ? 'is-score-hidden' : ''}`} aria-hidden="true">
+    <PlanningPitchRowCells showScores={showScores} emptyScore />
   </div>
 }
-function PlayerDropPlaceholder() { return <div className="planning-player-drop-placeholder" aria-hidden="true"><span>destino</span></div> }
+
+function PlayerDropPlaceholder() { return <div className="planning-pitch-player-drop-placeholder" aria-hidden="true"><span>destino</span></div> }
+
 function BoardPlayerRow({ player, snapshot, score, generalScore, scoreDetails, showScores, rank, rankPopulation, coverage, source, familiarity, fact, plannedClub, plannedConflict, projectionKey, familiarityTooltip, dragging, drag, dragEnd, open, context }: { player: Player; snapshot: Snapshot | undefined; score: number | null; generalScore: number | null; scoreDetails: PlanningScoreDetail[]; showScores: boolean; rank: number | null; rankPopulation: number[]; coverage: boolean; source: string | null; familiarity: Familiarity; fact: PlanningMembershipFact; plannedClub: string | null; plannedConflict: string[]; projectionKey: string; familiarityTooltip: string; dragging: boolean; drag: (event: DragEvent<HTMLElement>) => void; dragEnd: () => void; open: () => void; context: (event: ReactMouseEvent) => void }) {
   const out = snapshot ? isPlanningOutOfPosition(familiarity) : false
   const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, snapshot ? `Atual: ${fact.label} — ${fact.detail}` : 'Sem observação no checkpoint atual.', plannedConflict.length ? `Conflito: ${plannedConflict.join(', ')}` : plannedClub ? `Planejado: ${plannedClub}` : 'Sem destino planejado', out ? familiarityTooltip : null].filter(Boolean).join('\n\n')
-  return <article data-planning-player-id={player.id} className={`planning-set-player-card planning-depth-player-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}><span className="planning-depth-peek-slot">{snapshot && <PlayerPeek player={player} snapshot={snapshot} />}</span><span className="planning-depth-player-copy"><button className="player-name planning-depth-player-name" onClick={event => { event.stopPropagation(); open() }}><span className="planning-depth-player-name-text">{player.current_name}</span></button></span>{showScores && <PlanningScorePeek playerName={player.current_name} generalScore={generalScore} details={scoreDetails}><span className="planning-score-wrap planning-depth-score-wrap">{snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle="Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento." /> : <span className="planning-score-unavailable">—</span>}</span></PlanningScorePeek>}</article>
+  const scoreContent = showScores ? <PlanningScorePeek playerName={player.current_name} generalScore={generalScore} details={scoreDetails} className="planning-pitch-score-trigger">
+    {snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle="Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento." /> : <span className="planning-pitch-score-unavailable">—</span>}
+  </PlanningScorePeek> : null
+  return <article data-planning-player-id={player.id} className={`planning-pitch-depth-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
+    <PlanningPitchRowCells
+      showScores={showScores}
+      peek={snapshot ? <PlayerPeek player={player} snapshot={snapshot} /> : null}
+      identity={<button type="button" className="planning-pitch-player-name" onClick={event => { event.stopPropagation(); open() }}><span>{player.current_name}</span></button>}
+      score={scoreContent}
+    />
+  </article>
 }
-function PlanningScorePeek({ playerName, generalScore, details, children }: { playerName: string; generalScore: number | null; details: PlanningScoreDetail[]; children: ReactNode }) {
+
+function PlanningScorePeek({ playerName, generalScore, details, children, className = '' }: { playerName: string; generalScore: number | null; details: PlanningScoreDetail[]; children: ReactNode; className?: string }) {
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null)
   const show = (element: HTMLElement) => { const rect = element.getBoundingClientRect(); const width = 284; const height = Math.min(340, 90 + details.length * 34); const left = window.innerWidth - rect.right >= width + 12 ? rect.right + 8 : Math.max(8, rect.left - width - 8); setAnchor({ top: Math.max(8, Math.min(rect.top - 10, window.innerHeight - height - 8)), left }) }
-  return <span className="planning-score-peek-trigger" tabIndex={0} aria-label={`Ver notas de ${playerName}`} onMouseEnter={event => show(event.currentTarget)} onMouseLeave={() => setAnchor(null)} onFocus={event => show(event.currentTarget)} onBlur={() => setAnchor(null)} onClick={event => event.stopPropagation()}>{children}{anchor && createPortal(<aside className="planning-score-tooltip" role="tooltip" style={{ top: anchor.top, left: anchor.left }}><header><div><h2>{playerName}</h2><p>Notas na tática atual</p></div></header><div className="planning-score-tooltip-list"><div className="is-general"><span>Nota geral</span><ScoreBadge value={generalScore} className="score-badge-compact" showTitle={false} /></div>{details.map(detail => <div key={detail.id}><span>{detail.label}</span><ScoreBadge value={detail.score} className="score-badge-compact" showTitle={false} /></div>)}</div></aside>, document.body)}</span>
+  return <span className={className} tabIndex={0} aria-label={`Ver notas de ${playerName}`} onMouseEnter={event => show(event.currentTarget)} onMouseLeave={() => setAnchor(null)} onFocus={event => show(event.currentTarget)} onBlur={() => setAnchor(null)} onClick={event => event.stopPropagation()}>{children}{anchor && createPortal(<aside className="planning-score-tooltip" role="tooltip" style={{ top: anchor.top, left: anchor.left }}><header><div><h2>{playerName}</h2><p>Notas na tática atual</p></div></header><div className="planning-score-tooltip-list"><div className="is-general"><span>Nota geral</span><ScoreBadge value={generalScore} className="score-badge-compact" showTitle={false} /></div>{details.map(detail => <div key={detail.id}><span>{detail.label}</span><ScoreBadge value={detail.score} className="score-badge-compact" showTitle={false} /></div>)}</div></aside>, document.body)}</span>
 }
 function TransferGroupPanel({ group, playerIds, players, latest, fact, plannedClub, dragging, drop, startDrag, dragEnd, open, context, remove }: { group: Group; playerIds: string[]; players: Player[]; latest: (player: Player) => Snapshot | undefined; fact: (playerId: string) => PlanningMembershipFact; plannedClub: (playerId: string) => string | null; dragging: boolean; drop: () => void; startDrag: (id: string) => void; dragEnd: () => void; open: (id: string) => void; context: (event: ReactMouseEvent, playerId: string) => void; remove: (id: string) => void }) {
   const members = playerIds.map(id => players.find(player => player.id === id)).filter((player): player is Player => Boolean(player))
