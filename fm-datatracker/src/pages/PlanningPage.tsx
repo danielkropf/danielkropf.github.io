@@ -46,6 +46,10 @@ import {
   canGroupAdjacentPlanningSets,
   groupAdjacentPlanningSets,
   layoutsFor,
+  PLANNING_VISUAL_GRID_COLUMNS,
+  PLANNING_VISUAL_GRID_ROWS,
+  movePlanningSetVisualGrid,
+  planningVisualGridCellForSet,
   movePlayerToSet,
   planningSetDisplayLabel,
   planningSlotDisplayLabel,
@@ -56,9 +60,11 @@ import {
   reorderPlanningGroups,
   reorderPlanningSets,
   restoreDefaultPlanningSets,
+  restorePlanningSetVisualGrid,
   splitPlanningSet,
   type FlexiblePlanning,
   type PlanningSetLayout,
+  type PlanningVisualGridCell,
   type TacticSlotDescriptor,
 } from '../lib/planningSets'
 
@@ -98,9 +104,11 @@ type PlayerDropPreview = { setId: string; beforePlayerId: string | null }
 type FactFilter = 'all' | PlanningMembershipFactKind
 type PlanningUndo = Pick<Config, 'planning' | 'planning_by_club'>
 type PlanningScoreDetail = { id: string; label: string; score: number | null }
+type PlanningGridPlacement = PlanningSpatialPlacement & { gridRow: number; gridColumn: number; isGoalkeeper: boolean }
 const DEFAULT_FIELD_SHARE = 60
 const MIN_FIELD_SHARE = 44
 const MAX_FIELD_SHARE = 76
+const WORKSPACE_DIVIDER_WIDTH = 10
 
 type PlanningRosterColumnId = 'name' | 'positions' | 'age' | 'club' | 'fact' | 'plan' | 'score'
 type PlanningRosterColumn = DataTableColumnLike & { id: PlanningRosterColumnId }
@@ -441,7 +449,26 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       const anchorX = anchors.length ? anchors.reduce((sum, value) => sum + value, 0) / anchors.length : undefined
       return { key: set.id, line: planningLine(firstSlot?.ip.position ?? ''), label: firstSlot?.ip.position ?? 'M (C)', anchorX }
     })
-    return new Map(planningSpatialLayout(items).map(item => [item.key, item]))
+    const tacticDerived = new Map(planningSpatialLayout(items).map(item => [item.key, item]))
+    const placements = new Map<string, PlanningGridPlacement>()
+    for (const set of currentSets) {
+      const placement = tacticDerived.get(set.id)
+      if (!placement) continue
+      if (placement.line === 'gk') {
+        placements.set(set.id, { ...placement, x: 50, y: 95, gridRow: 6, gridColumn: 3, isGoalkeeper: true })
+        continue
+      }
+      const cell = planningVisualGridCellForSet(set, placement.x, placement.line)
+      placements.set(set.id, {
+        ...placement,
+        gridRow: cell.row,
+        gridColumn: cell.column,
+        x: PLANNING_VISUAL_GRID_COLUMNS[cell.column - 1],
+        y: PLANNING_VISUAL_GRID_ROWS[cell.row - 1],
+        isGoalkeeper: false,
+      })
+    }
+    return placements
   }, [currentSets, pairBySlot, pitchNodeX])
   useEffect(() => {
     if (focusedSetId && !currentSets.some(set => set.id === focusedSetId)) setFocusedSetId(null)
@@ -654,6 +681,16 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   function reorderSet(draggedId: string, beforeId: string | null) { if (tactic && currentGroup) update(value => reorderPlanningSets(value, tactic.id, currentGroup.id, currentSets, draggedId, beforeId) as Planning) }
   function reorderGroup(draggedId: string, beforeId: string | null) { update(value => reorderPlanningGroups(value, draggedId, beforeId) as Planning) }
   function restoreSets() { if (tactic && currentGroup) update(value => restoreDefaultPlanningSets(value, tactic.id, currentGroup.id, currentSets, slotDescriptors) as Planning) }
+  function restoreSetVisualPositions() { if (tactic && currentGroup) update(value => restorePlanningSetVisualGrid(value, tactic.id, currentGroup.id, currentSets) as Planning) }
+  function moveSetVisualPosition(setId: string, requested: PlanningVisualGridCell) {
+    if (!tactic || !currentGroup) return
+    const source = spatialPlacements.get(setId)
+    if (!source || source.isGoalkeeper) return
+    const currentCells = Object.fromEntries([...spatialPlacements]
+      .filter(([, placement]) => !placement.isGoalkeeper)
+      .map(([id, placement]) => [id, { row: placement.gridRow, column: placement.gridColumn }]))
+    update(value => movePlanningSetVisualGrid(value, tactic.id, currentGroup.id, currentSets, setId, requested, currentCells) as Planning)
+  }
 
   async function persistPatch(patch: Record<string, unknown>) {
     if (!selected) return
@@ -697,11 +734,17 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   function applyFieldShare(next: number, commit = true) {
     const share = Math.max(MIN_FIELD_SHARE, Math.min(MAX_FIELD_SHARE, next))
     pendingFieldShareRef.current = share
-    workspaceRef.current?.style.setProperty('--planning-field-share', `${share}%`)
+    const layout = workspaceRef.current
+    layout?.style.setProperty('--planning-field-fr', `${share}fr`)
+    layout?.style.setProperty('--planning-table-fr', `${100 - share}fr`)
     if (commit) setFieldShare(share)
   }
 
   function resetFieldShare() { applyFieldShare(DEFAULT_FIELD_SHARE) }
+
+  function resizeShareAt(clientX: number, left: number, availableWidth: number) {
+    return ((clientX - left - (WORKSPACE_DIVIDER_WIDTH / 2)) / availableWidth) * 100
+  }
 
   function startWorkspaceResize(event: ReactPointerEvent<HTMLDivElement>) {
     const layout = workspaceRef.current
@@ -709,15 +752,16 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     event.preventDefault()
     setExpandedSets(new Set())
     const rect = layout.getBoundingClientRect()
-    workspaceResizeRef.current = { left: rect.left, availableWidth: Math.max(1, rect.width - 10), pointerId: event.pointerId }
+    const availableWidth = Math.max(1, rect.width - WORKSPACE_DIVIDER_WIDTH)
+    workspaceResizeRef.current = { left: rect.left, availableWidth, pointerId: event.pointerId }
     event.currentTarget.setPointerCapture?.(event.pointerId)
-    applyFieldShare(((event.clientX - rect.left) / Math.max(1, rect.width - 10)) * 100, false)
+    applyFieldShare(resizeShareAt(event.clientX, rect.left, availableWidth), false)
   }
 
   function moveWorkspaceResize(event: ReactPointerEvent<HTMLDivElement>) {
     const resize = workspaceResizeRef.current
     if (!resize || resize.pointerId !== event.pointerId) return
-    applyFieldShare(((event.clientX - resize.left) / resize.availableWidth) * 100, false)
+    applyFieldShare(resizeShareAt(event.clientX, resize.left, resize.availableWidth), false)
   }
 
   function finishWorkspaceResize(event: ReactPointerEvent<HTMLDivElement>) {
@@ -821,7 +865,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       </div>
     </section>
 
-    <section ref={workspaceRef} className="planning-depth-layout planning-flex-layout" style={{ '--planning-field-share': `${fieldShare}%` } as CSSProperties}>
+    <section ref={workspaceRef} className="planning-depth-layout planning-flex-layout" style={{ '--planning-field-fr': `${fieldShare}fr`, '--planning-table-fr': `${100 - fieldShare}fr` } as CSSProperties}>
       <div className={`planning-flex-board ${expandedSets.size ? 'has-expanded' : ''} ${isTransferGroup ? 'is-transfer' : ''}`}>
         {isTransferGroup && currentGroup ? <TransferGroupPanel group={currentGroup} playerIds={planning.slotAssignments[currentGroup.id]?.market ?? []} players={players} latest={latest} fact={membershipFact} plannedClub={plannedClubName} dragging={Boolean(activePlayer)} drop={() => { if (activePlayer) placePlayer(currentGroup.id, 'market', activePlayer.id); stopPlayerDrag() }} startDrag={id => setDragging({ type: 'player', id })} dragEnd={stopPlayerDrag} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} remove={removePlayer} />
           : tactic && currentGroup ? <div className={`planning-set-list is-spatial-ready ${expandedSets.size ? 'has-expanded' : ''}`}>
@@ -857,6 +901,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
               dropPlayer={beforePlayerId => { if (activePlayer) placePlayer(currentGroup.id, set.id, activePlayer.id, beforePlayerId); stopPlayerDrag() }}
               open={id => navigate(`/players/${id}`)}
               context={openPlayerMenu}
+              moveVisualGrid={cell => moveSetVisualPosition(set.id, cell)}
             />)}
           </div> : <div className="empty planning-no-tactic"><h2>Nenhuma tática disponível</h2><p>Crie uma tática para organizar o elenco por posição e função.</p><button onClick={() => navigate('/tactics')}>Criar primeira tática</button></div>}
       </div>
@@ -928,7 +973,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
 
     {manageSquadsOpen && <div className="settings-overlay" onClick={() => setManageSquadsOpen(false)}><section className="squad-manager planning-squad-manager" onClick={event => event.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={() => setManageSquadsOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map((group, index) => { const fixed = transferGroups.some(item => item.id === group.id); const previewBefore = managerGroupPreview === group.id && managerGroupDragging !== group.id; return <Fragment key={group.id}>{previewBefore && <ManagerDropPlaceholder label="Mover elenco para cá" />}<div className={`planning-squad-manager-row ${fixed ? 'fixed-planning-group' : ''} ${managerGroupDragging === group.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerGroupPreview(event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null) }} onDrop={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderGroup(managerGroupDragging, event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null); setManagerGroupDragging(null); setManagerGroupPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', group.id); setManagerGroupDragging(group.id); setManagerGroupPreview(group.id) }} onDragEnd={() => { setManagerGroupDragging(null); setManagerGroupPreview(undefined) }} title={`Arrastar ${group.name}`} aria-label={`Reordenar ${group.name}`}>⠿</button><input value={group.name} readOnly={fixed} onChange={event => renameGroup(group.id, event.target.value)} />{fixed ? <span className="market-group-label">GRUPO MERCADO</span> : <button className="manager-trash" onClick={() => removeGroup(group.id)} title={`Excluir ${group.name}`} aria-label={`Excluir ${group.name}`}>🗑</button>}</div></Fragment> })}{managerGroupDragging && managerGroupPreview === null && <ManagerDropPlaceholder label="Mover elenco para o final" />}</div><footer className="planning-squad-manager-footer"><div className="planning-add-squad"><input placeholder="Novo elenco" value={newGroup} onChange={event => setNewGroup(event.target.value)} onKeyDown={event => event.key === 'Enter' && addGroup()} /><button onClick={addGroup}>+ Adicionar</button></div><button className="danger-button clear-all-squads" disabled={!Object.keys(assignmentIndex).length} onClick={clearPlanning}>Limpar todos os elencos</button></footer></section></div>}
 
-    {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Organizar posições</h2><p>Organização visual de {currentGroup.name}; a tática não é alterada.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => { const effectiveLabel = displaySetLabel(set); const previewBefore = managerSetPreview === set.id && managerSetDragging !== set.id; const nextSet = currentSets[index + 1]; const canGroupNext = Boolean(nextSet && canGroupAdjacentPlanningSets(set, nextSet, slotDescriptors)); return <Fragment key={set.id}>{previewBefore && <ManagerDropPlaceholder label="Mover posição para cá" />}<div className={`planning-squad-manager-row ${set.slotIds.length > 1 ? 'is-grouped-manager-row' : ''} ${managerSetDragging === set.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerSetPreview(event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null) }} onDrop={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderSet(managerSetDragging, event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null); setManagerSetDragging(null); setManagerSetPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', set.id); setManagerSetDragging(set.id); setManagerSetPreview(set.id) }} onDragEnd={() => { setManagerSetDragging(null); setManagerSetPreview(undefined) }} title={`Arrastar ${effectiveLabel}`} aria-label={`Reordenar ${effectiveLabel}`}>⠿</button>{set.slotIds.length > 1 ? <><button className="split-set-button" onClick={() => splitSet(set.id)} title="Desagrupar" aria-label={`Desagrupar ${effectiveLabel}`}>−</button><div className="grouped-set-fields"><label>Nome geral<input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /></label>{set.slotIds.map((slotId, slotIndex) => <label key={slotId}>Posição {slotIndex + 1}<input value={planningSlotDisplayLabel(set, slotId, slotDescriptors)} onChange={event => renameSetSlot(set.id, slotId, event.target.value)} /></label>)}</div></> : <><span className="set-manager-order">{index + 1}</span><input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /><small>1 posição</small></>}</div>{canGroupNext && <button className="adjacent-group-button" type="button" title={`Agrupar ${effectiveLabel} e ${displaySetLabel(nextSet)}`} onClick={() => groupSet(set.id, nextSet.id)}>+</button>}</Fragment> })}{managerSetDragging && managerSetPreview === null && <ManagerDropPlaceholder label="Mover posição para o final" />}</div><footer><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
+    {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Organizar posições</h2><p>Organização visual de {currentGroup.name}; arraste as legendas livremente pela grade 5×5. A tática não é alterada.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => { const effectiveLabel = displaySetLabel(set); const previewBefore = managerSetPreview === set.id && managerSetDragging !== set.id; const nextSet = currentSets[index + 1]; const canGroupNext = Boolean(nextSet && canGroupAdjacentPlanningSets(set, nextSet, slotDescriptors)); return <Fragment key={set.id}>{previewBefore && <ManagerDropPlaceholder label="Mover posição para cá" />}<div className={`planning-squad-manager-row ${set.slotIds.length > 1 ? 'is-grouped-manager-row' : ''} ${managerSetDragging === set.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerSetPreview(event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null) }} onDrop={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderSet(managerSetDragging, event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null); setManagerSetDragging(null); setManagerSetPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', set.id); setManagerSetDragging(set.id); setManagerSetPreview(set.id) }} onDragEnd={() => { setManagerSetDragging(null); setManagerSetPreview(undefined) }} title={`Arrastar ${effectiveLabel}`} aria-label={`Reordenar ${effectiveLabel}`}>⠿</button>{set.slotIds.length > 1 ? <><button className="split-set-button" onClick={() => splitSet(set.id)} title="Desagrupar" aria-label={`Desagrupar ${effectiveLabel}`}>−</button><div className="grouped-set-fields"><label>Nome geral<input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /></label>{set.slotIds.map((slotId, slotIndex) => <label key={slotId}>Posição {slotIndex + 1}<input value={planningSlotDisplayLabel(set, slotId, slotDescriptors)} onChange={event => renameSetSlot(set.id, slotId, event.target.value)} /></label>)}</div></> : <><span className="set-manager-order">{index + 1}</span><input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /><small>1 posição</small></>}</div>{canGroupNext && <button className="adjacent-group-button" type="button" title={`Agrupar ${effectiveLabel} e ${displaySetLabel(nextSet)}`} onClick={() => groupSet(set.id, nextSet.id)}>+</button>}</Fragment> })}{managerSetDragging && managerSetPreview === null && <ManagerDropPlaceholder label="Mover posição para o final" />}</div><footer className="planning-set-manager-footer"><div><button className="ghost" onClick={restoreSetVisualPositions}>Restaurar posições do campo</button><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button></div><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
 
     {menu && <div className="planning-context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onClick={event => event.stopPropagation()}>
       <button role="menuitem" onClick={() => moveMenuPlayer('loan')}>Adicionar a Empréstimo</button>
@@ -938,12 +983,12 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   </div>
 }
 
-function useCompactCapacity() {
-  // Planning uses a compact depth list. Three rows fit the existing set footprint
-  // without competing with adjacent positional sets; additional depth remains
-  // accessible through the existing +N expansion control.
+function useCompactCapacity(capacity = 3) {
+  // The free 5x5 grid reserves three compact depth rows per outfield set. The
+  // goalkeeper lives in its own shorter lane, so it shows one row and uses +N
+  // for additional depth instead of crushing multiple rows vertically.
   const ref = useRef<HTMLDivElement | null>(null)
-  return { ref, capacity: 3 }
+  return { ref, capacity }
 }
 
 function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY: number, draggingId: string | undefined, currentBeforeId: string | null | undefined) {
@@ -957,9 +1002,9 @@ function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY:
   return resolvePlanningInsertionBefore(cards, clientX, clientY, currentBeforeId)
 }
 
-function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, showScores, generalScore, scoreDetails, primaryLabel, activePlayer, playerDropPreview, score, familiarity, fact, plannedClub, plannedConflict, toggle, focus, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, open, context }: {
+function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, showScores, generalScore, scoreDetails, primaryLabel, activePlayer, playerDropPreview, score, familiarity, fact, plannedClub, plannedConflict, toggle, focus, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, open, context, moveVisualGrid }: {
   set: PlanningSetLayout
-  spatial: PlanningSpatialPlacement | undefined
+  spatial: PlanningGridPlacement | undefined
   displayLabel: string
   pairs: Pair[]
   assignedIds: string[]
@@ -988,15 +1033,19 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
   dropPlayer: (beforePlayerId?: string | null) => void
   open: (id: string) => void
   context: (event: ReactMouseEvent, playerId: string) => void
+  moveVisualGrid: (cell: PlanningVisualGridCell) => void
 }) {
   const members = assignedIds.map(id => players.find(player => player.id === id)).filter((player): player is Player => Boolean(player))
   const coverageOptions = showCoverages ? coverages.filter(player => !members.some(member => member.id === player.id)) : []
   const options = [...members.map(player => ({ player, coverage: false as const })), ...coverageOptions.map(player => ({ player, coverage: true as const }))]
   const grouped = set.slotIds.length > 1
-  const { ref: cardsRef, capacity } = useCompactCapacity()
+  const { ref: cardsRef, capacity } = useCompactCapacity(spatial?.isGoalkeeper ? 1 : 3)
   const articleRef = useRef<HTMLElement | null>(null)
   const compactRectRef = useRef<PlanningSetRect | null>(null)
   const [expansionLayout, setExpansionLayout] = useState<PlanningSetExpansion | null>(null)
+  const [visualGridPreview, setVisualGridPreview] = useState<PlanningVisualGridCell | null>(null)
+  const visualDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; moved: boolean } | null>(null)
+  const suppressLegendClickRef = useRef(false)
   const visible = expanded ? options : options.slice(0, capacity)
   const hidden = Math.max(0, options.length - visible.length)
   const linePosition = pairs[0]?.ip.position ?? ''
@@ -1067,10 +1116,52 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
     return () => window.removeEventListener('resize', refresh)
   }, [expanded, options.length])
 
+  function snappedVisualGridCell(clientX: number, clientY: number): PlanningVisualGridCell {
+    const article = articleRef.current
+    const pitch = article?.parentElement
+    if (!pitch) return { row: spatial?.gridRow ?? 3, column: spatial?.gridColumn ?? 3 }
+    const rect = pitch.getBoundingClientRect()
+    const rawX = ((clientX - rect.left) / Math.max(1, rect.width)) * 100
+    const rawY = ((clientY - rect.top) / Math.max(1, rect.height)) * 100
+    const column = PLANNING_VISUAL_GRID_COLUMNS.reduce((best, candidate, index) => Math.abs(candidate - rawX) < Math.abs(PLANNING_VISUAL_GRID_COLUMNS[best] - rawX) ? index : best, 0) + 1
+    const row = PLANNING_VISUAL_GRID_ROWS.reduce((best, candidate, index) => Math.abs(candidate - rawY) < Math.abs(PLANNING_VISUAL_GRID_ROWS[best] - rawY) ? index : best, 0) + 1
+    return { row, column }
+  }
+
+  function startVisualDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || expanded || !spatial || spatial.isGoalkeeper) return
+    event.stopPropagation()
+    visualDragRef.current = { pointerId: event.pointerId, startClientX: event.clientX, startClientY: event.clientY, moved: false }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  function moveVisualDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = visualDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const distance = Math.hypot(event.clientX - drag.startClientX, event.clientY - drag.startClientY)
+    if (!drag.moved && distance < 4) return
+    drag.moved = true
+    event.preventDefault()
+    suppressLegendClickRef.current = true
+    setVisualGridPreview(snappedVisualGridCell(event.clientX, event.clientY))
+  }
+
+  function finishVisualDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = visualDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    visualDragRef.current = null
+    const target = drag.moved ? snappedVisualGridCell(event.clientX, event.clientY) : null
+    setVisualGridPreview(null)
+    if (target) moveVisualGrid(target)
+  }
+
   const spatialStyle = {
     ...(spatial ? {
-      '--planning-x': `${spatial.x}%`,
-      '--planning-y': `${spatial.y}%`,
+      '--planning-x': `${visualGridPreview ? PLANNING_VISUAL_GRID_COLUMNS[visualGridPreview.column - 1] : spatial.x}%`,
+      '--planning-y': `${visualGridPreview ? PLANNING_VISUAL_GRID_ROWS[visualGridPreview.row - 1] : spatial.y}%`,
+      '--planning-grid-row': String(visualGridPreview?.row ?? spatial.gridRow),
+      '--planning-grid-column': String(visualGridPreview?.column ?? spatial.gridColumn),
       '--planning-row-count': String(Math.max(spatial.rowCount, 1)),
     } : {}),
     ...(expansionLayout ? {
@@ -1086,13 +1177,26 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
     ref={articleRef}
     data-spatial-key={spatial?.key ?? set.id}
     data-spatial-side={spatial?.side ?? 'center'}
+    data-grid-row={spatial?.gridRow}
+    data-grid-column={spatial?.gridColumn}
+    data-grid-locked={spatial?.isGoalkeeper ? 'goalkeeper' : undefined}
     data-expansion-direction={expansionLayout?.direction}
     style={spatialStyle}
-    className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${expansionLayout ? `is-expansion-${expansionLayout.axis} is-expand-${expansionLayout.direction}` : ''} ${focused ? 'is-focused' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`}
+    className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${expansionLayout ? `is-expansion-${expansionLayout.axis} is-expand-${expansionLayout.direction}` : ''} ${focused ? 'is-focused' : ''} ${visualGridPreview !== null ? 'is-visual-position-dragging' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`}
     onDragOver={event => { if (activePlayer) { event.preventDefault(); previewPlayer(null) } }}
     onDrop={event => { if (!activePlayer) return; event.preventDefault(); dropPlayer(preview ?? null) }}
   >
-    <button type="button" className="planning-set-legend" onClick={focus} title={roleSummary || displayLabel} aria-label={`Focar conjunto ${displayLabel}`}>
+    <button
+      type="button"
+      className="planning-set-legend"
+      onPointerDown={startVisualDrag}
+      onPointerMove={moveVisualDrag}
+      onPointerUp={finishVisualDrag}
+      onPointerCancel={finishVisualDrag}
+      onClick={() => { if (suppressLegendClickRef.current) { suppressLegendClickRef.current = false; return } focus() }}
+      title={spatial?.isGoalkeeper ? (roleSummary || displayLabel) : expanded ? `${roleSummary || displayLabel} · recolha o conjunto para reposicionar` : `${roleSummary || displayLabel} · arraste livremente pela grade 5×5 sem alterar a posição tática`}
+      aria-label={spatial?.isGoalkeeper ? `Focar o conjunto ${displayLabel}` : `Focar ou reposicionar visualmente o conjunto ${displayLabel} na grade 5 por 5`}
+    >
       <span>{displayLabel}</span>
     </button>
 

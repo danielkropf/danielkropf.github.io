@@ -117,7 +117,7 @@
   margin:0!important;
   padding:0 4px!important;
   justify-content:flex-end!important;
-  font-size:.66rem!important;
+  font-size:.62rem!important;
   line-height:16px!important;
   pointer-events:auto;
 }
@@ -150,7 +150,7 @@
    room to expose multiple columns. */
 .tactics-workspace-planning .planning-flex-layout{
   display:grid!important;
-  grid-template-columns:minmax(0,var(--planning-field-share,60%)) 10px minmax(0,1fr)!important;
+  grid-template-columns:minmax(0,var(--planning-field-fr,60fr)) 10px minmax(0,var(--planning-table-fr,40fr))!important;
   gap:0!important;
   height:calc(100% - 54px)!important;
   min-height:520px!important;
@@ -237,8 +237,8 @@
 .tactics-workspace-planning .planning-workspace-divider:hover>span,
 .tactics-workspace-planning .planning-workspace-divider:focus-visible>span{border-color:color-mix(in srgb,var(--dt-lime) 55%,var(--dt-border-strong));background:color-mix(in srgb,var(--dt-lime) 7%,var(--dt-surface-2))}
 
-/* Deterministic formation-aware depth map. Sets are always rendered, including
-   when empty. Only players are draggable on the field. */
+/* Planning depth map. Tactical structure creates the sets, while non-GK sets may
+   be visually rearranged on a fixed 5x5 grid. Player/set data remain unchanged. */
 .tactics-workspace-planning .planning-set-list{
   position:relative!important;
   z-index:1!important;
@@ -247,26 +247,27 @@
   height:100%!important;
   min-height:0!important;
   display:block!important;
-  padding:var(--dt-space-4)!important;
+  padding:0!important;
   overflow:hidden!important;
   opacity:1!important;
 }
 .tactics-workspace-planning .planning-set-row{
   --planning-row-count:4;
   --planning-depth-list-width:168px;
-  --planning-depth-row-height:30px;
+  --planning-depth-row-height:34px;
   --planning-depth-row-gap:4px;
   position:absolute!important;
   left:var(--planning-x,50%)!important;
   top:var(--planning-y,50%)!important;
   box-sizing:border-box!important;
   display:block!important;
-  width:18%!important;
+  width:calc(20% - 10px)!important;
   min-width:0!important;
   max-width:none!important;
-  height:clamp(116px,14%,142px)!important;
-  min-height:116px!important;
-  padding:15px 7px 7px!important;
+  height:calc(18% - 10px)!important;
+  min-height:0!important;
+  max-height:none!important;
+  padding:9px 6px 6px!important;
   border:1px solid color-mix(in srgb,var(--set-accent) 66%,var(--dt-border-strong))!important;
   border-radius:var(--dt-radius-card)!important;
   background:color-mix(in srgb,var(--set-accent) 5%,rgba(8,18,15,.94))!important;
@@ -274,8 +275,17 @@
   overflow:visible!important;
   isolation:isolate!important;
   transform:translate(-50%,-50%)!important;
-  transition:left .16s ease,top .16s ease,width .16s ease,height .16s ease,background .12s ease,box-shadow .12s ease!important;
+  transition:left .14s ease,top .14s ease,width .14s ease,height .14s ease,background .12s ease,box-shadow .12s ease!important;
 }
+/* The five movable Planning rows occupy a fixed 5x5 visual grid. Goalkeeper is
+   deliberately outside that grid and remains centred in its own bottom lane. */
+.tactics-workspace-planning .planning-set-row.planning-line-gk:not(.is-expanded){
+  left:50%!important;
+  top:95%!important;
+  width:calc(20% - 10px)!important;
+  height:calc(10% - 10px)!important;
+}
+.tactics-workspace-planning .planning-set-row.planning-line-gk .planning-set-legend{cursor:pointer!important}
 .tactics-workspace-planning .planning-set-row:hover{background:color-mix(in srgb,var(--set-accent) 8%,rgba(8,18,15,.96))!important}
 .tactics-workspace-planning .planning-set-row.is-focused{
   z-index:8!important;
@@ -289,8 +299,8 @@
   width:var(--planning-expanded-width,184px)!important;
   min-width:0!important;
   max-width:none!important;
-  height:var(--planning-expanded-height,124px)!important;
-  min-height:116px!important;
+  height:var(--planning-expanded-height,100%)!important;
+  min-height:0!important;
   transform:none!important;
 }
 .tactics-workspace-planning .planning-set-handle,
@@ -298,17 +308,17 @@
 .tactics-workspace-planning .planning-set-legend{
   position:absolute!important;
   z-index:4!important;
-  top:-11px!important;
+  top:-9px!important;
   left:50%!important;
   transform:translateX(-50%)!important;
   display:inline-flex!important;
   align-items:center!important;
   width:auto!important;
   min-width:0!important;
-  height:22px!important;
-  min-height:22px!important;
+  height:18px!important;
+  min-height:18px!important;
   max-width:calc(100% - 16px)!important;
-  padding:0 8px!important;
+  padding:0 7px!important;
   margin:0!important;
   border:1px solid color-mix(in srgb,var(--set-accent) 82%,var(--dt-border-strong))!important;
   border-radius:999px!important;
@@ -317,11 +327,13 @@
   box-shadow:none!important;
   font-size:.66rem!important;
   font-weight:800!important;
-  line-height:20px!important;
+  line-height:16px!important;
   white-space:nowrap!important;
   overflow:hidden!important;
   text-overflow:ellipsis!important;
-  cursor:pointer!important;
+  cursor:grab!important;
+  touch-action:none!important;
+  user-select:none!important;
 }
 .tactics-workspace-planning .planning-set-legend:hover,
 .tactics-workspace-planning .planning-set-legend:focus-visible{
@@ -330,6 +342,9 @@
   filter:none!important;
   transform:translateX(-50%)!important;
 }
+.tactics-workspace-planning .planning-set-row.is-visual-position-dragging{z-index:18!important;transition:none!important}
+.tactics-workspace-planning .planning-set-row.is-visual-position-dragging .planning-set-legend{cursor:grabbing!important}
+.tactics-workspace-planning .planning-set-row.is-expanded .planning-set-legend{cursor:pointer!important}
 
 /* Player depth is a list, not a stack of mini-cards. Name uses horizontal
    space first; score/potential has a protected decision column on the right. */
@@ -376,13 +391,19 @@
 .tactics-workspace-planning .planning-set-player-card,
 .tactics-workspace-planning .planning-player-drop-placeholder{
   box-sizing:border-box!important;
-  flex:0 0 var(--planning-depth-row-height)!important;
+  flex:0 0 min(var(--planning-depth-row-height),calc((100% - (2 * var(--planning-depth-row-gap))) / 3))!important;
   width:100%!important;
   min-width:0!important;
   max-width:none!important;
+  height:min(var(--planning-depth-row-height),calc((100% - (2 * var(--planning-depth-row-gap))) / 3))!important;
+  min-height:0!important;
+  max-height:var(--planning-depth-row-height)!important;
+}
+.tactics-workspace-planning .planning-set-row.is-expanded .planning-set-player-card,
+.tactics-workspace-planning .planning-set-row.is-expanded .planning-player-drop-placeholder{
+  flex-basis:var(--planning-depth-row-height)!important;
   height:var(--planning-depth-row-height)!important;
   min-height:var(--planning-depth-row-height)!important;
-  max-height:var(--planning-depth-row-height)!important;
 }
 .tactics-workspace-planning .planning-set-player-card.planning-depth-player-row{
   position:relative!important;
@@ -409,6 +430,8 @@
   background:color-mix(in srgb,var(--dt-warning) 7%,var(--dt-surface-2))!important;
 }
 .tactics-workspace-planning .planning-depth-peek-slot{
+  grid-column:1!important;
+  grid-row:1!important;
   display:grid!important;
   place-items:center!important;
   width:18px!important;
@@ -433,6 +456,8 @@
 .tactics-workspace-planning .planning-depth-peek-slot .player-peek:focus-visible{border-color:color-mix(in srgb,var(--dt-lime) 45%,var(--dt-border));color:var(--dt-lime)!important;background:color-mix(in srgb,var(--dt-lime) 5%,transparent)!important}
 .tactics-workspace-planning .planning-depth-peek-slot .player-peek svg{width:12px!important;height:12px!important}
 .tactics-workspace-planning .planning-depth-player-name{
+  grid-column:2!important;
+  grid-row:1!important;
   display:-webkit-box!important;
   width:100%!important;
   min-width:0!important;
@@ -463,7 +488,7 @@
 .tactics-workspace-planning .planning-player-silhouette{display:none!important}
 
 .tactics-workspace-planning .planning-depth-player-row.is-score-hidden{grid-template-columns:18px minmax(0,1fr)!important}
-.tactics-workspace-planning .planning-score-peek-trigger{display:inline-flex!important;align-items:center!important;justify-content:flex-end!important;min-width:0!important;outline:0!important}
+.tactics-workspace-planning .planning-score-peek-trigger{grid-column:3!important;grid-row:1!important;align-self:stretch!important;display:inline-flex!important;align-items:center!important;justify-content:flex-end!important;min-width:0!important;min-height:0!important;height:100%!important;max-height:100%!important;margin:0!important;padding:0!important;outline:0!important}
 .tactics-workspace-planning .planning-score-peek-trigger:focus-visible .overall-score{outline:1px solid color-mix(in srgb,var(--dt-lime) 65%,transparent);outline-offset:2px}
 
 /* Score peek mirrors the information density of Player Peek without adding a new
@@ -495,6 +520,9 @@
 .planning-score-tooltip-empty{margin:4px 0 0!important;color:var(--dt-text-3)!important;font-size:var(--dt-type-caption)!important;line-height:1.35!important}
 
 .tactics-workspace-planning .planning-depth-score-wrap{
+  grid-column:auto!important;
+  grid-row:auto!important;
+  align-self:center!important;
   justify-self:end!important;
   display:flex!important;
   align-items:center!important;
@@ -502,8 +530,11 @@
   width:46px!important;
   min-width:46px!important;
   max-width:46px!important;
-  height:100%!important;
+  height:24px!important;
+  min-height:0!important;
+  max-height:24px!important;
   padding:0!important;
+  margin:0!important;
   overflow:visible!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected){
@@ -768,3 +799,9 @@
   .tactics-workspace-planning .planning-depth-score-wrap .score-badge-compact b{font-size:.73rem!important}
   .tactics-workspace-planning .planning-depth-score-wrap .score-projected{width:46px!important;min-width:46px!important}
 }
+
+
+/* v0.31.14 — visual set placement remains presentation-only and uses a free 5x5 grid. */
+.tactics-workspace-planning .planning-set-manager-footer{display:flex!important;align-items:flex-end!important;justify-content:space-between!important;gap:var(--dt-space-3)!important}
+.tactics-workspace-planning .planning-set-manager-footer>div{display:flex!important;flex-wrap:wrap!important;gap:var(--dt-space-2)!important;min-width:0!important}
+.tactics-workspace-planning .planning-set-manager-footer>div>button{margin:0!important}

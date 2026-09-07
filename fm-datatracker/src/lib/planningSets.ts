@@ -1,11 +1,111 @@
 export type PlanningGroup = { id: string; name: string }
 export type TacticSlotDescriptor = { id: string; position: string; oopPosition?: string; nodeId?: string; x?: number }
-export type PlanningSetLayout = { id: string; label: string; slotIds: string[]; slotLabels?: Record<string, string>; customLabel?: boolean }
+export type PlanningSetLayout = {
+  id: string
+  label: string
+  slotIds: string[]
+  slotLabels?: Record<string, string>
+  customLabel?: boolean
+  /** Legacy v0.31.13 horizontal-only visual preference. Read for compatibility, no longer written. */
+  visualAnchorX?: number
+  /** Visual-only 5x5 Planning grid coordinates. They never change the tactical slot/role. */
+  visualGridRow?: number
+  visualGridColumn?: number
+}
 export type PlanningSetLayouts = Record<string, Record<string, PlanningSetLayout[]>>
 export type FlexiblePlanning = {
   groups: PlanningGroup[]
   slotAssignments: Record<string, Record<string, string[]>>
   setLayouts?: PlanningSetLayouts
+}
+
+
+export const PLANNING_VISUAL_GRID_SIZE = 5 as const
+export const PLANNING_VISUAL_GRID_COLUMNS = [10, 30, 50, 70, 90] as const
+export const PLANNING_VISUAL_GRID_ROWS = [9, 27, 45, 63, 81] as const
+/** Backward-compatible name used by the v0.31.13 horizontal preference. */
+export const PLANNING_VISUAL_ANCHORS = PLANNING_VISUAL_GRID_COLUMNS
+
+export type PlanningVisualGridCell = { row: number; column: number }
+
+function clampGridIndex(value: number) {
+  return Math.max(1, Math.min(PLANNING_VISUAL_GRID_SIZE, Math.round(value)))
+}
+
+export function planningVisualGridColumnFromX(value: number): number {
+  const index = PLANNING_VISUAL_GRID_COLUMNS.reduce((best, candidate, candidateIndex) =>
+    Math.abs(candidate - value) < Math.abs(PLANNING_VISUAL_GRID_COLUMNS[best] - value) ? candidateIndex : best, 0)
+  return index + 1
+}
+
+export function planningVisualGridRowForLine(line: string): number {
+  if (line === 'st') return 1
+  if (line === 'am') return 2
+  if (line === 'm') return 3
+  if (line === 'dm') return 4
+  return 5
+}
+
+export function planningVisualGridCellForSet(set: PlanningSetLayout, fallbackX: number, fallbackLine: string): PlanningVisualGridCell {
+  const persistedRow = Number(set.visualGridRow)
+  const persistedColumn = Number(set.visualGridColumn)
+  if (Number.isFinite(persistedRow) && Number.isFinite(persistedColumn)) {
+    return { row: clampGridIndex(persistedRow), column: clampGridIndex(persistedColumn) }
+  }
+  const legacyX = Number.isFinite(set.visualAnchorX) ? Number(set.visualAnchorX) : fallbackX
+  return { row: planningVisualGridRowForLine(fallbackLine), column: planningVisualGridColumnFromX(legacyX) }
+}
+
+function withVisualGridCell(set: PlanningSetLayout, cell: PlanningVisualGridCell): PlanningSetLayout {
+  const { visualAnchorX: _legacyAnchor, ...rest } = set
+  return { ...rest, visualGridRow: clampGridIndex(cell.row), visualGridColumn: clampGridIndex(cell.column) }
+}
+
+/**
+ * Moves a non-goalkeeper set freely inside the visual 5x5 Planning grid.
+ * Tactical slot ids, positions, functions and player allocations are untouched.
+ * An occupied target cell swaps with the source cell, so sets never overlap.
+ */
+export function movePlanningSetVisualGrid(
+  planning: FlexiblePlanning,
+  tacticId: string,
+  groupId: string,
+  sets: PlanningSetLayout[],
+  setId: string,
+  requested: PlanningVisualGridCell,
+  currentCells: Record<string, PlanningVisualGridCell>,
+): FlexiblePlanning {
+  const source = sets.find(set => set.id === setId)
+  const sourceCell = currentCells[setId]
+  if (!source || !sourceCell) return planning
+
+  const target = { row: clampGridIndex(requested.row), column: clampGridIndex(requested.column) }
+  if (target.row === sourceCell.row && target.column === sourceCell.column) return planning
+
+  const occupant = sets.find(set => {
+    if (set.id === setId) return false
+    const cell = currentCells[set.id]
+    return cell?.row === target.row && cell?.column === target.column
+  })
+
+  const next = sets.map(set => {
+    if (set.id === setId) return withVisualGridCell(set, target)
+    if (occupant && set.id === occupant.id) return withVisualGridCell(set, sourceCell)
+    return set
+  })
+  return withLayouts(planning, tacticId, groupId, next)
+}
+
+/** Restores tactic-derived pitch cells without changing grouping/order/labels. */
+export function restorePlanningSetVisualGrid(planning: FlexiblePlanning, tacticId: string, groupId: string, sets: PlanningSetLayout[]): FlexiblePlanning {
+  let changed = false
+  const next = sets.map(set => {
+    if (!Number.isFinite(set.visualAnchorX) && !Number.isFinite(set.visualGridRow) && !Number.isFinite(set.visualGridColumn)) return set
+    changed = true
+    const { visualAnchorX: _visualAnchorX, visualGridRow: _visualGridRow, visualGridColumn: _visualGridColumn, ...rest } = set
+    return rest
+  })
+  return changed ? withLayouts(planning, tacticId, groupId, next) : planning
 }
 
 const compactPosition = (position: string) => position.toUpperCase().replace(/[^A-Z]/g, '')
@@ -160,7 +260,7 @@ export function groupAdjacentPlanningSets(planning: FlexiblePlanning, tacticId: 
   const slotIds = [...first.slotIds, ...second.slotIds]
   const firstPosition = slots.find(slot => slot.id === slotIds[0])?.position ?? first.label
   const slotLabels = Object.fromEntries(slotIds.map(slotId => { const sourceSet = first.slotIds.includes(slotId) ? first : second; return [slotId, planningSetDisplayLabel(sourceSet, sets, slots)] }))
-  const grouped: PlanningSetLayout = { id: newId, label: defaultSetLabel(firstPosition, slotIds.length), slotIds, slotLabels }
+  const grouped: PlanningSetLayout = { id: newId, label: defaultSetLabel(firstPosition, slotIds.length), slotIds, slotLabels, ...(Number.isFinite(first.visualGridRow) && Number.isFinite(first.visualGridColumn) ? { visualGridRow: first.visualGridRow, visualGridColumn: first.visualGridColumn } : Number.isFinite(first.visualAnchorX) ? { visualAnchorX: first.visualAnchorX } : {}) }
   const nextSets = [...sets]
   nextSets.splice(firstIndex, 2, grouped)
   const groupAssignments = { ...(planning.slotAssignments[groupId] ?? {}) }
@@ -222,7 +322,7 @@ export function splitPlanningSet(planning: FlexiblePlanning, tacticId: string, g
   if (!source || source.slotIds.length < 2) return planning
   const slotById = new Map(slots.map(slot => [slot.id, slot]))
   const sourceIndex = sets.findIndex(set => set.id === setId)
-  const replacements = source.slotIds.map(id => ({ id, label: source.slotLabels?.[id]?.trim() || defaultSetLabel(slotById.get(id)?.position ?? id), slotIds: [id] }))
+  const replacements: PlanningSetLayout[] = source.slotIds.map((id, index) => ({ id, label: source.slotLabels?.[id]?.trim() || defaultSetLabel(slotById.get(id)?.position ?? id), slotIds: [id], ...(index === 0 && Number.isFinite(source.visualGridRow) && Number.isFinite(source.visualGridColumn) ? { visualGridRow: source.visualGridRow, visualGridColumn: source.visualGridColumn } : index === 0 && Number.isFinite(source.visualAnchorX) ? { visualAnchorX: source.visualAnchorX } : {}) }))
   const nextSets = [...sets]
   nextSets.splice(sourceIndex, 1, ...replacements)
   const previousPlayers = planning.slotAssignments[groupId]?.[setId] ?? []

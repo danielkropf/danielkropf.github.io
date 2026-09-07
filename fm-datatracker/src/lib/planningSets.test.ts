@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canGroupAdjacentPlanningSets, defaultPlanningSets, groupAdjacentPlanningSets, groupEquivalentSets, layoutsFor, movePlayerToSet, planningSetDisplayLabel, planningSlotDisplayLabel, positionFamily, primarySetForPlayer, renamePlanningSet, renamePlanningSlotLabel, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, splitPlanningSet, type FlexiblePlanning } from './planningSets'
+import { canGroupAdjacentPlanningSets, defaultPlanningSets, groupAdjacentPlanningSets, groupEquivalentSets, layoutsFor, movePlanningSetVisualGrid, movePlayerToSet, planningSetDisplayLabel, planningSlotDisplayLabel, planningVisualGridCellForSet, positionFamily, primarySetForPlayer, renamePlanningSet, renamePlanningSlotLabel, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, restorePlanningSetVisualGrid, splitPlanningSet, type FlexiblePlanning } from './planningSets'
 
 const slots = [
   { id: 'dc-l', position: 'DCL' },
@@ -122,6 +122,47 @@ describe('flexible planning sets', () => {
     grouped = layoutsFor(planning, 't1', 'principal', tacticalSlots)
     expect(planningSlotDisplayLabel(grouped[0], 'dc1', tacticalSlots)).toBe('DC esquerdo')
     expect(planningSlotDisplayLabel(grouped[0], 'dc2', tacticalSlots)).toBe('D(C) 2')
+  })
+
+
+  it('moves a set freely across the 5x5 visual grid and swaps an occupied cell without changing tactical slots or allocations', () => {
+    const tacticalSlots = [
+      { id: 'left', position: 'D(C)', x: 29 },
+      { id: 'centre', position: 'D(C)', x: 50 },
+      { id: 'right', position: 'D(C)', x: 71 },
+    ]
+    const sets = defaultPlanningSets(tacticalSlots)
+    const planning: FlexiblePlanning = {
+      groups: [{ id: 'principal', name: 'Principal' }],
+      slotAssignments: { principal: { left: ['a'], centre: ['b'], right: ['c'] } },
+    }
+    const moved = movePlanningSetVisualGrid(planning, 't1', 'principal', sets, 'left', { row: 2, column: 3 }, {
+      left: { row: 5, column: 2 }, centre: { row: 2, column: 3 }, right: { row: 5, column: 4 },
+    })
+    const movedSets = layoutsFor(moved, 't1', 'principal', tacticalSlots)
+    expect(movedSets.find(set => set.id === 'left')).toMatchObject({ slotIds: ['left'], visualGridRow: 2, visualGridColumn: 3 })
+    expect(movedSets.find(set => set.id === 'centre')).toMatchObject({ slotIds: ['centre'], visualGridRow: 5, visualGridColumn: 2 })
+    expect(moved.slotAssignments).toEqual(planning.slotAssignments)
+  })
+
+  it('clamps visual grid moves, migrates a legacy horizontal anchor, and restores tactic-derived cells independently', () => {
+    const tacticalSlots = [{ id: 'dm', position: 'DM(C)', x: 50 }, { id: 'mc', position: 'M(C)', x: 50 }]
+    const sets = [{ ...defaultPlanningSets(tacticalSlots)[0], visualAnchorX: 90 }, defaultPlanningSets(tacticalSlots)[1]]
+    expect(planningVisualGridCellForSet(sets[0], 50, 'dm')).toEqual({ row: 4, column: 5 })
+    const planning: FlexiblePlanning = { groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: { principal: { dm: ['a'], mc: ['b'] } } }
+    const moved = movePlanningSetVisualGrid(planning, 't1', 'principal', sets, 'dm', { row: 99, column: -2 }, {
+      dm: { row: 4, column: 5 }, mc: { row: 3, column: 3 },
+    })
+    const movedSets = layoutsFor(moved, 't1', 'principal', tacticalSlots)
+    expect(movedSets.find(set => set.id === 'dm')).toMatchObject({ visualGridRow: 5, visualGridColumn: 1 })
+    expect(movedSets.find(set => set.id === 'dm')?.visualAnchorX).toBeUndefined()
+    const restored = restorePlanningSetVisualGrid(moved, 't1', 'principal', movedSets)
+    const restoredSets = layoutsFor(restored, 't1', 'principal', tacticalSlots)
+    expect(restoredSets.map(set => ({ id: set.id, row: set.visualGridRow, column: set.visualGridColumn, legacy: set.visualAnchorX }))).toEqual([
+      { id: 'dm', row: undefined, column: undefined, legacy: undefined },
+      { id: 'mc', row: undefined, column: undefined, legacy: undefined },
+    ])
+    expect(restored.slotAssignments).toEqual(planning.slotAssignments)
   })
 
 })

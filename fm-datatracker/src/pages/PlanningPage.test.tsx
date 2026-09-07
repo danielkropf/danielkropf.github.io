@@ -267,18 +267,78 @@ describe('PlanningPage 3C', () => {
     expect(screen.getByText('Nota')).not.toBeNull()
   })
 
-  it('uses a draggable field/table separator and restores the canonical 60/40 split on double click', async () => {
+  it('uses a draggable field/table separator and restores the exact canonical 60/40 split from either side without drift', async () => {
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
     expect(await screen.findByText('Jogador Teste')).not.toBeNull()
     const layout = view.container.querySelector<HTMLElement>('.planning-flex-layout')!
     const separator = screen.getByRole('separator', { name: 'Ajustar largura do campo e da tabela' })
-    expect(layout.style.getPropertyValue('--planning-field-share')).toBe('60%')
+    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
+    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
     expect(view.container.querySelector('.planning-panel-focus-button')).toBeNull()
 
+    layout.getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 700, width: 1000, height: 700, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    // With a 10 px divider, the field owns 60% of the remaining 990 px.
+    // Starting a resize exactly at that divider centre must therefore stay 60/40,
+    // instead of creeping upward because the percentage was measured against 990
+    // but applied against the full 1000 px grid.
+    fireEvent.pointerDown(separator, { pointerId: 7, button: 0, clientX: 599 })
+    fireEvent.pointerUp(separator, { pointerId: 7, clientX: 599 })
+    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
+    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
+
     fireEvent.keyDown(separator, { key: 'ArrowRight' })
-    expect(layout.style.getPropertyValue('--planning-field-share')).toBe('62%')
+    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('62fr')
+    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('38fr')
     fireEvent.doubleClick(separator)
-    expect(layout.style.getPropertyValue('--planning-field-share')).toBe('60%')
+    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
+    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
+
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' })
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' })
+    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('56fr')
+    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('44fr')
+    fireEvent.doubleClick(separator)
+    fireEvent.doubleClick(separator)
+    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
+    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
+  })
+
+  it('applies a saved free 5x5 visual grid cell without changing the tactic and can restore tactic-derived field positions independently', async () => {
+    mocks.loadConfig.mockResolvedValue({
+      planning: {
+        groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }],
+        slotAssignments: {},
+        setLayouts: { tactic: { principal: [
+          { id: 'slot-1', label: 'D (C)', slotIds: ['slot-1'], visualGridRow: 2, visualGridColumn: 5 },
+          { id: 'slot-2', label: 'M (C)', slotIds: ['slot-2'] },
+        ] } },
+      },
+      tactics: [{
+        id: 'tactic', name: 'Tática',
+        ipAssignments: [
+          { playerId: 'slot-1', nodeId: '1', position: 'D (C)', roleCode: 'CD', roleName: 'Central Defender' },
+          { playerId: 'slot-2', nodeId: '2', position: 'M (C)', roleCode: 'AP', roleName: 'Advanced Playmaker' },
+        ],
+        oopAssignments: [
+          { playerId: 'slot-1', nodeId: '1', position: 'D (C)', roleCode: 'CB', roleName: 'Centre Back' },
+          { playerId: 'slot-2', nodeId: '2', position: 'DM (C)', roleCode: 'DM', roleName: 'Defensive Midfielder' },
+        ],
+      }],
+      selected_tactic_id: 'tactic',
+    })
+
+    const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    const dcSet = [...view.container.querySelectorAll<HTMLElement>('.planning-set-row')].find(row => row.querySelector('.planning-set-legend')?.textContent?.includes('D'))!
+    expect(dcSet.style.getPropertyValue('--planning-x')).toBe('90%')
+    expect(dcSet.style.getPropertyValue('--planning-y')).toBe('27%')
+    expect(dcSet.dataset.gridRow).toBe('2')
+    expect(dcSet.dataset.gridColumn).toBe('5')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Organizar posições' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar posições do campo' }))
+    await waitFor(() => expect(dcSet.style.getPropertyValue('--planning-y')).not.toBe('27%'))
+    expect(screen.getByText('Organização visual de Principal; arraste as legendas livremente pela grade 5×5. A tática não é alterada.')).not.toBeNull()
   })
 
   it('uses the canonical header context menu to remove and restore Planning roster columns', async () => {
