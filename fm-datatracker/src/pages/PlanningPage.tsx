@@ -307,8 +307,8 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     const localPairs = setPairs(set)
     return planningPitchSetHeader(
       displaySetLabel(set),
-      localPairs.map(pair => pair.ip.roleName || pair.ip.roleCode),
-      localPairs.map(pair => pair.oop.roleName || pair.oop.roleCode),
+      localPairs.map(pair => pair.ip.roleCode || pair.ip.roleName),
+      localPairs.map(pair => pair.oop.roleCode || pair.oop.roleName),
     )
   }
   const spatialPlacements = useMemo(() => {

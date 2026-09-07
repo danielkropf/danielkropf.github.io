@@ -112,6 +112,40 @@
   gap:3px!important;
   overflow:visible!important;
 }
+
+/* v0.31.21 — compact player cards are sized by the set, not by the legacy
+   Option-2 3.8:1 card contract. The grid owns the row dimensions: each of the
+   three slots stretches to the complete useful width and exactly one third of
+   the useful height (minus the two 3px gaps). */
+.tactics-workspace-planning .planning-pitch-list-page .planning-set-row:not(.is-expanded) .planning-set-cards.planning-set-list-rows{
+  position:static!important;
+  inset:auto!important;
+  transform:none!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  flex:none!important;
+  align-items:stretch!important;
+  justify-content:stretch!important;
+  justify-items:stretch!important;
+  align-content:stretch!important;
+}
+.tactics-workspace-planning .planning-pitch-list-page .planning-set-row:not(.is-expanded) .planning-set-list-rows>.planning-depth-player-row{
+  box-sizing:border-box!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  flex:none!important;
+  aspect-ratio:auto!important;
+  align-self:stretch!important;
+  justify-self:stretch!important;
+}
 .tactics-workspace-planning .planning-pitch-list-page .planning-set-row.is-expanded .planning-depth-player-row{
   flex:0 0 30px!important;
   height:30px!important;

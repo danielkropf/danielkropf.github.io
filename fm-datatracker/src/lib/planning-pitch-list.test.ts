@@ -6,9 +6,9 @@ describe('planning pitch list presentation contract', () => {
     expect(PLANNING_PITCH_LIST_CAPACITY).toBe(3)
   })
 
-  it('formats the centered set header as position + IP/OOP roles', () => {
-    expect(planningPitchSetHeader('D(C)', ['Central Defender', 'Central Defender'], ['Cover'])).toBe(
-      'D(C) | IP: Central Defender - OOP: Cover',
+  it('formats the centered set header as position + abbreviated IP/OOP roles', () => {
+    expect(planningPitchSetHeader('D(C)', ['BPD', 'BPD'], ['CD'])).toBe(
+      'D(C) | IP: BPD - OOP: CD',
     )
   })
 
