@@ -984,10 +984,32 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   </div>
 }
 
-function useCompactCapacity(capacity = 3) {
-  // Every Planning set, including the goalkeeper in the reserved sixth row,
-  // exposes the same three compact depth rows before +N expansion.
+function useCompactCapacity(capacity = 2) {
+  // v0.31.17: player cards use one fixed 3.8:1 proportion. Their actual pixel
+  // size follows the set, but is clamped so two cards + one gap always fit in
+  // the compact surface without distorting the approved card proportions.
   const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const ratio = 3.8
+    const gap = 6
+    const maxHeight = 52
+    const update = () => {
+      const width = element.clientWidth
+      const height = element.clientHeight
+      if (width <= 0 || height <= 0) return
+      const cardHeight = Math.max(1, Math.min(width / ratio, (height - gap) / 2, maxHeight))
+      const cardWidth = cardHeight * ratio
+      element.style.setProperty('--planning-player-card-height', `${cardHeight.toFixed(2)}px`)
+      element.style.setProperty('--planning-player-card-width', `${cardWidth.toFixed(2)}px`)
+    }
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   return { ref, capacity }
 }
 
@@ -1039,7 +1061,7 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
   const coverageOptions = showCoverages ? coverages.filter(player => !members.some(member => member.id === player.id)) : []
   const options = [...members.map(player => ({ player, coverage: false as const })), ...coverageOptions.map(player => ({ player, coverage: true as const }))]
   const grouped = set.slotIds.length > 1
-  const { ref: cardsRef, capacity } = useCompactCapacity(3)
+  const { ref: cardsRef, capacity } = useCompactCapacity(2)
   const articleRef = useRef<HTMLElement | null>(null)
   const compactRectRef = useRef<PlanningSetRect | null>(null)
   const [expansionLayout, setExpansionLayout] = useState<PlanningSetExpansion | null>(null)
@@ -1072,17 +1094,21 @@ function PlanningSetRow({ set, spatial, displayLabel, pairs, assignedIds, player
     const obstacles = [...pitch.querySelectorAll<HTMLElement>('.planning-set-row')]
       .filter(item => item !== article)
       .map(item => rectRelativeTo(item.getBoundingClientRect(), pitchRect))
+    const gap = numberVar('--planning-depth-row-gap', 6)
+    const compactInnerWidth = Math.max(1, compact.width - 12)
+    const compactInnerHeight = Math.max(1, compact.height - 15)
+    const cardHeight = Math.max(1, Math.min(compactInnerWidth / 3.8, (compactInnerHeight - gap) / 2, 52))
     return resolvePlanningSetExpansion({
       pitchWidth: pitchRect.width,
       pitchHeight: pitchRect.height,
       compact,
       obstacles,
       playerCount: options.length,
-      cardWidth: Math.max(90, compact.width - 14),
-      cardHeight: numberVar('--planning-depth-row-height', 28),
-      gap: numberVar('--planning-depth-row-gap', 1),
+      cardWidth: cardHeight * 3.8,
+      cardHeight,
+      gap,
       verticalItemsPerRow: 1,
-      horizontalItemsPerColumn: 3,
+      horizontalItemsPerColumn: 2,
     })
   }
 
@@ -1334,9 +1360,13 @@ function BoardPlayerCard({ player, snapshot, score, generalScore, scoreDetails, 
   const out = snapshot ? isPlanningOutOfPosition(familiarity) : false
   const familiarityLabel = snapshot ? planningFamiliarityLabel(familiarity) : ''
   const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, snapshot ? `Atual: ${fact.label} — ${fact.detail}` : 'Sem observação no checkpoint atual. O planejamento foi preservado, mas nenhum dado histórico foi promovido a atual.', plannedConflict.length ? `Conflito: planejado simultaneamente em ${plannedConflict.join(', ')}` : plannedClub ? `Planejado: ${plannedClub}` : 'Sem destino planejado', out ? familiarityTooltip : null].filter(Boolean).join('\n\n')
+  const ageLabel = snapshot?.age !== null && snapshot?.age !== undefined ? `${snapshot.age} anos` : '— anos'
   return <article data-planning-player-id={player.id} className={`planning-set-player-card planning-depth-player-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
     <span className="planning-depth-peek-slot">{snapshot && <PlayerPeek player={player} snapshot={snapshot} />}</span>
-    <button className="player-name planning-depth-player-name" onClick={event => { event.stopPropagation(); open() }}><span className="planning-depth-player-name-text">{out && <span className="position-warning-icon" aria-label="Fora de posição">⚠</span>}{player.current_name}</span></button>
+    <span className="planning-depth-player-copy">
+      <button className="player-name planning-depth-player-name" onClick={event => { event.stopPropagation(); open() }}><span className="planning-depth-player-name-text">{player.current_name}</span></button>
+      <span className="planning-depth-player-age">{ageLabel}</span>
+    </span>
     {showScores && <PlanningScorePeek playerName={player.current_name} generalScore={generalScore} details={scoreDetails}>
       <span className="planning-score-wrap planning-depth-score-wrap">{snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle={'Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento. Não é a evolução mais provável nem o PA/CP do Football Manager.'} /> : <span className="planning-score-unavailable" title="Sem observação no checkpoint atual">—</span>}</span>
     </PlanningScorePeek>}

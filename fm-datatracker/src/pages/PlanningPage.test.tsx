@@ -251,6 +251,8 @@ describe('PlanningPage 3C', () => {
     const pitchRow = view.container.querySelector<HTMLElement>('.planning-depth-player-row')
     expect(pitchRow).not.toBeNull()
     expect(pitchRow!.querySelector('[data-testid="player-peek"]')).not.toBeNull()
+    expect(pitchRow!.querySelector('.planning-depth-player-age')?.textContent).toBe('18 anos')
+    expect(pitchRow!.querySelector('.position-warning-icon')).toBeNull()
     expect(pitchRow!.querySelector('.planning-score-peek-trigger')).not.toBeNull()
 
     fireEvent.mouseEnter(pitchRow!.querySelector('.planning-score-peek-trigger')!)

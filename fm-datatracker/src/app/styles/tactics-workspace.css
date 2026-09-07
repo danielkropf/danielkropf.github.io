@@ -255,7 +255,6 @@
 .tactics-workspace-planning .planning-set-row{
   --planning-row-count:4;
   --planning-depth-list-width:168px;
-  --planning-depth-row-height:36px;
   --planning-depth-row-gap:3px;
   position:absolute!important;
   left:var(--planning-x,50%)!important;
@@ -390,14 +389,18 @@
 .tactics-workspace-planning .planning-visual-grid-ghost span{max-width:100%!important;color:var(--dt-warning)!important;font-size:.58rem!important;font-weight:750!important;line-height:1.15!important;text-align:center!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
 .tactics-workspace-planning .planning-visual-grid-ghost.is-swap{border-color:color-mix(in srgb,var(--dt-warning) 70%,var(--dt-border-strong))!important}
 
-/* Player depth is a list, not a stack of mini-cards. Name uses horizontal
-   space first; score/potential has a protected decision column on the right. */
+/* v0.31.17 — approved Planning player card, built as React/CSS rather than an
+   asset. The card keeps a 3.8:1 proportion and the measured size is clamped so
+   exactly two cards plus one gap always fit in a compact set. */
 .tactics-workspace-planning .planning-set-cards{
+  --planning-depth-row-gap:6px;
+  --planning-player-card-width:100%;
+  --planning-player-card-height:44px;
   box-sizing:border-box!important;
   display:flex!important;
   flex-direction:column!important;
   flex-wrap:nowrap!important;
-  align-items:stretch!important;
+  align-items:center!important;
   justify-content:flex-start!important;
   gap:var(--planning-depth-row-gap)!important;
   width:100%!important;
@@ -415,7 +418,7 @@
 .tactics-workspace-planning .planning-set-row.is-expanded.is-expansion-vertical .planning-set-cards{
   display:flex!important;
   flex-direction:column!important;
-  align-items:stretch!important;
+  align-items:center!important;
   justify-content:flex-start!important;
   gap:var(--planning-depth-row-gap)!important;
   overflow-x:hidden!important;
@@ -423,9 +426,9 @@
 }
 .tactics-workspace-planning .planning-set-row.is-expanded.is-expansion-horizontal .planning-set-cards{
   display:grid!important;
-  grid-template-rows:repeat(3,var(--planning-depth-row-height))!important;
+  grid-template-rows:repeat(2,var(--planning-player-card-height,44px))!important;
   grid-auto-flow:column!important;
-  grid-auto-columns:var(--planning-depth-list-width)!important;
+  grid-auto-columns:var(--planning-player-card-width,var(--planning-depth-list-width))!important;
   align-content:start!important;
   justify-content:start!important;
   gap:var(--planning-depth-row-gap)!important;
@@ -435,74 +438,98 @@
 .tactics-workspace-planning .planning-set-player-card,
 .tactics-workspace-planning .planning-player-drop-placeholder{
   box-sizing:border-box!important;
-  flex:0 0 min(var(--planning-depth-row-height),calc((100% - (2 * var(--planning-depth-row-gap))) / 3))!important;
-  width:100%!important;
+  flex:0 0 var(--planning-player-card-height,44px)!important;
+  width:var(--planning-player-card-width,100%)!important;
   min-width:0!important;
-  max-width:none!important;
-  height:min(var(--planning-depth-row-height),calc((100% - (2 * var(--planning-depth-row-gap))) / 3))!important;
+  max-width:100%!important;
+  height:var(--planning-player-card-height,44px)!important;
   min-height:0!important;
-  max-height:var(--planning-depth-row-height)!important;
+  max-height:none!important;
+  aspect-ratio:3.8 / 1!important;
 }
 .tactics-workspace-planning .planning-set-row.is-expanded .planning-set-player-card,
 .tactics-workspace-planning .planning-set-row.is-expanded .planning-player-drop-placeholder{
-  flex-basis:var(--planning-depth-row-height)!important;
-  height:var(--planning-depth-row-height)!important;
-  min-height:var(--planning-depth-row-height)!important;
+  flex-basis:var(--planning-player-card-height,44px)!important;
+  height:var(--planning-player-card-height,44px)!important;
+  min-height:var(--planning-player-card-height,44px)!important;
 }
+
+/* Approved Option 2 proportions: equal padding on every edge, then three stable
+   regions — Player Peek | name + age | score. The score region is reserved even
+   when notes are hidden so toggles never reflow the identity block. */
 .tactics-workspace-planning .planning-set-player-card.planning-depth-player-row{
   position:relative!important;
   z-index:1!important;
+  container-type:inline-size!important;
   display:grid!important;
-  grid-template-columns:16px minmax(0,1fr) 46px!important;
+  grid-template-columns:14% minmax(0,1fr) 26%!important;
   align-items:center!important;
   column-gap:5px!important;
   row-gap:0!important;
-  padding:2px 4px 2px 2px!important;
-  border:1px solid color-mix(in srgb,var(--set-accent) 24%,var(--dt-border))!important;
-  border-radius:5px!important;
-  background:color-mix(in srgb,var(--set-accent) 4%,var(--dt-surface-2))!important;
+  padding:5px!important;
+  border:1px solid color-mix(in srgb,var(--set-accent) 38%,var(--dt-border-strong))!important;
+  border-radius:8px!important;
+  background:color-mix(in srgb,var(--set-accent) 5%,var(--dt-surface-2))!important;
   box-shadow:none!important;
   overflow:hidden!important;
 }
 .tactics-workspace-planning .planning-set-player-card.planning-depth-player-row:hover{
-  border-color:color-mix(in srgb,var(--set-accent) 38%,var(--dt-border-strong))!important;
+  border-color:color-mix(in srgb,var(--set-accent) 58%,var(--dt-border-strong))!important;
   background:color-mix(in srgb,var(--set-accent) 9%,var(--dt-surface-2))!important;
 }
 .tactics-workspace-planning .planning-set-player-card.planning-depth-player-row.is-coverage{opacity:.72}
 .tactics-workspace-planning .planning-set-player-card.planning-depth-player-row.is-out-of-position{
-  border-color:color-mix(in srgb,var(--dt-warning) 38%,var(--dt-border-strong))!important;
-  box-shadow:inset 2px 0 0 color-mix(in srgb,var(--dt-warning) 72%,transparent)!important;
+  border-color:color-mix(in srgb,var(--dt-warning) 72%,var(--dt-border-strong))!important;
   background:color-mix(in srgb,var(--dt-warning) 7%,var(--dt-surface-2))!important;
+  box-shadow:none!important;
 }
 .tactics-workspace-planning .planning-depth-peek-slot{
   grid-column:1!important;
   grid-row:1!important;
   display:grid!important;
   place-items:center!important;
-  width:16px!important;
-  min-width:16px!important;
+  width:100%!important;
+  min-width:0!important;
   height:100%!important;
+  min-height:0!important;
 }
-.tactics-workspace-planning .planning-depth-peek-slot .player-peek-wrap{display:grid!important;place-items:center!important}
+.tactics-workspace-planning .planning-depth-peek-slot .player-peek-wrap{display:grid!important;place-items:center!important;width:100%!important;height:100%!important}
 .tactics-workspace-planning .planning-depth-peek-slot .player-peek{
   display:grid!important;
   place-items:center!important;
-  width:16px!important;
-  min-width:16px!important;
-  height:16px!important;
-  min-height:16px!important;
+  width:clamp(20px,14cqw,26px)!important;
+  min-width:clamp(20px,14cqw,26px)!important;
+  height:clamp(20px,14cqw,26px)!important;
+  min-height:clamp(20px,14cqw,26px)!important;
   padding:0!important;
-  border:1px solid var(--dt-border)!important;
+  border:1px solid color-mix(in srgb,var(--dt-text-3) 72%,var(--dt-border))!important;
   border-radius:50%!important;
   background:transparent!important;
   color:var(--dt-text-2)!important;
 }
 .tactics-workspace-planning .planning-depth-peek-slot .player-peek:hover,
-.tactics-workspace-planning .planning-depth-peek-slot .player-peek:focus-visible{border-color:color-mix(in srgb,var(--dt-lime) 45%,var(--dt-border));color:var(--dt-lime)!important;background:color-mix(in srgb,var(--dt-lime) 5%,transparent)!important}
-.tactics-workspace-planning .planning-depth-peek-slot .player-peek svg{width:12px!important;height:12px!important}
-.tactics-workspace-planning .planning-depth-player-name{
+.tactics-workspace-planning .planning-depth-peek-slot .player-peek:focus-visible{
+  border-color:color-mix(in srgb,var(--dt-lime) 48%,var(--dt-border-strong))!important;
+  color:var(--dt-lime)!important;
+  background:color-mix(in srgb,var(--dt-lime) 5%,transparent)!important;
+}
+.tactics-workspace-planning .planning-depth-peek-slot .player-peek svg{width:clamp(12px,8cqw,16px)!important;height:clamp(12px,8cqw,16px)!important}
+
+.tactics-workspace-planning .planning-depth-player-copy{
   grid-column:2!important;
   grid-row:1!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  justify-content:center!important;
+  gap:2px!important;
+  width:100%!important;
+  min-width:0!important;
+  height:100%!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+.tactics-workspace-planning .planning-depth-player-name{
   display:flex!important;
   align-items:center!important;
   justify-content:flex-start!important;
@@ -510,7 +537,6 @@
   min-width:0!important;
   max-width:100%!important;
   min-height:0!important;
-  height:100%!important;
   padding:0!important;
   margin:0!important;
   border:0!important;
@@ -519,33 +545,62 @@
   box-shadow:none!important;
   overflow:hidden!important;
   text-align:left!important;
-  font-size:.65rem!important;
-  font-weight:720!important;
-  line-height:1.05!important;
+  font-size:clamp(.62rem,6.8cqw,.78rem)!important;
+  font-weight:760!important;
+  line-height:1.02!important;
 }
 .tactics-workspace-planning .planning-depth-player-name-text{
   display:-webkit-box!important;
   width:100%!important;
   min-width:0!important;
   max-width:100%!important;
-  max-height:2.1em!important;
   overflow:hidden!important;
   text-overflow:ellipsis!important;
   white-space:normal!important;
-  overflow-wrap:break-word!important;
+  overflow-wrap:normal!important;
   word-break:normal!important;
   -webkit-box-orient:vertical!important;
   -webkit-line-clamp:2!important;
   line-clamp:2!important;
-  line-height:1.05!important;
+  line-height:1.02!important;
 }
 .tactics-workspace-planning .planning-depth-player-name:hover{color:var(--dt-lime)!important;text-decoration:none!important;filter:none!important;transform:none!important}
-.tactics-workspace-planning .planning-depth-player-name .position-warning-icon{margin-right:3px!important;font-size:.55rem!important}
-.tactics-workspace-planning .planning-player-silhouette{display:none!important}
+.tactics-workspace-planning .planning-depth-player-age{
+  display:block!important;
+  min-width:0!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+  color:var(--dt-text-2)!important;
+  font-size:clamp(.52rem,5.2cqw,.64rem)!important;
+  font-weight:620!important;
+  line-height:1!important;
+  font-variant-numeric:tabular-nums!important;
+}
+.tactics-workspace-planning .planning-player-silhouette,
+.tactics-workspace-planning .planning-depth-player-name .position-warning-icon{display:none!important}
 
-.tactics-workspace-planning .planning-depth-player-row.is-score-hidden{grid-template-columns:16px minmax(0,1fr)!important}
-.tactics-workspace-planning .planning-score-peek-trigger{grid-column:3!important;grid-row:1!important;align-self:stretch!important;display:flex!important;align-items:center!important;justify-content:flex-end!important;width:46px!important;min-width:46px!important;max-width:46px!important;min-height:0!important;height:100%!important;max-height:none!important;margin:0!important;padding:0!important;outline:0!important}
-.tactics-workspace-planning .planning-score-peek-trigger:focus-visible .overall-score{outline:1px solid color-mix(in srgb,var(--dt-lime) 65%,transparent);outline-offset:2px}
+/* Hiding notes removes only score content. Its reserved third column remains so
+   the card proportions do not shift between note/potential states. */
+.tactics-workspace-planning .planning-depth-player-row.is-score-hidden{grid-template-columns:14% minmax(0,1fr) 26%!important}
+.tactics-workspace-planning .planning-score-peek-trigger{
+  grid-column:3!important;
+  grid-row:1!important;
+  align-self:stretch!important;
+  justify-self:stretch!important;
+  display:grid!important;
+  place-items:center!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  min-height:0!important;
+  height:100%!important;
+  max-height:none!important;
+  margin:0!important;
+  padding:0!important;
+  outline:0!important;
+}
+.tactics-workspace-planning .planning-score-peek-trigger:focus-visible .overall-score{outline:1px solid color-mix(in srgb,var(--dt-lime) 65%,transparent);outline-offset:1px}
 
 /* Score peek mirrors the information density of Player Peek without adding a new
    scoring rule: GeneralScore plus the existing scores of tactic positions the player can play. */
@@ -576,108 +631,80 @@
 .planning-score-tooltip-empty{margin:4px 0 0!important;color:var(--dt-text-3)!important;font-size:var(--dt-type-caption)!important;line-height:1.35!important}
 
 .tactics-workspace-planning .planning-depth-score-wrap{
-  grid-column:auto!important;
-  grid-row:auto!important;
-  align-self:stretch!important;
-  justify-self:end!important;
-  display:flex!important;
-  align-items:center!important;
-  justify-content:flex-end!important;
-  width:46px!important;
-  min-width:46px!important;
-  max-width:46px!important;
+  display:grid!important;
+  place-items:stretch!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
   height:100%!important;
   min-height:0!important;
   max-height:none!important;
   padding:0!important;
   margin:0!important;
-  overflow:visible!important;
-}
-/* v0.31.16: current + potential no longer consume two horizontal score columns.
-   Both values share one protected 46px column and stack vertically, returning the
-   reclaimed width to the player name while keeping each numeric value centred. */
-.tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected){
-  width:46px!important;
-  min-width:46px!important;
-  max-width:46px!important;
+  overflow:hidden!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap>.score-with-projection{
-  display:flex!important;
-  flex-direction:column!important;
-  align-items:center!important;
-  justify-content:center!important;
-  gap:1px!important;
-  width:46px!important;
-  min-width:46px!important;
-  max-width:46px!important;
+  display:grid!important;
+  grid-template-columns:1fr!important;
+  grid-template-rows:1fr!important;
+  align-items:stretch!important;
+  justify-items:stretch!important;
+  gap:0!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
   height:100%!important;
   min-height:0!important;
   white-space:nowrap!important;
+}
+.tactics-workspace-planning .planning-depth-score-wrap>.score-with-projection:has(.score-projected){
+  grid-template-rows:minmax(0,1fr) minmax(0,1fr)!important;
+  gap:2px!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap .score-current,
 .tactics-workspace-planning .planning-depth-score-wrap .score-projected{
   position:relative!important;
   display:grid!important;
-  place-items:center!important;
-  width:42px!important;
-  min-width:42px!important;
-  max-width:42px!important;
-  padding:0!important;
-  border:0!important;
-  background:transparent!important;
-  gap:0!important;
-}
-.tactics-workspace-planning .planning-depth-score-wrap .score-projection-separator{display:none!important}
-.tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact{
-  box-sizing:border-box!important;
-  display:grid!important;
-  place-items:center!important;
-  width:42px!important;
-  min-width:42px!important;
-  max-width:42px!important;
-  height:24px!important;
-  min-height:24px!important;
+  place-items:stretch!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
   padding:0!important;
   margin:0!important;
-  border-radius:5px!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  gap:0!important;
+  overflow:hidden!important;
 }
-.tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected) .score-current .score-badge-compact{
-  height:18px!important;
-  min-height:18px!important;
-}
-.tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact b{
+.tactics-workspace-planning .planning-depth-score-wrap .score-projection-separator,
+.tactics-workspace-planning .planning-depth-score-wrap .score-projection-arrow{display:none!important}
+.tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact,
+.tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact,
+.tactics-workspace-planning .planning-depth-score-wrap .projected-score-badge{
+  box-sizing:border-box!important;
   display:grid!important;
   place-items:center!important;
   width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
   height:100%!important;
-  margin:0!important;
+  min-height:0!important;
+  max-height:none!important;
   padding:0!important;
-  font-size:.79rem!important;
-  font-weight:850!important;
-  font-variant-numeric:tabular-nums!important;
-  line-height:1!important;
-  letter-spacing:-.02em!important;
-  text-align:center!important;
-}
-.tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected) .score-current .score-badge-compact b{font-size:.72rem!important}
-.tactics-workspace-planning .planning-depth-score-wrap .score-projected{
-  height:14px!important;
-  min-height:14px!important;
-  max-height:14px!important;
-}
-.tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact{
-  box-sizing:border-box!important;
-  display:grid!important;
-  place-items:center!important;
-  width:42px!important;
-  min-width:42px!important;
-  max-width:42px!important;
-  height:14px!important;
-  min-height:14px!important;
-  padding:0 0 0 6px!important;
   margin:0!important;
-  border-radius:4px!important;
+  border:1px solid currentColor!important;
+  border-radius:6px!important;
+  background:color-mix(in srgb,currentColor 3%,var(--dt-surface-1))!important;
+  box-shadow:none!important;
+  outline:0!important;
+  opacity:1!important;
+  overflow:hidden!important;
 }
+.tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact b,
 .tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact b{
   display:grid!important;
   place-items:center!important;
@@ -685,31 +712,35 @@
   height:100%!important;
   margin:0!important;
   padding:0!important;
-  font-size:.62rem!important;
-  font-weight:820!important;
   font-variant-numeric:tabular-nums!important;
   line-height:1!important;
   letter-spacing:-.02em!important;
   text-align:center!important;
 }
-.tactics-workspace-planning .planning-depth-score-wrap .score-projection-arrow{
-  position:absolute!important;
-  z-index:2!important;
-  left:2px!important;
-  top:50%!important;
-  display:block!important;
-  transform:translateY(-50%)!important;
-  color:var(--dt-warning)!important;
-  font-size:.48rem!important;
-  font-weight:900!important;
-  line-height:1!important;
-  pointer-events:none!important;
+.tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact b{
+  font-size:clamp(.7rem,8.2cqw,.94rem)!important;
+  font-weight:860!important;
 }
-.tactics-workspace-planning .planning-depth-score-wrap .projected-score-badge{
-  outline:0!important;
-  outline-offset:0!important;
-  opacity:.9!important;
+.tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact b{
+  font-size:clamp(.58rem,6.6cqw,.78rem)!important;
+  font-weight:760!important;
 }
+.tactics-workspace-planning .planning-depth-score-wrap .projected-score-empty{
+  box-sizing:border-box!important;
+  display:grid!important;
+  place-items:center!important;
+  width:100%!important;
+  height:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  padding:0!important;
+  border:1px solid var(--dt-border-strong)!important;
+  border-radius:6px!important;
+  background:var(--dt-surface-1)!important;
+  color:var(--dt-text-3)!important;
+  font-size:clamp(.58rem,6.6cqw,.78rem)!important;
+}
+.tactics-workspace-planning .planning-depth-score-wrap .overall-score .score-meter{display:none!important}
 
 /* Planning scores use the numeric value itself as the signal. The old meter line
    added visual noise and biased the number upward inside compact badges. */
@@ -891,17 +922,6 @@
 
 @media(max-width:1380px){
   .tactics-workspace-planning .planning-set-row{--planning-depth-list-width:162px}
-  .tactics-workspace-planning .planning-depth-player-row{grid-template-columns:16px minmax(0,1fr) 43px!important;column-gap:4px!important}
-  .tactics-workspace-planning .planning-score-peek-trigger{width:43px!important;min-width:43px!important;max-width:43px!important}
-  .tactics-workspace-planning .planning-depth-score-wrap,
-  .tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected),
-  .tactics-workspace-planning .planning-depth-score-wrap>.score-with-projection{width:43px!important;min-width:43px!important;max-width:43px!important}
-  .tactics-workspace-planning .planning-depth-score-wrap .score-current,
-  .tactics-workspace-planning .planning-depth-score-wrap .score-projected,
-  .tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact,
-  .tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact{width:39px!important;min-width:39px!important;max-width:39px!important}
-  .tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact b{font-size:.72rem!important}
-  .tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact b{font-size:.59rem!important}
 }
 
 
