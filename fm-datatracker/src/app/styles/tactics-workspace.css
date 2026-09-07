@@ -453,11 +453,11 @@
   position:relative!important;
   z-index:1!important;
   display:grid!important;
-  grid-template-columns:16px minmax(0,1fr) auto!important;
+  grid-template-columns:16px minmax(0,1fr) 46px!important;
   align-items:center!important;
-  column-gap:7px!important;
+  column-gap:5px!important;
   row-gap:0!important;
-  padding:2px 5px 2px 2px!important;
+  padding:2px 4px 2px 2px!important;
   border:1px solid color-mix(in srgb,var(--set-accent) 24%,var(--dt-border))!important;
   border-radius:5px!important;
   background:color-mix(in srgb,var(--set-accent) 4%,var(--dt-surface-2))!important;
@@ -519,31 +519,32 @@
   box-shadow:none!important;
   overflow:hidden!important;
   text-align:left!important;
-  font-size:.62rem!important;
+  font-size:.65rem!important;
   font-weight:720!important;
-  line-height:1.1!important;
+  line-height:1.05!important;
 }
 .tactics-workspace-planning .planning-depth-player-name-text{
   display:-webkit-box!important;
   width:100%!important;
   min-width:0!important;
   max-width:100%!important;
-  max-height:2.25em!important;
+  max-height:2.1em!important;
   overflow:hidden!important;
   text-overflow:ellipsis!important;
   white-space:normal!important;
-  overflow-wrap:anywhere!important;
+  overflow-wrap:break-word!important;
+  word-break:normal!important;
   -webkit-box-orient:vertical!important;
   -webkit-line-clamp:2!important;
   line-clamp:2!important;
-  line-height:1.1!important;
+  line-height:1.05!important;
 }
 .tactics-workspace-planning .planning-depth-player-name:hover{color:var(--dt-lime)!important;text-decoration:none!important;filter:none!important;transform:none!important}
 .tactics-workspace-planning .planning-depth-player-name .position-warning-icon{margin-right:3px!important;font-size:.55rem!important}
 .tactics-workspace-planning .planning-player-silhouette{display:none!important}
 
 .tactics-workspace-planning .planning-depth-player-row.is-score-hidden{grid-template-columns:16px minmax(0,1fr)!important}
-.tactics-workspace-planning .planning-score-peek-trigger{grid-column:3!important;grid-row:1!important;align-self:center!important;display:inline-flex!important;align-items:center!important;justify-content:flex-end!important;min-width:0!important;min-height:24px!important;height:24px!important;max-height:24px!important;margin:0!important;padding:0!important;outline:0!important}
+.tactics-workspace-planning .planning-score-peek-trigger{grid-column:3!important;grid-row:1!important;align-self:stretch!important;display:flex!important;align-items:center!important;justify-content:flex-end!important;width:46px!important;min-width:46px!important;max-width:46px!important;min-height:0!important;height:100%!important;max-height:none!important;margin:0!important;padding:0!important;outline:0!important}
 .tactics-workspace-planning .planning-score-peek-trigger:focus-visible .overall-score{outline:1px solid color-mix(in srgb,var(--dt-lime) 65%,transparent);outline-offset:2px}
 
 /* Score peek mirrors the information density of Player Peek without adding a new
@@ -577,7 +578,7 @@
 .tactics-workspace-planning .planning-depth-score-wrap{
   grid-column:auto!important;
   grid-row:auto!important;
-  align-self:center!important;
+  align-self:stretch!important;
   justify-self:end!important;
   display:flex!important;
   align-items:center!important;
@@ -585,44 +586,49 @@
   width:46px!important;
   min-width:46px!important;
   max-width:46px!important;
-  height:24px!important;
+  height:100%!important;
   min-height:0!important;
-  max-height:24px!important;
+  max-height:none!important;
   padding:0!important;
   margin:0!important;
   overflow:visible!important;
 }
+/* v0.31.16: current + potential no longer consume two horizontal score columns.
+   Both values share one protected 46px column and stack vertically, returning the
+   reclaimed width to the player name while keeping each numeric value centred. */
 .tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected){
-  width:95px!important;
-  min-width:95px!important;
-  max-width:95px!important;
+  width:46px!important;
+  min-width:46px!important;
+  max-width:46px!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap>.score-with-projection{
-  display:inline-flex!important;
-  flex-direction:row!important;
+  display:flex!important;
+  flex-direction:column!important;
   align-items:center!important;
-  justify-content:flex-end!important;
-  gap:2px!important;
-  width:auto!important;
-  min-width:0!important;
-  max-width:100%!important;
-  height:auto!important;
+  justify-content:center!important;
+  gap:1px!important;
+  width:46px!important;
+  min-width:46px!important;
+  max-width:46px!important;
+  height:100%!important;
+  min-height:0!important;
   white-space:nowrap!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap .score-current,
 .tactics-workspace-planning .planning-depth-score-wrap .score-projected{
   position:relative!important;
-  display:inline-flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  min-width:0!important;
+  display:grid!important;
+  place-items:center!important;
+  width:42px!important;
+  min-width:42px!important;
+  max-width:42px!important;
   padding:0!important;
   border:0!important;
   background:transparent!important;
-  gap:1px!important;
+  gap:0!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap .score-projection-separator{display:none!important}
-.tactics-workspace-planning .planning-depth-score-wrap .score-badge-compact{
+.tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact{
   box-sizing:border-box!important;
   display:grid!important;
   place-items:center!important;
@@ -635,7 +641,11 @@
   margin:0!important;
   border-radius:5px!important;
 }
-.tactics-workspace-planning .planning-depth-score-wrap .score-badge-compact b{
+.tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected) .score-current .score-badge-compact{
+  height:18px!important;
+  min-height:18px!important;
+}
+.tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact b{
   display:grid!important;
   place-items:center!important;
   width:100%!important;
@@ -649,18 +659,51 @@
   letter-spacing:-.02em!important;
   text-align:center!important;
 }
+.tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected) .score-current .score-badge-compact b{font-size:.72rem!important}
 .tactics-workspace-planning .planning-depth-score-wrap .score-projected{
-  width:49px!important;
-  min-width:49px!important;
+  height:14px!important;
+  min-height:14px!important;
+  max-height:14px!important;
+}
+.tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact{
+  box-sizing:border-box!important;
+  display:grid!important;
+  place-items:center!important;
+  width:42px!important;
+  min-width:42px!important;
+  max-width:42px!important;
+  height:14px!important;
+  min-height:14px!important;
+  padding:0 0 0 6px!important;
+  margin:0!important;
+  border-radius:4px!important;
+}
+.tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact b{
+  display:grid!important;
+  place-items:center!important;
+  width:100%!important;
+  height:100%!important;
+  margin:0!important;
+  padding:0!important;
+  font-size:.62rem!important;
+  font-weight:820!important;
+  font-variant-numeric:tabular-nums!important;
+  line-height:1!important;
+  letter-spacing:-.02em!important;
+  text-align:center!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap .score-projection-arrow{
-  position:static!important;
-  display:inline-block!important;
-  transform:none!important;
+  position:absolute!important;
+  z-index:2!important;
+  left:2px!important;
+  top:50%!important;
+  display:block!important;
+  transform:translateY(-50%)!important;
   color:var(--dt-warning)!important;
-  font-size:.55rem!important;
+  font-size:.48rem!important;
   font-weight:900!important;
   line-height:1!important;
+  pointer-events:none!important;
 }
 .tactics-workspace-planning .planning-depth-score-wrap .projected-score-badge{
   outline:0!important;
@@ -848,11 +891,17 @@
 
 @media(max-width:1380px){
   .tactics-workspace-planning .planning-set-row{--planning-depth-list-width:162px}
-  .tactics-workspace-planning .planning-depth-score-wrap{width:43px!important;min-width:43px!important;max-width:43px!important}
-  .tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected){width:89px!important;min-width:89px!important;max-width:89px!important}
-  .tactics-workspace-planning .planning-depth-score-wrap .score-badge-compact{width:39px!important;min-width:39px!important;max-width:39px!important;height:23px!important;min-height:23px!important}
-  .tactics-workspace-planning .planning-depth-score-wrap .score-badge-compact b{font-size:.73rem!important}
-  .tactics-workspace-planning .planning-depth-score-wrap .score-projected{width:46px!important;min-width:46px!important}
+  .tactics-workspace-planning .planning-depth-player-row{grid-template-columns:16px minmax(0,1fr) 43px!important;column-gap:4px!important}
+  .tactics-workspace-planning .planning-score-peek-trigger{width:43px!important;min-width:43px!important;max-width:43px!important}
+  .tactics-workspace-planning .planning-depth-score-wrap,
+  .tactics-workspace-planning .planning-depth-score-wrap:has(.score-projected),
+  .tactics-workspace-planning .planning-depth-score-wrap>.score-with-projection{width:43px!important;min-width:43px!important;max-width:43px!important}
+  .tactics-workspace-planning .planning-depth-score-wrap .score-current,
+  .tactics-workspace-planning .planning-depth-score-wrap .score-projected,
+  .tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact,
+  .tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact{width:39px!important;min-width:39px!important;max-width:39px!important}
+  .tactics-workspace-planning .planning-depth-score-wrap .score-current .score-badge-compact b{font-size:.72rem!important}
+  .tactics-workspace-planning .planning-depth-score-wrap .score-projected .score-badge-compact b{font-size:.59rem!important}
 }
 
 
