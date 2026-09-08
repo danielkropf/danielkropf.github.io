@@ -158,7 +158,10 @@
   flex-direction:column!important;
   justify-content:flex-start!important;
   gap:var(--planning-pitch-row-gap)!important;
-  overflow:visible!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain!important;
+  scrollbar-width:thin!important;
 }
 
 /* One row shell for BOTH occupied and empty rows. This is the only owner of

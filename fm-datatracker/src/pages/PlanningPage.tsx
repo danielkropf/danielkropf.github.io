@@ -9,6 +9,8 @@ import { ScoreBadge } from '../components/ScoreBadge'
 import { SaveState } from '../components/SaveState'
 import { CustomSelect } from '../components/CustomSelect'
 import { DataTable, type DataTableColumnLike } from '../components/data-table/DataTable'
+import { DataTableChrome, DataTableColumnMenu, TableViewSaveDialog, type DataTableColumnMenuItem, type DataTableQuickFilter, type DataTableViewOption } from '../components/data-table/DataTableChrome'
+import { readStoredDataTableViews, writeStoredDataTableViews, type StoredDataTableView } from '../components/data-table/table-view-storage'
 import { percentile, referencePairedRoleScore, type ReferenceDataset } from '../lib/reference'
 import { canPlayPosition } from '../lib/positions'
 import { isPlanningFamiliar, isPlanningOutOfPosition, planningFamiliarity, planningFamiliarityTooltip, type PlanningFamiliarity } from '../lib/planning-familiarity'
@@ -26,8 +28,10 @@ import { PLANNING_PITCH_LIST_CAPACITY, planningPitchPositionLabel, planningPitch
 import { planningSpatialLayout, type PlanningPitchLine, type PlanningSpatialPlacement } from '../lib/planning-spatial-layout'
 import { resolvePlanningSetExpansion, type PlanningSetExpansion, type PlanningSetRect } from '../lib/planning-set-expansion'
 import { loadPlanningMemberships } from '../lib/longitudinal-service'
-import { classifyPlanningMembership, resolveCurrentSnapshotMembership, type PlanningMembershipFact } from '../lib/planning-membership'
+import { classifyPlanningMembership, planningMembershipOrder, resolveCurrentSnapshotMembership, type PlanningMembershipFact } from '../lib/planning-membership'
 import type { PlayerMembershipWithClubs } from '../types/domain'
+import { ATTRIBUTE_CATALOG, type AttributeCategory } from '../lib/attributes'
+import { discoverSnapshotScalarColumns, snapshotScalarValue, type SnapshotFieldCategory, type SnapshotScalarColumn } from '../lib/player-table-columns'
 import {
   activePlanningClubs,
   derivePlanningClubIndex,
@@ -81,6 +85,7 @@ type Snapshot = {
   preferred_foot: string | null
   height: number | null
   weight: number | null
+  contract_expiry?: string | null
   normalized_data?: Record<string, unknown>
   raw_data?: Record<string, unknown>
   player_attributes: Attribute[]
@@ -106,8 +111,9 @@ type PlayerDropPreview = { setId: string; beforePlayerId: string | null }
 type PlanningUndo = Pick<Config, 'planning' | 'planning_by_club'>
 type PlanningScoreDetail = { id: string; label: string; score: number | null }
 type PlanningGridPlacement = PlanningSpatialPlacement & { gridRow: number; gridColumn: number; isGoalkeeper: boolean }
-type PickerColumnId = 'name' | 'score' | 'positions' | 'age' | 'fact' | 'plan'
-type PickerColumn = DataTableColumnLike & { id: PickerColumnId }
+type PickerDataKey = 'name' | 'score' | 'positions' | 'age' | 'nationality' | 'club' | 'squad' | 'foot' | 'height' | 'weight' | 'contract' | 'snapshot' | 'fact' | 'plan'
+type PickerColumn = DataTableColumnLike & { id: string; kind: 'data' | 'attribute' | 'snapshot'; key?: PickerDataKey; attributeKey?: string; snapshotSource?: 'normalized' | 'raw'; snapshotFieldKey?: string; snapshotCategory?: SnapshotFieldCategory }
+type PickerQuickFilterId = 'all' | 'current' | 'loaned_in' | 'loaned_out' | 'other_club' | 'unknown' | 'eligible' | 'unallocated'
 type PickerRow = {
   player: Player
   snapshot: Snapshot | undefined
@@ -125,15 +131,21 @@ const transferGroups: Group[] = [{ id: 'loan', name: 'Empréstimo' }, { id: 'sal
 const EMPTY_ROLE_OVERRIDES: Record<string, Record<string, number>> = {}
 const defaults = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }, ...transferGroups], slotAssignments: {}, setLayouts: {} })
 const planningClubStorageKey = (saveId: string) => `fm-datatracker:planning-club:${saveId}`
-const PICKER_COLUMNS: PickerColumn[] = [
-  { id: 'name', label: 'Jogador' },
-  { id: 'score', label: 'Nota' },
-  { id: 'positions', label: 'Posições' },
-  { id: 'age', label: 'Idade' },
-  { id: 'fact', label: 'Vínculo atual' },
-  { id: 'plan', label: 'Plano' },
-]
-const PICKER_WIDTHS: Record<PickerColumnId, number> = { name: 230, score: 178, positions: 150, age: 72, fact: 150, plan: 180 }
+const PICKER_LAYOUT_KEY = 'fm-datatracker:planning-player-picker-table-v1'
+const PICKER_VIEWS_KEY = 'fm-datatracker:planning-player-picker-views-v1'
+const PICKER_DATA_LABELS: Record<PickerDataKey, string> = { name: 'Jogador', score: 'Nota', positions: 'Posições', age: 'Idade', nationality: 'Nacionalidade', club: 'Clube', squad: 'Elenco', foot: 'Pé preferido', height: 'Altura', weight: 'Peso', contract: 'Fim do contrato', snapshot: 'Snapshot', fact: 'Vínculo atual', plan: 'Plano' }
+const pickerDataColumn = (key: PickerDataKey): PickerColumn => ({ id: key, kind: 'data', key, label: PICKER_DATA_LABELS[key] })
+const pickerAttributeColumn = (key: string, label: string): PickerColumn => ({ id: `attribute|${key}`, kind: 'attribute', attributeKey: key, label })
+const pickerSnapshotColumn = (column: SnapshotScalarColumn): PickerColumn => ({ id: column.id, kind: 'snapshot', snapshotSource: column.source, snapshotFieldKey: column.fieldKey, snapshotCategory: column.category, label: column.label })
+const PICKER_DEFAULT_COLUMNS: PickerColumn[] = (['name', 'score', 'positions', 'age', 'fact', 'plan'] as PickerDataKey[]).map(pickerDataColumn)
+const PICKER_WIDTHS: Record<PickerDataKey, number> = { name: 230, score: 178, positions: 150, age: 72, nationality: 140, club: 150, squad: 130, foot: 120, height: 88, weight: 82, contract: 125, snapshot: 125, fact: 160, plan: 180 }
+function readPickerLayout(): { columns: PickerColumn[]; frozenIndex: number; widths: Record<string, number> } {
+  if (typeof window === 'undefined') return { columns: PICKER_DEFAULT_COLUMNS, frozenIndex: 0, widths: {} }
+  try { const saved = JSON.parse(localStorage.getItem(PICKER_LAYOUT_KEY) ?? 'null'); if (Array.isArray(saved?.columns) && saved.columns.some((column: PickerColumn) => column.id === 'name')) return { columns: saved.columns, frozenIndex: Number.isInteger(saved.frozenIndex) ? saved.frozenIndex : 0, widths: saved.widths ?? {} } } catch {}
+  return { columns: PICKER_DEFAULT_COLUMNS, frozenIndex: 0, widths: {} }
+}
+function pickerDefaultWidth(column: PickerColumn) { if (column.kind === 'data') return PICKER_WIDTHS[column.key!]; if (column.kind === 'attribute' || column.kind === 'snapshot') return 112; return 120 }
+function pickerMinWidth(column: PickerColumn) { if (column.kind === 'data' && column.key === 'name') return 190; if (column.kind === 'data' && column.key === 'score') return 160; return 64 }
 
 const planningMembershipCache = new Map<string, Map<string, WeakMap<Player[], Promise<PlayerMembershipWithClubs[]>>>>()
 const planningRoleReferenceCache = new Map<string, WeakMap<ReferenceDataset, Map<string, number[]>>>()
@@ -204,6 +216,17 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const [expandedSets, setExpandedSets] = useState<Set<string>>(new Set())
   const [pickerSetId, setPickerSetId] = useState<string | null>(null)
   const [pickerSearch, setPickerSearch] = useState('')
+  const initialPickerLayout = useMemo(readPickerLayout, [])
+  const [pickerColumns, setPickerColumns] = useState<PickerColumn[]>(initialPickerLayout.columns)
+  const [pickerFrozenIndex, setPickerFrozenIndex] = useState(initialPickerLayout.frozenIndex)
+  const [pickerWidths, setPickerWidths] = useState<Record<string, number>>(initialPickerLayout.widths)
+  const [pickerSort, setPickerSort] = useState<{ key: string; direction: 1 | -1 }>({ key: 'score', direction: -1 })
+  const [pickerQuickFilter, setPickerQuickFilter] = useState<PickerQuickFilterId>('all')
+  const [pickerColumnMenu, setPickerColumnMenu] = useState<{ x: number; y: number; index: number } | null>(null)
+  const [pickerActiveViewId, setPickerActiveViewId] = useState<string | null>('selection')
+  const [pickerCustomViews, setPickerCustomViews] = useState<StoredDataTableView<PickerColumn>[]>(() => readStoredDataTableViews<PickerColumn>(PICKER_VIEWS_KEY))
+  const [pickerSaveViewOpen, setPickerSaveViewOpen] = useState(false)
+  const [pickerSaveViewName, setPickerSaveViewName] = useState('')
   const [loading, setLoading] = useState(false)
   const [isPending, startTransition] = useTransition()
   const loaded = useRef(false)
@@ -337,6 +360,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [pickerSetId])
+  useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem(PICKER_LAYOUT_KEY, JSON.stringify({ columns: pickerColumns, frozenIndex: pickerFrozenIndex, widths: pickerWidths })) }, [pickerColumns, pickerFrozenIndex, pickerWidths])
 
   function resolvedWeights(slot: Assignment, phase: 'IP' | 'OOP') {
     const id = slot.roleId ?? `${phase}-${positionGroup(slot.position)}-${slot.roleCode}`
@@ -428,7 +452,8 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
 
   const pickerSet = currentSets.find(set => set.id === pickerSetId) ?? null
   const pickerPairs = pickerSet ? setPairs(pickerSet) : []
-  const pickerRows = useMemo<PickerRow[]>(() => {
+  const pickerSnapshotColumns = useMemo(() => discoverSnapshotScalarColumns(players.map(player => latestByPlayer.get(player.id))).map(pickerSnapshotColumn), [players, latestByPlayer])
+  const pickerRowsBase = useMemo<PickerRow[]>(() => {
     if (!pickerSet || !currentGroup) return []
     const targetIds = new Set(planning.slotAssignments[currentGroup.id]?.[pickerSet.id] ?? [])
     return players.map(player => {
@@ -442,17 +467,98 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
         fact: membershipFact(player.id), planLabel: currentSet ? displaySetLabel(currentSet) : plannedClubName(player.id) ?? 'Não alocado',
         projectionKey: snapshot ? functionProjectionKey(projectionPairs.flatMap(pair => [{ phase: 'IP', position: pair.ip.position, roleCode: pair.ip.roleCode }, { phase: 'OOP', position: pair.oop.position, roleCode: pair.oop.roleCode }])) : '',
       }
-    }).filter(row => row.player.current_name.toLowerCase().includes(pickerSearch.trim().toLowerCase()))
-      .sort((a, b) => Number(b.compatible) - Number(a.compatible) || Number(a.alreadyInTarget) - Number(b.alreadyInTarget) || (b.score ?? -1) - (a.score ?? -1) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR'))
-  }, [pickerSet, currentGroup, planning, currentSets, players, latestByPlayer, pickerSearch, playerScores, referenceRatings, membershipFacts, planningIndex, planningClubs])
+    })
+  }, [pickerSet, currentGroup, planning, currentSets, players, latestByPlayer, playerScores, referenceRatings, membershipFacts, planningIndex, planningClubs])
+  const pickerQuickMatches = (row: PickerRow, id: PickerQuickFilterId) => id === 'all' || id === row.fact.kind || (id === 'eligible' && row.compatible) || (id === 'unallocated' && row.planLabel === 'Não alocado')
+  function pickerPlainValue(row: PickerRow, column: PickerColumn): unknown {
+    if (column.kind === 'attribute') return row.snapshot?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value ?? null
+    if (column.kind === 'snapshot') return snapshotScalarValue(row.snapshot, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! })
+    if (column.key === 'name') return row.player.current_name
+    if (column.key === 'score') return row.score
+    if (column.key === 'positions') return row.snapshot?.positions.join(', ') ?? ''
+    if (column.key === 'age') return row.snapshot?.age ?? null
+    if (column.key === 'nationality') return row.player.nationality ?? ''
+    if (column.key === 'club') return row.snapshot?.club ?? ''
+    if (column.key === 'squad') return row.snapshot?.squad ?? ''
+    if (column.key === 'foot') return row.snapshot?.preferred_foot ?? ''
+    if (column.key === 'height') return row.snapshot?.height ?? null
+    if (column.key === 'weight') return row.snapshot?.weight ?? null
+    if (column.key === 'contract') return row.snapshot?.contract_expiry ?? String(row.snapshot?.normalized_data?.contract_expiry ?? row.snapshot?.raw_data?.contract_expiry ?? '')
+    if (column.key === 'snapshot') return row.snapshot?.snapshot_date ?? ''
+    if (column.key === 'fact') return planningMembershipOrder(row.fact.kind)
+    return row.planLabel
+  }
+  const pickerRows = useMemo(() => pickerRowsBase
+    .filter(row => row.player.current_name.toLowerCase().includes(pickerSearch.trim().toLowerCase()))
+    .filter(row => pickerQuickMatches(row, pickerQuickFilter))
+    .sort((a, b) => {
+      const column = pickerColumns.find(item => item.id === pickerSort.key)
+      const av = column ? pickerPlainValue(a, column) : a.score
+      const bv = column ? pickerPlainValue(b, column) : b.score
+      const numeric = typeof av === 'number' || typeof bv === 'number'
+      const compared = numeric ? (Number(av ?? -1) - Number(bv ?? -1)) : String(av ?? '').localeCompare(String(bv ?? ''), 'pt-BR', { numeric: true })
+      return compared * pickerSort.direction || Number(b.compatible) - Number(a.compatible) || Number(a.alreadyInTarget) - Number(b.alreadyInTarget) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')
+    }), [pickerRowsBase, pickerSearch, pickerQuickFilter, pickerSort, pickerColumns])
   function renderPickerCell(row: PickerRow, column: PickerColumn): ReactNode {
-    if (column.id === 'name') return <div className="planning-picker-player"><span className="planning-picker-peek">{row.snapshot && <PlayerPeek player={row.player} snapshot={row.snapshot} />}</span><strong>{row.player.current_name}</strong>{!row.compatible && <small>Sem familiaridade</small>}</div>
-    if (column.id === 'positions') return row.snapshot?.positions.join(', ') || '—'
-    if (column.id === 'age') return row.snapshot?.age ?? '—'
-    if (column.id === 'fact') return <span className={`membership-badge is-${row.fact.kind}`}>{row.fact.label}</span>
-    if (column.id === 'plan') return row.alreadyInTarget ? <span className="planning-picker-current">Neste conjunto</span> : row.planLabel
+    if (column.kind === 'attribute') return row.snapshot?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value ?? '—'
+    if (column.kind === 'snapshot') { const value = snapshotScalarValue(row.snapshot, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }); return value === null || value === undefined || value === '' ? '—' : typeof value === 'boolean' ? value ? 'Sim' : 'Não' : String(value) }
+    if (column.key === 'name') return <div className="planning-picker-player"><span className="planning-picker-peek">{row.snapshot && <PlayerPeek player={row.player} snapshot={row.snapshot} />}</span><strong>{row.player.current_name}</strong>{!row.compatible && <small>Sem familiaridade</small>}</div>
+    if (column.key === 'positions') return row.snapshot?.positions.join(', ') || '—'
+    if (column.key === 'age') return row.snapshot?.age ?? '—'
+    if (column.key === 'nationality') return row.player.nationality || '—'
+    if (column.key === 'club') return row.snapshot?.club || '—'
+    if (column.key === 'squad') return row.snapshot?.squad || '—'
+    if (column.key === 'foot') return row.snapshot?.preferred_foot || '—'
+    if (column.key === 'height') return row.snapshot?.height ? `${row.snapshot.height} cm` : '—'
+    if (column.key === 'weight') return row.snapshot?.weight ? `${row.snapshot.weight} kg` : '—'
+    if (column.key === 'contract') return row.snapshot?.contract_expiry ?? String(row.snapshot?.normalized_data?.contract_expiry ?? row.snapshot?.raw_data?.contract_expiry ?? '—')
+    if (column.key === 'snapshot') return row.snapshot?.snapshot_date ?? '—'
+    if (column.key === 'fact') return <span className={`membership-badge is-${row.fact.kind}`}>{row.fact.label}</span>
+    if (column.key === 'plan') return row.alreadyInTarget ? <span className="planning-picker-current">Neste conjunto</span> : row.planLabel
     return row.snapshot ? <ScoreWithProjection playerId={row.player.id} currentScore={row.score} currentRank={row.rank} rankPopulation={row.rankPopulation} snapshot={row.snapshot} scoreType="function" scoreKey={row.projectionKey} variant="compact" currentTitle="Nota atual nesta função" /> : '—'
   }
+  const pickerQuickFilters = useMemo<DataTableQuickFilter[]>(() => ([
+    ['all', 'Todos'], ['current', 'No clube'], ['loaned_in', 'Recebidos'], ['loaned_out', 'Emprestados'], ['other_club', 'Outro clube'], ['unknown', 'Incerto'], ['eligible', 'Aptos'], ['unallocated', 'Não alocados'],
+  ] as Array<[PickerQuickFilterId, string]>).map(([id, label]) => ({ id, label, active: pickerQuickFilter === id, count: pickerRowsBase.filter(row => pickerQuickMatches(row, id)).length, onSelect: () => setPickerQuickFilter(id) })), [pickerRowsBase, pickerQuickFilter])
+  const pickerBuiltInViews = useMemo(() => [
+    { id: 'selection', label: 'Seleção', columns: (['name', 'score', 'positions', 'age', 'fact', 'plan'] as PickerDataKey[]).map(pickerDataColumn) },
+    { id: 'membership', label: 'Vínculo', columns: (['name', 'fact', 'club', 'squad', 'contract', 'plan'] as PickerDataKey[]).map(pickerDataColumn) },
+    { id: 'evaluation', label: 'Avaliação', columns: (['name', 'score', 'positions', 'age', 'foot'] as PickerDataKey[]).map(pickerDataColumn) },
+    { id: 'attributes', label: 'Atributos', columns: [pickerDataColumn('name'), ...ATTRIBUTE_CATALOG.map(attribute => pickerAttributeColumn(attribute.key, attribute.label))] },
+  ], [])
+  const pickerApplyView = (next: PickerColumn[], viewId: string) => { setPickerColumns(next.map(column => ({ ...column }))); setPickerFrozenIndex(0); setPickerWidths({}); setPickerActiveViewId(viewId) }
+  const pickerViewOptions = useMemo<DataTableViewOption[]>(() => [...pickerBuiltInViews.map(view => ({ id: view.id, label: view.label, active: pickerActiveViewId === view.id, onSelect: () => pickerApplyView(view.columns, view.id) })), ...pickerCustomViews.map(view => ({ id: view.id, label: view.name, custom: true, active: pickerActiveViewId === view.id, onSelect: () => { setPickerColumns(view.columns.map(column => ({ ...column }))); setPickerFrozenIndex(view.frozenIndex); setPickerWidths({ ...view.widths }); setPickerActiveViewId(view.id) }, onDelete: () => { const next = pickerCustomViews.filter(item => item.id !== view.id); setPickerCustomViews(next); writeStoredDataTableViews(PICKER_VIEWS_KEY, next); if (pickerActiveViewId === view.id) setPickerActiveViewId(null) } }))], [pickerBuiltInViews, pickerCustomViews, pickerActiveViewId])
+  const pickerMarkCustomized = () => setPickerActiveViewId(null)
+  const pickerAvailableColumns = useMemo(() => [...Object.keys(PICKER_DATA_LABELS).map(key => pickerDataColumn(key as PickerDataKey)), ...ATTRIBUTE_CATALOG.map(attribute => pickerAttributeColumn(attribute.key, attribute.label)), ...pickerSnapshotColumns], [pickerSnapshotColumns])
+  function pickerMenuBranches(action: (column: PickerColumn) => void, comparisonColumns = pickerColumns): DataTableColumnMenuItem[] {
+    const missing = (column: PickerColumn) => !comparisonColumns.some(current => current.id === column.id)
+    const leaf = (column: PickerColumn): DataTableColumnMenuItem => ({ id: column.id, label: column.label, onSelect: () => action(column) })
+    const data = pickerAvailableColumns.filter(column => column.kind === 'data' && missing(column)).map(leaf)
+    const attrs = (category: AttributeCategory) => pickerAvailableColumns.filter(column => column.kind === 'attribute' && ATTRIBUTE_CATALOG.find(attribute => attribute.key === column.attributeKey)?.category === category && missing(column)).map(leaf)
+    const snapshot = (category: SnapshotFieldCategory, label: string): DataTableColumnMenuItem | null => { const children = pickerAvailableColumns.filter(column => column.kind === 'snapshot' && column.snapshotCategory === category && missing(column)).map(leaf); return children.length ? { id: `picker-${category}`, label, children } : null }
+    return [
+      { id: 'picker-general', label: 'Geral', children: data },
+      { id: 'picker-attributes', label: 'Atributos', children: [
+        { id: 'picker-gk', label: 'Goleiro', children: attrs('goalkeeping') }, { id: 'picker-mental', label: 'Mental', children: attrs('mental') }, { id: 'picker-physical', label: 'Físico', children: attrs('physical') }, { id: 'picker-tech', label: 'Técnico', children: attrs('technical') },
+      ].filter(item => item.children.length) },
+      { id: 'picker-save', label: 'Dados do save', children: [snapshot('club', 'Clube e elenco'), snapshot('contract', 'Contrato'), snapshot('transfer', 'Transferência'), snapshot('international', 'Internacional'), snapshot('training', 'Treino'), snapshot('fitness', 'Condição e lesões'), snapshot('stats', 'Estatísticas'), snapshot('general', 'Outros')].filter((item): item is DataTableColumnMenuItem => Boolean(item)) },
+    ].filter(item => item.children?.length) as DataTableColumnMenuItem[]
+  }
+  function pickerInsert(column: PickerColumn, replace = false) { if (!pickerColumnMenu) return; pickerMarkCustomized(); const index = pickerColumnMenu.index; setPickerColumns(current => replace ? current.map((item, itemIndex) => itemIndex === index ? { ...column } : item) : [...current.slice(0, index + 1), { ...column }, ...current.slice(index + 1)]); setPickerColumnMenu(null) }
+  function pickerRemove(index: number) { if (pickerColumns[index]?.id === 'name') return; pickerMarkCustomized(); setPickerColumns(current => current.filter((_, itemIndex) => itemIndex !== index)); setPickerFrozenIndex(current => current < 0 ? -1 : Math.max(0, Math.min(current, pickerColumns.length - 2))); setPickerColumnMenu(null) }
+  function pickerAutoSize(index: number) { const column = pickerColumns[index]; if (!column) return; const length = Math.max(column.label.length, ...pickerRows.slice(0, 100).map(row => String(pickerPlainValue(row, column) ?? '').length)); pickerMarkCustomized(); setPickerWidths(current => ({ ...current, [column.id]: Math.min(420, Math.max(pickerMinWidth(column), Math.round(length * 7.2 + 36))) })) }
+  function pickerAutoSizeAll() { pickerMarkCustomized(); const next: Record<string, number> = {}; pickerColumns.forEach(column => { const length = Math.max(column.label.length, ...pickerRows.slice(0, 100).map(row => String(pickerPlainValue(row, column) ?? '').length)); next[column.id] = Math.min(420, Math.max(pickerMinWidth(column), Math.round(length * 7.2 + 36))) }); setPickerWidths(next) }
+  const pickerMenuItems = pickerColumnMenu ? [
+    { id: 'picker-insert', label: 'Inserir coluna', children: pickerMenuBranches(column => pickerInsert(column)) },
+    { id: 'picker-replace', label: 'Substituir esta coluna', children: pickerMenuBranches(column => pickerInsert(column, true), pickerColumns.filter((_, index) => index !== pickerColumnMenu.index)) },
+    { id: 'picker-remove', label: 'Remover esta coluna', disabled: pickerColumns[pickerColumnMenu.index]?.id === 'name', onSelect: () => pickerRemove(pickerColumnMenu.index) },
+    { id: 'picker-auto', label: 'Ajustar largura desta coluna', separatorBefore: true, onSelect: () => pickerAutoSize(pickerColumnMenu.index) },
+    { id: 'picker-auto-all', label: 'Ajustar largura de todas', onSelect: pickerAutoSizeAll },
+    { id: 'picker-freeze', label: 'Congelar até esta coluna', separatorBefore: true, onSelect: () => { pickerMarkCustomized(); setPickerFrozenIndex(pickerColumnMenu.index); setPickerColumnMenu(null) } },
+    { id: 'picker-unfreeze', label: 'Remover congelamento', onSelect: () => { pickerMarkCustomized(); setPickerFrozenIndex(-1); setPickerColumnMenu(null) } },
+  ] as DataTableColumnMenuItem[] : []
+  function savePickerCustomView() { const name = pickerSaveViewName.trim(); if (!name) return; const view: StoredDataTableView<PickerColumn> = { id: `custom-${crypto.randomUUID()}`, name, columns: pickerColumns.map(column => ({ ...column })), frozenIndex: pickerFrozenIndex, widths: { ...pickerWidths } }; const next = [...pickerCustomViews, view]; setPickerCustomViews(next); writeStoredDataTableViews(PICKER_VIEWS_KEY, next); setPickerActiveViewId(view.id); setPickerSaveViewName(''); setPickerSaveViewOpen(false) }
+
 
   const activePlayer = players.find(player => player.id === dragging?.id)
   return <div className="screen-page planning-page planning-flex-page planning-pitch-list-page">
@@ -463,7 +569,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       <div className="squad-pagination planning-group-selector"><button onClick={() => changeGroup(-1)} disabled={planning.groups.length < 2}>‹</button><strong>{currentGroup?.name ?? 'Nenhum elenco'}</strong><span>{planning.groups.length ? `${currentGroupIndex + 1} de ${planning.groups.length}` : '0 de 0'}</span><button onClick={() => changeGroup(1)} disabled={planning.groups.length < 2}>›</button></div>
       <label className={`coverage-toggle ${isTransferGroup || !tactic ? 'is-disabled' : ''}`}><input type="checkbox" checked={showCoverages} disabled={isTransferGroup || !tactic} onChange={event => setShowCoverages(event.target.checked)} /><span>Mostrar coberturas</span></label>
       <label className={`coverage-toggle planning-score-toggle ${isTransferGroup || !tactic ? 'is-disabled' : ''}`}><input type="checkbox" checked={showScores} disabled={isTransferGroup || !tactic} onChange={event => setShowScores(event.target.checked)} /><span>Mostrar notas</span></label>
-      <div className="planning-flex-actions"><button className="ghost undo-planning-button dt-control" onClick={undo} disabled={!undoPlanning} title="Desfazer última alteração">↶</button><button className="ghost manage-sets-button dt-control" disabled={isTransferGroup || !tactic} onClick={() => setManageSetsOpen(true)}>Organizar posições</button><button className="ghost manage-squads-button dt-control" onClick={() => setManageSquadsOpen(true)}>Gerenciar elencos</button><button className="planning-clear-current dt-control" type="button" disabled={!currentGroupPlayerIds.size} onClick={clearCurrentGroup} title={`Limpar ${currentGroup?.name ?? 'elenco'}`}>🗑</button></div>
+      <div className="planning-flex-actions"><button className="ghost undo-planning-button dt-control" onClick={undo} disabled={!undoPlanning} aria-label="Desfazer última alteração">↶</button><button className="ghost manage-sets-button dt-control" disabled={isTransferGroup || !tactic} onClick={() => setManageSetsOpen(true)}>Organizar posições</button><button className="ghost manage-squads-button dt-control" onClick={() => setManageSquadsOpen(true)}>Gerenciar elencos</button><button className="planning-clear-current dt-control" type="button" disabled={!currentGroupPlayerIds.size} onClick={clearCurrentGroup} aria-label={`Limpar ${currentGroup?.name ?? 'elenco'}`}>🗑</button></div>
     </section>
 
     <section className="planning-depth-layout planning-flex-layout planning-full-pitch-layout">
@@ -474,7 +580,39 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       </div>
     </section>
 
-    {pickerSet && currentGroup && <div className="settings-overlay planning-add-player-overlay" onClick={() => setPickerSetId(null)}><section className="planning-add-player-modal" onClick={event => event.stopPropagation()}><header><div><h2>Adicionar jogador</h2><p>{setHeaderLabel(pickerSet)}</p></div><button className="close" onClick={() => setPickerSetId(null)}>×</button></header><div className="planning-add-player-search"><input autoFocus placeholder="Buscar jogador" value={pickerSearch} onChange={event => setPickerSearch(event.target.value)} /><span>{pickerRows.length} jogadores</span></div>{membershipDiagnostic && <div className="planning-membership-warning" title={membershipDiagnostic}>Contexto factual indisponível; a escolha manual continua disponível.</div>}<div className="planning-add-player-table"><DataTable<PickerRow, PickerColumn> rows={pickerRows} columns={PICKER_COLUMNS} rowKey={row => row.player.id} renderCell={renderPickerCell} getColumnWidth={column => PICKER_WIDTHS[column.id]} getColumnMinWidth={column => column.id === 'name' ? 190 : column.id === 'score' ? 160 : 70} getColumnMaxWidth={() => 420} fillContainer frozenIndex={0} capabilities={{ sorting: false, resizing: false, reordering: false, freezing: true, selection: true }} onSelectRow={row => { if (row.alreadyInTarget) return; placePlayer(currentGroup.id, pickerSet.id, row.player.id); setPickerSetId(null) }} isRowDisabled={row => row.alreadyInTarget} getRowClassName={row => `${!row.compatible ? 'planning-picker-row-incompatible ' : ''}${row.alreadyInTarget ? 'planning-picker-row-current' : ''}`.trim()} getCellClassName={(_row, column) => column.id === 'name' ? 'planning-picker-name-cell' : column.id === 'score' ? 'planning-picker-score-cell' : undefined} emptyMessage="Nenhum jogador corresponde à busca." /></div><footer><span><i className="planning-picker-key is-compatible" /> Apto à função</span><span><i className="planning-picker-key is-incompatible" /> Sem familiaridade — ainda selecionável</span></footer></section></div>}
+    {pickerSet && currentGroup && <div className="settings-overlay planning-add-player-overlay" onClick={() => setPickerSetId(null)}>
+      <section className="planning-add-player-modal" onClick={event => event.stopPropagation()}>
+        <header><div><h2>Adicionar jogador</h2><p>{setHeaderLabel(pickerSet)}</p></div><button className="close" onClick={() => setPickerSetId(null)}>×</button></header>
+        <div className="planning-add-player-search"><input autoFocus placeholder="Buscar jogador" value={pickerSearch} onChange={event => setPickerSearch(event.target.value)} /><span>{pickerRows.length} jogadores</span></div>
+        <DataTableChrome views={pickerViewOptions} quickFilters={pickerQuickFilters} onCreateView={() => setPickerSaveViewOpen(true)} />
+        {membershipDiagnostic && <div className="planning-membership-warning">Contexto factual parcial; campos não confirmados permanecem como incertos e a escolha manual continua disponível.</div>}
+        <div className="planning-add-player-table"><DataTable<PickerRow, PickerColumn>
+          rows={pickerRows}
+          columns={pickerColumns}
+          rowKey={row => row.player.id}
+          renderCell={renderPickerCell}
+          getColumnWidth={column => pickerWidths[column.id] ?? pickerDefaultWidth(column)}
+          getColumnMinWidth={pickerMinWidth}
+          getColumnMaxWidth={() => 520}
+          sort={pickerSort}
+          onSort={key => setPickerSort(current => ({ key, direction: current.key === key ? current.direction === 1 ? -1 : 1 : key === 'score' || key === 'age' || key === 'height' || key === 'weight' ? -1 : 1 }))}
+          fillContainer
+          frozenIndex={pickerFrozenIndex}
+          capabilities={{ sorting: true, resizing: true, reordering: true, freezing: true, selection: true }}
+          onHeaderContextMenu={(event, _column, index) => { event.preventDefault(); setPickerColumnMenu({ x: event.clientX, y: event.clientY, index }) }}
+          onColumnWidthChange={(column, width) => { pickerMarkCustomized(); setPickerWidths(current => ({ ...current, [column.id]: width })) }}
+          onColumnMove={(from, to) => { if (from === to) return; pickerMarkCustomized(); setPickerColumns(current => { const next = [...current]; const item = next.splice(from, 1)[0]; next.splice(to, 0, item); return next }); setPickerFrozenIndex(current => current < 0 ? -1 : Math.max(0, Math.min(current, pickerColumns.length - 1))) }}
+          onSelectRow={row => { if (row.alreadyInTarget) return; placePlayer(currentGroup.id, pickerSet.id, row.player.id); setPickerSetId(null) }}
+          isRowDisabled={row => row.alreadyInTarget}
+          getRowClassName={row => `${!row.compatible ? 'planning-picker-row-incompatible ' : ''}${row.alreadyInTarget ? 'planning-picker-row-current' : ''}`.trim()}
+          getCellClassName={(_row, column) => column.key === 'name' ? 'planning-picker-name-cell' : column.key === 'score' ? 'planning-picker-score-cell' : undefined}
+          emptyMessage="Nenhum jogador corresponde aos filtros atuais."
+        /></div>
+        <footer><span>Jogadores sem familiaridade ficam atenuados, mas continuam selecionáveis.</span></footer>
+        {pickerColumnMenu && <DataTableColumnMenu x={pickerColumnMenu.x} y={pickerColumnMenu.y} title={pickerColumns[pickerColumnMenu.index]?.label} items={pickerMenuItems} onClose={() => setPickerColumnMenu(null)} />}
+        <TableViewSaveDialog open={pickerSaveViewOpen} value={pickerSaveViewName} onChange={setPickerSaveViewName} onCancel={() => { setPickerSaveViewOpen(false); setPickerSaveViewName('') }} onSave={savePickerCustomView} />
+      </section>
+    </div>}
 
     {manageSquadsOpen && <div className="settings-overlay" onClick={() => setManageSquadsOpen(false)}><section className="squad-manager planning-squad-manager" onClick={event => event.stopPropagation()}><header><h2>Gerenciar elencos</h2><button className="close" onClick={() => setManageSquadsOpen(false)}>×</button></header><div className="squad-manager-list">{planning.groups.map((group, index) => { const fixed = transferGroups.some(item => item.id === group.id); const previewBefore = managerGroupPreview === group.id && managerGroupDragging !== group.id; return <Fragment key={group.id}>{previewBefore && <ManagerDropPlaceholder label="Mover elenco para cá" />}<div className={`planning-squad-manager-row ${fixed ? 'fixed-planning-group' : ''} ${managerGroupDragging === group.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerGroupPreview(event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null) }} onDrop={event => { if (!managerGroupDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderGroup(managerGroupDragging, event.clientY < rect.top + rect.height / 2 ? group.id : planning.groups[index + 1]?.id ?? null); setManagerGroupDragging(null); setManagerGroupPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', group.id); setManagerGroupDragging(group.id); setManagerGroupPreview(group.id) }} onDragEnd={() => { setManagerGroupDragging(null); setManagerGroupPreview(undefined) }}>⠿</button><input value={group.name} readOnly={fixed} onChange={event => renameGroup(group.id, event.target.value)} />{fixed ? <span className="market-group-label">GRUPO MERCADO</span> : <button className="manager-trash" onClick={() => removeGroup(group.id)}>🗑</button>}</div></Fragment> })}{managerGroupDragging && managerGroupPreview === null && <ManagerDropPlaceholder label="Mover elenco para o final" />}</div><footer className="planning-squad-manager-footer"><div className="planning-add-squad"><input placeholder="Novo elenco" value={newGroup} onChange={event => setNewGroup(event.target.value)} onKeyDown={event => event.key === 'Enter' && addGroup()} /><button onClick={addGroup}>+ Adicionar</button></div><button className="danger-button clear-all-squads" disabled={!Object.keys(assignmentIndex).length} onClick={clearPlanning}>Limpar todos os elencos</button></footer></section></div>}
 
@@ -515,7 +653,7 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
     const article = articleRef.current; const pitch = article?.parentElement; if (!article || !pitch) return null
     const pitchRect = pitch.getBoundingClientRect(); const compact = compactOverride ?? rectRelativeTo(article.getBoundingClientRect(), pitchRect)
     const obstacles = [...pitch.querySelectorAll<HTMLElement>('.planning-set-row')].filter(item => item !== article).map(item => rectRelativeTo(item.getBoundingClientRect(), pitchRect))
-    return resolvePlanningSetExpansion({ pitchWidth: pitchRect.width, pitchHeight: pitchRect.height, compact, obstacles, playerCount: options.length, cardWidth: Math.max(110, compact.width - 12), cardHeight: 30, gap: 3, verticalItemsPerRow: 1, horizontalItemsPerColumn: 3 })
+    return resolvePlanningSetExpansion({ pitchWidth: pitchRect.width, pitchHeight: pitchRect.height, compact, obstacles, playerCount: options.length, cardWidth: Math.max(110, compact.width - 12), cardHeight: 30, gap: 3, verticalItemsPerRow: 1 })
   }
   function toggleExpansion() {
     if (expanded) { compactRectRef.current = null; setExpansionLayout(null); toggle(); return }
@@ -543,8 +681,8 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
   const spatialStyle = { ...(spatial ? { '--planning-x': `${spatial.x}%`, '--planning-y': `${spatial.y}%`, '--planning-grid-row': String(spatial.gridRow), '--planning-grid-column': String(spatial.gridColumn), '--planning-row-count': String(Math.max(spatial.rowCount, 1)) } : {}), ...(expansionLayout ? { '--planning-expanded-left': `${expansionLayout.left}px`, '--planning-expanded-top': `${expansionLayout.top}px`, '--planning-expanded-width': `${expansionLayout.width}px`, '--planning-expanded-height': `${expansionLayout.height}px` } : {}) } as CSSProperties
   return <article ref={articleRef} data-spatial-key={spatial?.key ?? set.id} data-spatial-side={spatial?.side ?? 'center'} data-grid-row={spatial?.gridRow} data-grid-column={spatial?.gridColumn} data-set-label={displayLabel} data-grid-locked={spatial?.isGoalkeeper ? 'goalkeeper' : undefined} style={spatialStyle} className={`planning-set-row planning-line-${planningLine(linePosition)} ${grouped ? 'is-grouped' : ''} ${expanded ? 'is-expanded' : ''} ${focused ? 'is-focused' : ''} ${visualGridPreview !== null ? 'is-visual-position-dragging' : ''} ${preview !== undefined && activePlayer ? 'is-player-drop-target' : ''}`} onPointerDown={startVisualDrag} onPointerMove={moveVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={cancelVisualDrag} onLostPointerCapture={event => { if (visualDragRef.current?.pointerId === event.pointerId) cancelVisualDrag(event) }} onDragOver={event => { if (activePlayer) { event.preventDefault(); previewPlayer(null) } }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); dropPlayer(preview ?? null) }}>
     {visualGridOverlay}
-    <button type="button" className="planning-set-legend" onClick={() => { if (suppressLegendClickRef.current) { suppressLegendClickRef.current = false; return }; focus() }} title={spatial?.isGoalkeeper ? headerLabel : `${headerLabel} · arraste pela grade 5×5 sem alterar a tática`}><span className="planning-set-legend-position">{headerLabel.split('\n')[0]}</span><span className="planning-set-legend-roles">{headerLabel.split('\n')[1] ?? ''}</span></button>
-    <button type="button" className="planning-set-add-player" title={`Adicionar jogador a ${displayLabel}`} aria-label={`Adicionar jogador a ${displayLabel}`} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); addPlayer() }}>+</button>
+    <button type="button" className="planning-set-legend" onClick={() => { if (suppressLegendClickRef.current) { suppressLegendClickRef.current = false; return }; focus() }}><span className="planning-set-legend-position">{headerLabel.split('\n')[0]}</span><span className="planning-set-legend-roles">{headerLabel.split('\n')[1] ?? ''}</span></button>
+    <button type="button" className="planning-set-add-player" aria-label={`Adicionar jogador a ${displayLabel}`} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); addPlayer() }}>+</button>
     <div className={`planning-pitch-depth-list ${isPlanningFamiliar(activeFamiliarity) ? 'is-compatible-drop' : isPlanningOutOfPosition(activeFamiliarity) ? 'is-training-drop' : ''}`} onDragOver={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; previewPlayer(insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }} onDrop={event => { if (!activePlayer) return; event.preventDefault(); event.stopPropagation(); dropPlayer(preview ?? insertionBeforePlayer(event.currentTarget, event.clientX, event.clientY, activePlayer.id, preview)) }}>
       {rowItems.map((option, index) => {
         if (!option) return <EmptyPlayerRow key={`empty-${index}`} showScores={showScores} />
@@ -582,11 +720,10 @@ function PlayerDropPlaceholder() { return <div className="planning-pitch-player-
 
 function BoardPlayerRow({ player, snapshot, score, generalScore, scoreDetails, showScores, rank, rankPopulation, coverage, source, familiarity, fact, plannedClub, plannedConflict, projectionKey, familiarityTooltip, dragging, drag, dragEnd, open, context }: { player: Player; snapshot: Snapshot | undefined; score: number | null; generalScore: number | null; scoreDetails: PlanningScoreDetail[]; showScores: boolean; rank: number | null; rankPopulation: number[]; coverage: boolean; source: string | null; familiarity: Familiarity; fact: PlanningMembershipFact; plannedClub: string | null; plannedConflict: string[]; projectionKey: string; familiarityTooltip: string; dragging: boolean; drag: (event: DragEvent<HTMLElement>) => void; dragEnd: () => void; open: () => void; context: (event: ReactMouseEvent) => void }) {
   const out = snapshot ? isPlanningOutOfPosition(familiarity) : false
-  const title = [coverage ? `Cobertura · Principal: ${source ?? 'outro conjunto'}` : null, snapshot ? `Atual: ${fact.label} — ${fact.detail}` : 'Sem observação no checkpoint atual.', plannedConflict.length ? `Conflito: ${plannedConflict.join(', ')}` : plannedClub ? `Planejado: ${plannedClub}` : 'Sem destino planejado', out ? familiarityTooltip : null].filter(Boolean).join('\n\n')
   const scoreContent = showScores ? <PlanningScorePeek playerName={player.current_name} generalScore={generalScore} details={scoreDetails} className="planning-pitch-score-trigger">
     {snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle="Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento." /> : <span className="planning-pitch-score-unavailable">—</span>}
   </PlanningScorePeek> : null
-  return <article data-planning-player-id={player.id} className={`planning-pitch-depth-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''}`} title={title || undefined} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
+  return <article data-planning-player-id={player.id} className={`planning-pitch-depth-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''}`} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
     <PlanningPitchRowCells
       showScores={showScores}
       peek={snapshot ? <PlayerPeek player={player} snapshot={snapshot} /> : null}

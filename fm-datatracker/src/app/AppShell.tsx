@@ -25,7 +25,6 @@ function AppShellContent() {
   const [importOpen, setImportOpen] = useState(false)
   const [settings, setSettings] = useState(false)
   const [elencoMenuOpen, setElencoMenuOpen] = useState(false)
-  const elencoOpenTimerRef = useRef<number | null>(null)
   const elencoCloseTimerRef = useRef<number | null>(null)
   useEffect(() => { if (selected) preloadSave(selected.id) }, [selected?.id])
   useEffect(() => {
@@ -40,25 +39,12 @@ function AppShellContent() {
     }
   }, [])
   useEffect(() => () => {
-    if (elencoOpenTimerRef.current !== null) window.clearTimeout(elencoOpenTimerRef.current)
     if (elencoCloseTimerRef.current !== null) window.clearTimeout(elencoCloseTimerRef.current)
   }, [])
-  const cancelElencoOpen = () => {
-    if (elencoOpenTimerRef.current !== null) window.clearTimeout(elencoOpenTimerRef.current)
-    elencoOpenTimerRef.current = null
-  }
+  const cancelElencoOpen = () => {}
   const cancelElencoClose = () => {
     if (elencoCloseTimerRef.current !== null) window.clearTimeout(elencoCloseTimerRef.current)
     elencoCloseTimerRef.current = null
-  }
-  const scheduleElencoOpen = () => {
-    cancelElencoClose()
-    if (elencoMenuOpen) return
-    cancelElencoOpen()
-    elencoOpenTimerRef.current = window.setTimeout(() => {
-      elencoOpenTimerRef.current = null
-      setElencoMenuOpen(true)
-    }, 420)
   }
   const scheduleElencoClose = () => {
     cancelElencoOpen()
@@ -79,9 +65,6 @@ function AppShellContent() {
   useEffect(() => {
     if (!elencoGroupActive) setElencoMenuOpen(false)
   }, [elencoGroupActive])
-  const potentialTitle = potential.available
-    ? 'Mostra os melhores scores plausíveis em um cenário positivo de carreira, na Nota Geral e por função. Não é a evolução mais provável e o PA/CP do Football Manager não é exibido.'
-    : potential.detail
   const checkpointMatchesSave = !selected || currentCheckpoint.saveId === selected.id
   const checkpointReady = !selected || (checkpointMatchesSave && currentCheckpoint.status === 'ready')
   const checkpointError = Boolean(selected && checkpointMatchesSave && currentCheckpoint.status === 'error')
@@ -90,24 +73,29 @@ function AppShellContent() {
   return <div className="shell">
     <aside>
       <div className="brand"><span>FM</span><strong>DataTracker</strong></div>
-      {saves.length > 0 && <div className="save-context">
-        <span className="save-context-label">Save ativo</span>
-        <select className="save-select" aria-label="Save ativo" value={selected?.id ?? ''} onChange={(event: { target: { value: string } }) => {
-          const save = saves.find(item => item.id === event.target.value)
-          if (save) select(save)
-        }}>
-          {saves.map(save => <option key={save.id} value={save.id}>{save.name}</option>)}
-        </select>
-      </div>}
-      {selected && <CurrentCheckpointCalendar checkpoint={checkpointMatchesSave ? currentCheckpoint : { ...currentCheckpoint, saveId: selected.id, status: 'loading', date: null, error: null }} />}
-      <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'has-load-error' : ''}`} onClick={() => potential.setShowPotential(!potential.showPotential)} title={potentialTitle} aria-pressed={potential.showPotential}>
-        <span><b aria-hidden="true">↗</b> Mostrar potencial</span><span className="potential-switch" aria-hidden="true" />
-      </button>
-      <div className="sidebar-save-state" aria-label="Estado de salvamento"><SaveStateOutlet /></div>
+      <div className="sidebar-save-stack">
+        {saves.length > 0 && <div className="save-context">
+          <div className="sidebar-save-context-header"><span className="save-context-label">Save ativo</span><div className="sidebar-save-state" aria-label="Estado de salvamento"><SaveStateOutlet /></div></div>
+          <select className="save-select" aria-label="Save ativo" value={selected?.id ?? ''} onChange={(event: { target: { value: string } }) => {
+            const save = saves.find(item => item.id === event.target.value)
+            if (save) select(save)
+          }}>
+            {saves.map(save => <option key={save.id} value={save.id}>{save.name}</option>)}
+          </select>
+        </div>}
+        {selected && <CurrentCheckpointCalendar checkpoint={checkpointMatchesSave ? currentCheckpoint : { ...currentCheckpoint, saveId: selected.id, status: 'loading', date: null, error: null }} />}
+        <button type="button" className={`potential-toggle ${potential.showPotential ? 'is-on' : ''} ${!potential.available ? 'has-load-error' : ''}`} onClick={() => potential.setShowPotential(!potential.showPotential)} aria-label={potential.available ? 'Mostrar ou ocultar potencial' : potential.detail} aria-pressed={potential.showPotential}>
+          <span><b aria-hidden="true">↗</b> Mostrar potencial</span><span className="potential-switch" aria-hidden="true" />
+        </button>
+        <div className="sidebar-save-divider" aria-hidden="true" />
+      </div>
       <nav>
         <NavLink to="/">Visão Geral</NavLink>
         <div className={`sidebar-nav-group sidebar-elenco-group ${elencoGroupActive ? 'is-active' : ''} ${elencoMenuVisible ? 'is-open' : ''}`} onPointerLeave={scheduleElencoClose}>
-          <NavLink to="/squad" className={() => `sidebar-nav-group-main ${squadActive ? 'active' : ''}`} aria-haspopup="menu" aria-expanded={elencoMenuVisible} onPointerEnter={scheduleElencoOpen} onPointerMove={() => { if (!elencoMenuVisible) scheduleElencoOpen() }} onClick={() => { cancelElencoOpen(); setElencoMenuOpen(false) }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowRight') { event.preventDefault(); cancelElencoOpen(); cancelElencoClose(); setElencoMenuOpen(true) } }}>Elenco</NavLink>
+          <div className="sidebar-nav-group-head">
+            <NavLink to="/squad" className={() => `sidebar-nav-group-main ${squadActive ? 'active' : ''}`} aria-haspopup="menu" aria-expanded={elencoMenuVisible} onPointerEnter={() => { cancelElencoOpen(); cancelElencoClose(); setElencoMenuOpen(true) }} onClick={() => { cancelElencoOpen(); setElencoMenuOpen(false) }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowRight') { event.preventDefault(); cancelElencoOpen(); cancelElencoClose(); setElencoMenuOpen(true) } }}>Elenco</NavLink>
+            <button type="button" className="sidebar-nav-group-toggle" aria-label="Abrir opções de Elenco" aria-expanded={elencoMenuVisible} onPointerEnter={() => { cancelElencoOpen(); cancelElencoClose(); setElencoMenuOpen(true) }} onFocus={() => { cancelElencoOpen(); cancelElencoClose(); setElencoMenuOpen(true) }} onClick={event => { event.preventDefault(); event.stopPropagation(); cancelElencoOpen(); cancelElencoClose(); setElencoMenuOpen(open => !open) }}><span aria-hidden="true">›</span></button>
+          </div>
           {elencoMenuVisible && <div className="sidebar-nav-subitems" role="menu" onPointerEnter={cancelElencoClose}>
             <NavLink to="/squad" role="menuitem" className={() => squadActive ? 'active' : ''} onClick={() => setElencoMenuOpen(false)}>Elenco</NavLink>
             <NavLink to="/tactics" role="menuitem" className={() => structureActive ? 'active' : ''} onClick={() => setElencoMenuOpen(false)}>Tática</NavLink>

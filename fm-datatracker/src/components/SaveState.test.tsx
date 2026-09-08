@@ -25,6 +25,12 @@ describe('SaveState global outlet', () => {
     expect(screen.queryByText('✓ Estrutura salva')).toBeNull()
   })
 
+  it('does not duplicate a plain save status as a native tooltip', async () => {
+    render(<SaveStateProvider><SaveStateOutlet /><SaveState status="✓ Salvo" /></SaveStateProvider>)
+    const status = await screen.findByText('✓ Salvo')
+    expect(status.closest('.save-state-control')?.hasAttribute('title')).toBe(false)
+  })
+
   it('preserves retry behavior after moving the state to the global outlet', async () => {
     const retry = vi.fn()
     render(<SaveStateProvider><SaveStateOutlet /><SaveState status="⚠ Falha ao salvar" detail="Falha de rede" onRetry={retry} /></SaveStateProvider>)

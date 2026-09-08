@@ -12,37 +12,62 @@
   margin-top:auto;
 }
 
-/* v0.32.2 — Elenco is the single resting entry. Its submenu opens after
-   deliberate pointer dwell and remains expanded while Elenco, Tática or
+/* Elenco is the single resting entry. The caret and the row open the submenu
+   immediately on hover; it also remains expanded while Elenco, Tática or
    Planejamento is the active surface. */
 .shell>aside nav .sidebar-nav-group{
   display:grid;
   gap:3px;
   min-width:0;
 }
-.shell>aside nav .sidebar-nav-group-main{
+.shell>aside nav .sidebar-nav-group-head{
   position:relative;
-  padding-right:28px!important;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 30px;
+  align-items:stretch;
+  min-width:0;
 }
-.shell>aside nav .sidebar-nav-group-main::after{
-  content:'›';
-  position:absolute;
-  right:10px;
-  top:50%;
-  color:var(--dt-text-3);
-  font-size:.9rem;
-  font-weight:800;
-  line-height:1;
-  transform:translateY(-50%) rotate(0deg);
+.shell>aside nav .sidebar-nav-group-main{
+  min-width:0;
+  padding-right:8px!important;
+}
+.shell>aside nav .sidebar-nav-group-toggle{
+  position:absolute!important;
+  z-index:2!important;
+  top:0!important;
+  right:0!important;
+  display:grid!important;
+  place-items:center!important;
+  width:30px!important;
+  min-width:30px!important;
+  height:40px!important;
+  min-height:40px!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0 var(--dt-radius-control) var(--dt-radius-control) 0!important;
+  background:transparent!important;
+  color:var(--dt-text-3)!important;
+  box-shadow:none!important;
+  font-size:.9rem!important;
+  font-weight:800!important;
+  line-height:1!important;
+  transform:none!important;
+}
+.shell>aside nav .sidebar-nav-group-toggle:hover,
+.shell>aside nav .sidebar-nav-group-toggle:focus-visible{
+  background:color-mix(in srgb,var(--dt-surface-3) 72%,transparent)!important;
+  color:var(--dt-text-1)!important;
+}
+.shell>aside nav .sidebar-nav-group-toggle>span{
+  display:block;
+  transform:rotate(0deg);
   transform-origin:center;
   transition:transform .12s ease,color .12s ease;
-  pointer-events:none;
 }
-.shell>aside nav .sidebar-nav-group.is-open>.sidebar-nav-group-main::after{
-  color:var(--dt-text-1);
-  transform:translateY(-50%) rotate(90deg);
-}
-.shell>aside nav .sidebar-nav-group.is-active>.sidebar-nav-group-main:not(.active){
+.shell>aside nav .sidebar-nav-group.is-open .sidebar-nav-group-toggle{color:var(--dt-text-1)!important}
+.shell>aside nav .sidebar-nav-group.is-open .sidebar-nav-group-toggle>span{transform:rotate(90deg)}
+.shell>aside nav .sidebar-nav-group.is-active .sidebar-nav-group-main:not(.active){
   border-color:color-mix(in srgb,var(--dt-lime) 30%,var(--dt-border));
   background:color-mix(in srgb,var(--dt-lime) 4%,var(--dt-surface-1));
   color:var(--dt-text-1);
@@ -67,17 +92,41 @@
 }
 
 /* All autosave surfaces publish into this single shell slot instead of page headers. */
+.shell>aside .sidebar-save-stack{
+  display:grid;
+  gap:var(--dt-space-2);
+  margin-top:var(--dt-space-6);
+}
+.shell>aside .sidebar-save-stack .save-context{
+  gap:var(--dt-space-2)!important;
+  margin-top:0!important;
+}
+.shell>aside .sidebar-save-context-header{
+  display:flex;
+  min-height:18px;
+  align-items:center;
+  justify-content:space-between;
+  gap:6px;
+}
 .shell>aside .sidebar-save-state{
   box-sizing:border-box;
   display:flex;
+  min-width:0;
+  min-height:18px;
   align-items:center;
   justify-content:flex-end;
-  width:100%;
-  min-height:20px;
-  margin-top:5px;
-  padding:0 3px;
+  margin:0;
+  padding:0;
   color:var(--dt-text-3);
 }
+.shell>aside .sidebar-save-stack .current-checkpoint-calendar{margin:0!important}
+.shell>aside .sidebar-save-stack .potential-toggle{margin:0!important}
+.shell>aside .sidebar-save-divider{
+  height:1px;
+  margin:var(--dt-space-1);
+  background:var(--dt-border);
+}
+.shell>aside .sidebar-save-stack+nav{margin-top:var(--dt-space-3)!important}
 .shell>aside .sidebar-save-state:empty{visibility:hidden}
 .shell>aside .sidebar-save-state .save-state-control{
   display:inline-flex!important;

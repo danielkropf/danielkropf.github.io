@@ -25,7 +25,7 @@ function SaveStateView({ status, detail = '', onRetry }: Props) {
   const saving = status.startsWith('Salvando')
   const saved = status.startsWith('✓')
   const className = failed ? 'save-state-failed' : saving ? 'save-state-saving' : saved ? 'save-state-saved' : ''
-  return <span className={`save-state-control ${className}`.trim()} title={detail || status} role={failed ? 'alert' : 'status'}>
+  return <span className={`save-state-control ${className}`.trim()} title={detail || undefined} role={failed ? 'alert' : 'status'}>
     <span>{status}</span>
     {failed && onRetry && <button type="button" onClick={onRetry}>Tentar novamente</button>}
   </span>
