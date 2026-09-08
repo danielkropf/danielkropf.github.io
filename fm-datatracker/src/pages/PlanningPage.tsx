@@ -12,12 +12,14 @@ import { DataTable, type DataTableColumnLike } from '../components/data-table/Da
 import { DataTableChrome, DataTableColumnMenu, TableViewSaveDialog, type DataTableColumnMenuItem, type DataTableQuickFilter, type DataTableViewOption } from '../components/data-table/DataTableChrome'
 import { readStoredDataTableViews, writeStoredDataTableViews, type StoredDataTableView } from '../components/data-table/table-view-storage'
 import { percentile, referencePairedRoleScore, type ReferenceDataset } from '../lib/reference'
-import { canPlayPosition } from '../lib/positions'
+import { canPlayPosition, positionRank, positionSideRank } from '../lib/positions'
 import { isPlanningFamiliar, isPlanningOutOfPosition, planningFamiliarity, planningFamiliarityTooltip, type PlanningFamiliarity } from '../lib/planning-familiarity'
 import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
 import { PlayerPeek } from '../components/PlayerPeek'
 import { usePotential } from '../features/potential/PotentialContext'
+import { effectiveRoleSortScore } from '../lib/score-sort'
+import { countryFlagEmoji } from '../lib/current-roster'
 import { loadModelConfig, patchModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
 import { describeDbError } from '../lib/db-error'
 import { resolvePlanningInsertionBefore } from '../lib/planning-layout'
@@ -125,6 +127,7 @@ type PickerRow = {
   fact: PlanningMembershipFact
   planLabel: string
   projectionKey: string
+  sortScore: number | null
 }
 
 const transferGroups: Group[] = [{ id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }]
@@ -190,6 +193,7 @@ type PlanningPageProps = { active?: boolean }
 export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const { selected } = useSaves()
   const navigate = useNavigate()
+  const potential = usePotential()
   const [players, setPlayers] = useState<Player[]>([])
   const [memberships, setMemberships] = useState<PlayerMembershipWithClubs[]>([])
   const [membershipDiagnostic, setMembershipDiagnostic] = useState('')
@@ -456,25 +460,31 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const pickerRowsBase = useMemo<PickerRow[]>(() => {
     if (!pickerSet || !currentGroup) return []
     const targetIds = new Set(planning.slotAssignments[currentGroup.id]?.[pickerSet.id] ?? [])
-    return players.map(player => {
+    return players.flatMap(player => {
       const snapshot = latestByPlayer.get(player.id)
+      // Current roster selectors are checkpoint-exact: identities without an
+      // observation on the authoritative current date belong to History, not to
+      // a current player list.
+      if (!snapshot) return []
       const compatible = isPlanningFamiliar(planningFamiliarity(snapshot, pickerPairs))
       const rating = setScore(player, pickerSet)
       const currentSet = primarySetForPlayer(planning, currentGroup.id, currentSets, player.id)
       const projectionPairs = rating.pair ? [rating.pair] : pickerPairs
-      return {
+      const projectionKey = functionProjectionKey(projectionPairs.flatMap(pair => [{ phase: 'IP', position: pair.ip.position, roleCode: pair.ip.roleCode }, { phase: 'OOP', position: pair.oop.position, roleCode: pair.oop.roleCode }]))
+      return [{
         player, snapshot, compatible, alreadyInTarget: targetIds.has(player.id), score: rating.value, rank: rating.rank, rankPopulation: rating.rankPopulation,
         fact: membershipFact(player.id), planLabel: currentSet ? displaySetLabel(currentSet) : plannedClubName(player.id) ?? 'Não alocado',
-        projectionKey: snapshot ? functionProjectionKey(projectionPairs.flatMap(pair => [{ phase: 'IP', position: pair.ip.position, roleCode: pair.ip.roleCode }, { phase: 'OOP', position: pair.oop.position, roleCode: pair.oop.roleCode }])) : '',
-      }
+        projectionKey,
+        sortScore: effectiveRoleSortScore({ showPotential: potential.showPotential, snapshot, currentScore: rating.value, scoreKey: projectionKey, loadedModel: potential.ceilingModel }),
+      }]
     })
-  }, [pickerSet, currentGroup, planning, currentSets, players, latestByPlayer, playerScores, referenceRatings, membershipFacts, planningIndex, planningClubs])
+  }, [pickerSet, currentGroup, planning, currentSets, players, latestByPlayer, playerScores, referenceRatings, membershipFacts, planningIndex, planningClubs, potential.showPotential, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
   const pickerQuickMatches = (row: PickerRow, id: PickerQuickFilterId) => id === 'all' || id === row.fact.kind || (id === 'eligible' && row.compatible) || (id === 'unallocated' && row.planLabel === 'Não alocado')
   function pickerPlainValue(row: PickerRow, column: PickerColumn): unknown {
     if (column.kind === 'attribute') return row.snapshot?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value ?? null
     if (column.kind === 'snapshot') return snapshotScalarValue(row.snapshot, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! })
     if (column.key === 'name') return row.player.current_name
-    if (column.key === 'score') return row.score
+    if (column.key === 'score') return row.sortScore
     if (column.key === 'positions') return row.snapshot?.positions.join(', ') ?? ''
     if (column.key === 'age') return row.snapshot?.age ?? null
     if (column.key === 'nationality') return row.player.nationality ?? ''
@@ -492,12 +502,28 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     .filter(row => row.player.current_name.toLowerCase().includes(pickerSearch.trim().toLowerCase()))
     .filter(row => pickerQuickMatches(row, pickerQuickFilter))
     .sort((a, b) => {
+      // Aptidão is a permanent first partition of this contextual picker. User
+      // sorting only changes the order inside familiar / unfamiliar blocks.
+      const compatibility = Number(b.compatible) - Number(a.compatible)
+      if (compatibility) return compatibility
       const column = pickerColumns.find(item => item.id === pickerSort.key)
-      const av = column ? pickerPlainValue(a, column) : a.score
-      const bv = column ? pickerPlainValue(b, column) : b.score
+      if (column?.kind === 'data' && column.key === 'score') {
+        // Potential replaces only the sort key when it is actually displayable;
+        // an unavailable Potential falls back to the current score per player.
+        return ((a.sortScore ?? -1) - (b.sortScore ?? -1)) * pickerSort.direction
+          || Number(a.alreadyInTarget) - Number(b.alreadyInTarget)
+          || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')
+      }
+      if (column?.kind === 'data' && column.key === 'positions') {
+        const ap = a.snapshot?.positions ?? [], bp = b.snapshot?.positions ?? []
+        const compared = positionRank(ap) - positionRank(bp) || positionSideRank(ap) - positionSideRank(bp)
+        return compared * pickerSort.direction || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')
+      }
+      const av = column ? pickerPlainValue(a, column) : a.sortScore
+      const bv = column ? pickerPlainValue(b, column) : b.sortScore
       const numeric = typeof av === 'number' || typeof bv === 'number'
       const compared = numeric ? (Number(av ?? -1) - Number(bv ?? -1)) : String(av ?? '').localeCompare(String(bv ?? ''), 'pt-BR', { numeric: true })
-      return compared * pickerSort.direction || Number(b.compatible) - Number(a.compatible) || Number(a.alreadyInTarget) - Number(b.alreadyInTarget) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')
+      return compared * pickerSort.direction || Number(a.alreadyInTarget) - Number(b.alreadyInTarget) || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')
     }), [pickerRowsBase, pickerSearch, pickerQuickFilter, pickerSort, pickerColumns])
   function renderPickerCell(row: PickerRow, column: PickerColumn): ReactNode {
     if (column.kind === 'attribute') return row.snapshot?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value ?? '—'
@@ -505,9 +531,9 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     if (column.key === 'name') return <div className="planning-picker-player"><span className="planning-picker-peek">{row.snapshot && <PlayerPeek player={row.player} snapshot={row.snapshot} />}</span><strong>{row.player.current_name}</strong>{!row.compatible && <small>Sem familiaridade</small>}</div>
     if (column.key === 'positions') return row.snapshot?.positions.join(', ') || '—'
     if (column.key === 'age') return row.snapshot?.age ?? '—'
-    if (column.key === 'nationality') return row.player.nationality || '—'
-    if (column.key === 'club') return row.snapshot?.club || '—'
-    if (column.key === 'squad') return row.snapshot?.squad || '—'
+    if (column.key === 'nationality') { const flag = countryFlagEmoji(row.player.nationality); return <span className="dt-country-with-flag">{flag && <span aria-hidden="true">{flag}</span>}<span>{row.player.nationality || '—'}</span></span> }
+    if (column.key === 'club') return <span className={`planning-picker-club ${row.fact.kind === 'loaned_out' || row.fact.kind === 'other_club' ? 'is-external' : ''}`}>{row.snapshot?.club || '—'}</span>
+    if (column.key === 'squad') return row.fact.kind === 'loaned_out' || row.fact.kind === 'other_club' ? '—' : row.snapshot?.squad || '—'
     if (column.key === 'foot') return row.snapshot?.preferred_foot || '—'
     if (column.key === 'height') return row.snapshot?.height ? `${row.snapshot.height} cm` : '—'
     if (column.key === 'weight') return row.snapshot?.weight ? `${row.snapshot.weight} kg` : '—'
@@ -653,7 +679,7 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
     const article = articleRef.current; const pitch = article?.parentElement; if (!article || !pitch) return null
     const pitchRect = pitch.getBoundingClientRect(); const compact = compactOverride ?? rectRelativeTo(article.getBoundingClientRect(), pitchRect)
     const obstacles = [...pitch.querySelectorAll<HTMLElement>('.planning-set-row')].filter(item => item !== article).map(item => rectRelativeTo(item.getBoundingClientRect(), pitchRect))
-    return resolvePlanningSetExpansion({ pitchWidth: pitchRect.width, pitchHeight: pitchRect.height, compact, obstacles, playerCount: options.length, cardWidth: Math.max(110, compact.width - 12), cardHeight: 30, gap: 3, verticalItemsPerRow: 1 })
+    return resolvePlanningSetExpansion({ pitchWidth: pitchRect.width, pitchHeight: pitchRect.height, compact, obstacles, playerCount: options.length, cardWidth: Math.max(110, compact.width - 12), cardHeight: 30, gap: 3, verticalItemsPerRow: 1, verticalPadding: 26 })
   }
   function toggleExpansion() {
     if (expanded) { compactRectRef.current = null; setExpansionLayout(null); toggle(); return }

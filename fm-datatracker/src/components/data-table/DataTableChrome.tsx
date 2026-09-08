@@ -98,6 +98,10 @@ export function TableViewSaveDialog({ open, value, onChange, onCancel, onSave }:
 type MenuLevelState = { active: string | null; setActive: Dispatch<SetStateAction<string | null>>; keepOpen: () => void; scheduleClose: () => void; closeAll: () => void }
 const MenuLevelContext = createContext<MenuLevelState | null>(null)
 
+export function shouldCloseDataTableColumnMenuOnScroll(target: EventTarget | null) {
+  return !(target instanceof Element && Boolean(target.closest('.dt-table-advanced-context')))
+}
+
 export function DataTableColumnMenu({ x, y, title, items, onClose }: { x: number; y: number; title?: string; items: DataTableColumnMenuItem[]; onClose: () => void }) {
   const [active, setActive] = useState<string | null>(null)
   const closeTimer = useRef<number | null>(null)
@@ -114,14 +118,15 @@ export function DataTableColumnMenu({ x, y, title, items, onClose }: { x: number
   }, [x, y, items.length])
   useEffect(() => {
     const close = () => onClose()
+    const scroll = (event: Event) => { if (shouldCloseDataTableColumnMenuOnScroll(event.target)) close() }
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
     window.addEventListener('click', close)
     window.addEventListener('blur', close)
     window.addEventListener('resize', close)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('scroll', scroll, true)
     window.addEventListener('keydown', escape)
     return () => {
-      keepOpen(); window.removeEventListener('click', close); window.removeEventListener('blur', close); window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true); window.removeEventListener('keydown', escape)
+      keepOpen(); window.removeEventListener('click', close); window.removeEventListener('blur', close); window.removeEventListener('resize', close); window.removeEventListener('scroll', scroll, true); window.removeEventListener('keydown', escape)
     }
   }, [onClose])
 

@@ -153,15 +153,16 @@
   background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--dt-warning) 5%,transparent),color-mix(in srgb,var(--dt-warning) 5%,transparent) 7px,transparent 7px,transparent 14px)!important;
   border-radius:5px!important;
 }
+.tactics-workspace-planning .planning-pitch-list-page .planning-set-row.is-expanded{
+  z-index:60!important;
+  overflow:visible!important;
+}
 .tactics-workspace-planning .planning-pitch-list-page .planning-set-row.is-expanded .planning-pitch-depth-list{
   display:flex!important;
   flex-direction:column!important;
   justify-content:flex-start!important;
   gap:var(--planning-pitch-row-gap)!important;
-  overflow-x:hidden!important;
-  overflow-y:auto!important;
-  overscroll-behavior:contain!important;
-  scrollbar-width:thin!important;
+  overflow:visible!important;
 }
 
 /* One row shell for BOTH occupied and empty rows. This is the only owner of

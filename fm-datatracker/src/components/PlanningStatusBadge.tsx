@@ -5,18 +5,26 @@ type Anchor = { top: number; bottom: number; left: number }
 
 function compactStatus(status: string) {
   const normalized = status.trim()
-  if (!normalized || normalized.toLocaleLowerCase('pt-BR') === 'não selecionado') return '—'
+  const lower = normalized.toLocaleLowerCase('pt-BR')
+  if (!normalized || lower === 'não selecionado') return '—'
+  if (lower === 'nos planos') return 'NP'
+  if (lower === 'para empréstimo') return 'EM'
+  if (lower === 'para venda') return 'VD'
+  if (lower === 'fora do clube') return 'FC'
   const group = normalized.match(/^grupo\s+(\d+)/i)
   if (group) return `G${group[1]}`
-  if (normalized.toLocaleLowerCase('pt-BR') === 'principal') return 'P'
+  if (lower === 'principal') return 'P'
   return normalized.split(/\s+/).map(word => word[0] ?? '').join('').slice(0, 2).toUpperCase() || '•'
 }
 
 function statusExplanation(status: string) {
   const normalized = status.trim() || 'Não selecionado'
-  if (normalized.toLocaleLowerCase('pt-BR') === 'não selecionado') {
-    return 'Não selecionado — jogador ainda não possui destino definido no Planejamento.'
-  }
+  const lower = normalized.toLocaleLowerCase('pt-BR')
+  if (lower === 'não selecionado') return 'Não selecionado — jogador ainda não possui destino definido no Planejamento.'
+  if (lower === 'nos planos') return 'Nos planos — jogador não está marcado para empréstimo ou venda.'
+  if (lower === 'para empréstimo') return 'Para empréstimo — jogador está marcado para ser emprestado.'
+  if (lower === 'para venda') return 'Para venda — jogador está marcado para venda.'
+  if (lower === 'fora do clube') return 'Fora do clube — o vínculo factual atual aponta outro clube no checkpoint corrente.'
   return `${normalized} — destino atual do jogador no Planejamento.`
 }
 

@@ -87,3 +87,10 @@
 .planning-add-player-modal .planning-add-player-table>.dt-table-shell{flex:1 1 auto!important;min-height:0!important}
 
 @media(max-width:900px){.dt-table-menu-bar{flex-wrap:wrap}.dt-table-menu-extra{margin-left:0}.dt-table-view-trigger{min-width:160px!important}}
+
+/* Current-roster semantics shared by Elenco and the Planning picker. */
+.dt-country-with-flag{display:inline-flex;align-items:center;gap:7px;min-width:0;white-space:nowrap}
+.dt-country-with-flag>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.squad-current-club.is-external,.planning-picker-club.is-external{color:var(--dt-danger)!important;font-weight:700}
+.squad-status-cell{display:flex;align-items:center;gap:6px;min-width:0}
+.squad-status-cell small{min-width:0;color:var(--dt-text-3);font-size:.68rem;line-height:1.1;white-space:normal}

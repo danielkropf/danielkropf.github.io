@@ -17,38 +17,41 @@ import { ATTRIBUTE_CATALOG, type AttributeCategory } from '../lib/attributes'
 import { generalReferencePercentile, generalReferenceScoresByFamily, normalizeCountry, referenceLevel, type ReferenceDataset, type ReferenceLevel } from '../lib/reference'
 import { PITCH_NODES, positionGroup, rolesFor, type TacticPhase } from '../lib/tactics'
 import { canPlayPosition } from '../lib/positions'
-import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
+import { loadCurrentPlayers, loadReferenceDataset, type RichPlayer } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
 import { PlayerPeek } from '../components/PlayerPeek'
 import { PlanningStatusBadge } from '../components/PlanningStatusBadge'
 import type { PlayerRow } from '../types/domain'
 import { loadModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
 import { describeDbError } from '../lib/db-error'
-import { primaryPlanningClubId, resolveClubTacticId } from '../lib/multiclub-planning'
-import { assignPlayerToTacticSlot, tacticSlotAssignments, tacticSlotForPlayer } from '../lib/tactic-lineup'
+import { movePlayerAcrossClubPlans, patchClubPlanning, primaryPlanningClubId, resolveClubPlanning, resolveClubTacticId } from '../lib/multiclub-planning'
+import { layoutsFor, movePlayerToSet, planningSetDisplayLabel, type FlexiblePlanning, type PlanningSetLayout, type TacticSlotDescriptor } from '../lib/planningSets'
+import { usePotential } from '../features/potential/PotentialContext'
+import { effectiveGeneralSortScore, effectiveRoleSortScore } from '../lib/score-sort'
+import { countryFlagEmoji, currentRosterLabel, currentRosterStatus, isExternalCurrentClub, preferredTacticalPlanningGroupId, type PlanningTeamLevel } from '../lib/current-roster'
 import { discoverSnapshotScalarColumns, snapshotScalarValue, type SnapshotScalarColumn, type SnapshotFieldCategory } from '../lib/player-table-columns'
 
-type DataKey = 'tacticSlot' | 'status' | 'name' | 'age' | 'nationality' | 'value' | 'team' | 'position' | 'height' | 'weight' | 'foot' | 'contract' | 'snapshot' | 'score' | 'reference'
+type DataKey = 'tacticSlot' | 'status' | 'name' | 'age' | 'nationality' | 'value' | 'team' | 'squad' | 'position' | 'height' | 'weight' | 'foot' | 'contract' | 'snapshot' | 'score' | 'reference'
 type Assignment = { playerId: string; nodeId: string; position: string; roleId?: string; roleCode: string; roleName: string }
 type Tactic = { id: string; name: string; ipAssignments: Assignment[]; oopAssignments: Assignment[]; roles?: { id: string; name: string; weights: Record<string, number> }[]; lineup?: Record<string, string | null> }
 type TableColumn = { id: string; kind: 'data' | 'attribute' | 'role' | 'tacticRole' | 'snapshot'; key?: DataKey; attributeKey?: string; phase?: TacticPhase; position?: string; roleCode?: string; tacticId?: string; linkId?: string; snapshotSource?: 'normalized' | 'raw'; snapshotFieldKey?: string; snapshotCategory?: SnapshotFieldCategory; label: string }
 type Snapshot = PlayerRow['player_snapshots'][number]
-type Planning = { groups: Array<{ id: string; name: string }>; assignments: Record<string, string>; slotAssignments?: Record<string, Record<string, string[]>> }
-type ModelConfig = { role_weight_overrides?: Record<string, Record<string, number>>; planning?: Planning; tactics?: Tactic[]; selected_tactic_id?: string | null; selected_tactic_id_by_club?: Record<string, string | null> }
-type Row = { player: PlayerRow; latest: Snapshot | undefined; score: number | null; status: string; marketValue: string | null; referencePercentile: number | null; referenceLevel: ReferenceLevel | null; referenceSample: number; referenceGroup: string; columnScores: Record<string, number | null>; tacticSlot: string | null }
+type Planning = FlexiblePlanning & { groups: Array<{ id: string; name: string }>; assignments?: Record<string, string> }
+type ModelConfig = { role_weight_overrides?: Record<string, Record<string, number>>; planning?: Planning; planning_by_club?: Record<string, Planning>; tactics?: Tactic[]; selected_tactic_id?: string | null; selected_tactic_id_by_club?: Record<string, string | null> }
+type Row = { player: RichPlayer; latest: Snapshot; score: number | null; sortScore: number | null; status: string; marketValue: string | null; referencePercentile: number | null; referenceLevel: ReferenceLevel | null; referenceSample: number; referenceGroup: string; columnScores: Record<string, number | null>; columnSortScores: Record<string, number | null>; tacticSlot: string | null; tacticSlotLabel: string | null; tacticGroupId: string | null; tacticOptions: Array<{ id: string; label: string }>; clubName: string | null; squadName: string | null; externalClub: boolean }
 type Filter = { id: string; column: Exclude<DataKey, 'tacticSlot'>; operator: 'contains' | 'equals' | 'gte' | 'lte'; value: string }
-type QuickFilterId = 'all' | 'in-tactic' | 'out-tactic' | 'planned' | 'unplanned' | 'unknown'
+type QuickFilterId = 'all' | 'in-tactic' | 'out-tactic' | 'plans' | 'loan' | 'sale' | 'outside'
 
 type BuiltInView = { id: string; label: string; columns: () => TableColumn[]; frozenIndex?: number }
 
-const TABLE_LAYOUT_KEY = 'fm-datatracker:squad-table-v3'
+const TABLE_LAYOUT_KEY = 'fm-datatracker:squad-table-v4'
 const TABLE_VIEWS_KEY = 'fm-datatracker:squad-table-views-v1'
 const positions = [['GK', 'Goleiro'], ['D (L)', 'Defesa esquerda'], ['D (C)', 'Defesa central'], ['D (R)', 'Defesa direita'], ['WB (L)', 'Ala esquerdo'], ['WB (R)', 'Ala direito'], ['DM (C)', 'Médio defensivo'], ['M (L)', 'Médio esquerdo'], ['M (C)', 'Médio central'], ['M (R)', 'Médio direito'], ['AM (L)', 'Extremo esquerdo'], ['AM (C)', 'Médio ofensivo'], ['AM (R)', 'Extremo direito'], ['ST (C)', 'Atacante']] as const
-const dataLabels: Record<DataKey, string> = { tacticSlot: 'Tática', status: 'Status', name: 'Nome', age: 'Idade', nationality: 'Nacionalidade', value: 'Valor', team: 'Equipe', position: 'Posições', height: 'Altura', weight: 'Peso', foot: 'Pé preferido', contract: 'Fim do contrato', snapshot: 'Data do snapshot', score: 'Nota geral', reference: 'Nível de referência' }
-const dataWidths: Record<DataKey, number> = { tacticSlot: 180, status: 92, name: 210, age: 72, nationality: 140, value: 130, team: 140, position: 170, height: 90, weight: 85, foot: 125, contract: 125, snapshot: 125, score: 196, reference: 180 }
+const dataLabels: Record<DataKey, string> = { tacticSlot: 'Tática', status: 'Status', name: 'Nome', age: 'Idade', nationality: 'Nacionalidade', value: 'Valor', team: 'Clube', squad: 'Elenco', position: 'Posições', height: 'Altura', weight: 'Peso', foot: 'Pé preferido', contract: 'Fim do contrato', snapshot: 'Data do snapshot', score: 'Nota geral', reference: 'Nível de referência' }
+const dataWidths: Record<DataKey, number> = { tacticSlot: 180, status: 104, name: 210, age: 72, nationality: 150, value: 130, team: 150, squad: 130, position: 170, height: 90, weight: 85, foot: 125, contract: 125, snapshot: 125, score: 196, reference: 180 }
 const allDataKeys = Object.keys(dataLabels) as DataKey[]
 const dataColumn = (key: DataKey): TableColumn => ({ id: key, kind: 'data', key, label: dataLabels[key] })
-const defaultColumns = (['tacticSlot', 'status', 'name', 'age', 'nationality', 'value', 'team', 'position', 'score', 'reference'] as DataKey[]).map(dataColumn)
+const defaultColumns = (['tacticSlot', 'status', 'name', 'age', 'nationality', 'value', 'team', 'squad', 'position', 'score', 'reference'] as DataKey[]).map(dataColumn)
 const attributeColumn = (key: string, label: string): TableColumn => ({ id: `attribute|${key}`, kind: 'attribute', attributeKey: key, label })
 const snapshotColumn = (column: SnapshotScalarColumn): TableColumn => ({ id: column.id, kind: 'snapshot', snapshotSource: column.source, snapshotFieldKey: column.fieldKey, snapshotCategory: column.category, label: column.label })
 const roleColumn = (phase: TacticPhase, position: string, roleCode: string): TableColumn => ({ id: `role|${phase}|${position}|${roleCode}`, kind: 'role', phase, position, roleCode, label: `${phase} · ${position} · ${roleCode}` })
@@ -66,28 +69,52 @@ function minimumColumnWidth(column: TableColumn) {
   if (column.kind === 'data' && column.key === 'tacticSlot') return 150
   return 64
 }
+function normalizeStoredColumns(columns: TableColumn[], includeRosterColumn = false) {
+  const normalized = columns.map(column => column.kind === 'data' && column.key ? { ...column, label: dataLabels[column.key] } : column)
+  if (!includeRosterColumn || normalized.some(column => column.id === 'squad')) return normalized
+  const teamIndex = normalized.findIndex(column => column.id === 'team')
+  // Migration only enriches layouts that already exposed the old Equipe column.
+  // Custom views that intentionally omitted it keep their exact column set.
+  if (teamIndex < 0) return normalized
+  const insertion = teamIndex + 1
+  return [...normalized.slice(0, insertion), dataColumn('squad'), ...normalized.slice(insertion)]
+}
 function readLayout(): { columns: TableColumn[]; frozenIndex: number; widths: Record<string, number> } {
   if (typeof window === 'undefined') return { columns: defaultColumns, frozenIndex: 2, widths: {} }
-  for (const key of [TABLE_LAYOUT_KEY, 'fm-datatracker:squad-table-v2']) {
+  for (const key of [TABLE_LAYOUT_KEY, 'fm-datatracker:squad-table-v3', 'fm-datatracker:squad-table-v2']) {
     try {
       const saved = JSON.parse(localStorage.getItem(key) ?? 'null')
       if (Array.isArray(saved?.columns) && saved.columns.some((column: TableColumn) => column.id === 'name')) {
-        const columns = saved.columns as TableColumn[]
+        const columns = normalizeStoredColumns(saved.columns as TableColumn[], true)
         const nameIndex = columns.findIndex(column => column.id === 'name')
-        return { columns, frozenIndex: Number.isInteger(saved.frozenIndex) ? Math.max(nameIndex, saved.frozenIndex) : nameIndex, widths: saved.widths ?? {} }
+        return { columns, frozenIndex: Number.isInteger(saved.frozenIndex) ? Math.max(nameIndex, Math.min(columns.length - 1, saved.frozenIndex)) : nameIndex, widths: saved.widths ?? {} }
       }
     } catch { /* use defaults */ }
   }
   return { columns: defaultColumns, frozenIndex: 2, widths: {} }
 }
 function uniqueColumns(columns: TableColumn[]) { const seen = new Set<string>(); return columns.filter(column => !seen.has(column.id) && Boolean(seen.add(column.id))) }
-function slotLane(nodeId: string) { const x = PITCH_NODES.find(node => node.id === nodeId)?.x ?? 50; return x < 40 ? 'Esq.' : x > 60 ? 'Dir.' : 'Centro' }
-function slotLabel(tactic: Tactic, assignment: Pick<Assignment, 'position' | 'nodeId' | 'roleCode'>) { const samePosition = tactic.ipAssignments.filter(item => item.position === assignment.position).length; return `${assignment.position}${samePosition > 1 ? ` ${slotLane(assignment.nodeId)}` : ''} · ${assignment.roleCode}` }
+const defaultPlanning = (): Planning => ({ groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'Time B' }, { id: 'base', name: 'Base' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }], slotAssignments: {}, setLayouts: {} })
+function normalizePlanning(raw: Planning | undefined): Planning { return raw ? { ...defaultPlanning(), ...raw, groups: raw.groups ?? defaultPlanning().groups, slotAssignments: raw.slotAssignments ?? {}, setLayouts: raw.setLayouts ?? {} } : defaultPlanning() }
+function confirmedFieldValue<T>(field: { status: string; value: T | null } | undefined): T | null { return field?.status === 'confirmed' ? field.value : null }
+function planningGroupForPlayer(planning: Planning, playerId: string) { return Object.entries(planning.slotAssignments).find(([, sets]) => Object.values(sets).some(ids => ids.includes(playerId)))?.[0] ?? null }
+function clearPlayerTacticalSets(planning: Planning, playerId: string): Planning {
+  return { ...planning, slotAssignments: Object.fromEntries(Object.entries(planning.slotAssignments).map(([groupId, sets]) => [groupId, groupId === 'loan' || groupId === 'sale' ? sets : Object.fromEntries(Object.entries(sets).map(([setId, ids]) => [setId, ids.filter(id => id !== playerId)]))])) }
+}
+function projectionKeyForColumn(column: TableColumn, model: ModelConfig) {
+  if (column.kind === 'role' && column.phase && column.position && column.roleCode) return functionProjectionKey([{ phase: column.phase, position: column.position, roleCode: column.roleCode }])
+  if (column.kind !== 'tacticRole' || !column.tacticId || !column.linkId) return ''
+  const tactic = model.tactics?.find(item => item.id === column.tacticId)
+  const ip = tactic?.ipAssignments.find(item => item.playerId === column.linkId)
+  const oop = tactic?.oopAssignments.find(item => item.playerId === column.linkId) ?? ip
+  return ip && oop ? functionProjectionKey([{ phase: 'IP', position: ip.position, roleCode: ip.roleCode }, { phase: 'OOP', position: oop.position, roleCode: oop.roleCode }]) : ''
+}
 
 export function SquadPage() {
   const { selected } = useSaves()
   const navigate = useNavigate()
-  const [players, setPlayers] = useState<PlayerRow[]>([])
+  const potential = usePotential()
+  const [players, setPlayers] = useState<RichPlayer[]>([])
   const [model, setModel] = useState<ModelConfig>({})
   const [loading, setLoading] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -107,7 +134,7 @@ export function SquadPage() {
   const [widths, setWidths] = useState<Record<string, number>>(initialTable.widths)
   const [columnMenu, setColumnMenu] = useState<{ x: number; y: number; index: number } | null>(null)
   const [activeViewId, setActiveViewId] = useState<string | null>('overview')
-  const [customViews, setCustomViews] = useState<StoredDataTableView<TableColumn>[]>(() => readStoredDataTableViews<TableColumn>(TABLE_VIEWS_KEY))
+  const [customViews, setCustomViews] = useState<StoredDataTableView<TableColumn>[]>(() => readStoredDataTableViews<TableColumn>(TABLE_VIEWS_KEY).map(view => ({ ...view, columns: normalizeStoredColumns(view.columns) })))
   const [saveViewOpen, setSaveViewOpen] = useState(false)
   const [saveViewName, setSaveViewName] = useState('')
   const [saveStatus, setSaveStatus] = useState('✓ Salvo')
@@ -126,7 +153,7 @@ export function SquadPage() {
     setLoading(true)
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)]).then(([cached, modelConfig]) => {
       if (!active) return
-      startTransition(() => { setPlayers(cached as unknown as PlayerRow[]); setModel(modelConfig as ModelConfig); setLoading(false); setSaveStatus('✓ Salvo'); setSaveDetail('') })
+      startTransition(() => { setPlayers(cached as RichPlayer[]); setModel(modelConfig as ModelConfig); setLoading(false); setSaveStatus('✓ Salvo'); setSaveDetail('') })
     }).catch(error => { if (active) { setLoading(false); setSaveStatus('⚠ Não foi possível carregar'); setSaveDetail(describeDbError(error).full) } })
     return () => { active = false }
   }, [selected?.id])
@@ -134,31 +161,57 @@ export function SquadPage() {
   const primaryClubId = primaryPlanningClubId(selected?.structure?.trackedClubs ?? [])
   const selectedTacticId = primaryClubId ? resolveClubTacticId(model, primaryClubId, primaryClubId, (model.tactics ?? []).map(item => item.id)) : model.selected_tactic_id ?? null
   const activeTactic = model.tactics?.find(item => item.id === selectedTacticId) ?? null
+  const activePlanning = useMemo(() => normalizePlanning(primaryClubId ? resolveClubPlanning(model, primaryClubId, primaryClubId, defaultPlanning) : model.planning), [model, primaryClubId])
+  const tacticSlotDescriptors = useMemo<TacticSlotDescriptor[]>(() => activeTactic ? activeTactic.ipAssignments.map(ip => ({ id: ip.playerId, position: ip.position, oopPosition: activeTactic.oopAssignments.find(oop => oop.playerId === ip.playerId)?.position ?? ip.position, nodeId: ip.nodeId, x: PITCH_NODES.find(node => node.id === ip.nodeId)?.x })) : [], [activeTactic])
+  const tacticalSetsByGroup = useMemo(() => new Map(activePlanning.groups.filter(group => group.id !== 'loan' && group.id !== 'sale').map(group => [group.id, activeTactic ? layoutsFor(activePlanning, activeTactic.id, group.id, tacticSlotDescriptors) : []])), [activePlanning, activeTactic, tacticSlotDescriptors])
+  const tacticAssignmentByPlayer = useMemo(() => {
+    const output = new Map<string, { groupId: string; set: PlanningSetLayout; label: string }>()
+    for (const [groupId, sets] of tacticalSetsByGroup) for (const set of sets) for (const playerId of activePlanning.slotAssignments[groupId]?.[set.id] ?? []) if (!output.has(playerId)) output.set(playerId, { groupId, set, label: planningSetDisplayLabel(set, sets, tacticSlotDescriptors) })
+    return output
+  }, [activePlanning.slotAssignments, tacticalSetsByGroup, tacticSlotDescriptors])
   const availableSnapshotColumns = useMemo(() => discoverSnapshotScalarColumns(players.map(player => player.player_snapshots[0])), [players])
   const referenceScores = useMemo(() => generalReferenceScoresByFamily(reference?.players.filter(player => player.c === referenceCountry && player.d === referenceDivision) ?? [], reference?.attributes ?? []), [reference, referenceCountry, referenceDivision])
 
-  const allRows = useMemo(() => players.map(player => {
+  const allRows = useMemo(() => players.flatMap(player => {
     const latest = player.player_snapshots[0]
-    const score = latest ? generalScoreForSnapshot(latest)?.score ?? null : null
-    const referenceResult = latest && score !== null ? generalReferencePercentile(score, latest, referenceScores) : null
+    if (!latest || !player.current_factual.observedAtCheckpoint) return []
+    const score = generalScoreForSnapshot(latest)?.score ?? null
+    const referenceResult = score !== null ? generalReferencePercentile(score, latest, referenceScores) : null
     const referenceGroup = referenceResult?.family ?? 'M'
     const referencePercentile = referenceResult?.percentile ?? null
     const referenceSample = referenceResult?.population.length ?? 0
-    const groupId = Object.entries(model.planning?.slotAssignments ?? {}).find(([, rows]) => Object.values(rows).some(ids => ids.includes(player.id)))?.[0]
-    const status = model.planning?.groups.find(group => group.id === groupId)?.name ?? 'Não selecionado'
-    const row: Row = { player, latest, score, status, marketValue: latest ? extractMarketValue(latest) : null, referencePercentile, referenceLevel: referencePercentile === null ? null : referenceLevel(referencePercentile), referenceSample, referenceGroup, columnScores: {}, tacticSlot: tacticSlotForPlayer(activeTactic, player.id) }
+    const planningGroupId = planningGroupForPlayer(activePlanning, player.id)
+    const planningGroup = activePlanning.groups.find(group => group.id === planningGroupId) ?? null
+    const currentClubId = confirmedFieldValue(player.current_factual.membership?.current.currentClubId)
+    const clubName = player.current_factual.currentClubName ?? latest.club ?? null
+    const externalClub = isExternalCurrentClub({ currentClubId, primaryClubId, currentClubName: clubName, primaryClubName: selected?.club_name ?? null })
+    const teamLevel = confirmedFieldValue(player.current_factual.membership?.current.teamLevel) as PlanningTeamLevel
+    const factualSquadName = confirmedFieldValue(player.current_factual.membership?.current.squadName)
+    const squadName = currentRosterLabel({ externalClub, factualSquadName, snapshotSquadName: latest.squad, teamLevel, primaryClubName: selected?.club_name ?? null })
+    const status = currentRosterStatus(externalClub, planningGroup)
+    const existingTactic = tacticAssignmentByPlayer.get(player.id)
+    const targetGroupId = preferredTacticalPlanningGroupId(activePlanning.groups, existingTactic?.groupId ?? null, teamLevel, squadName)
+    const targetSets = targetGroupId ? tacticalSetsByGroup.get(targetGroupId) ?? [] : []
+    const tacticOptions = targetSets.map(set => ({ id: set.id, label: planningSetDisplayLabel(set, targetSets, tacticSlotDescriptors) }))
+    const row: Row = {
+      player, latest, score,
+      sortScore: effectiveGeneralSortScore({ showPotential: potential.showPotential, snapshot: latest, currentScore: score, loadedGeneralModel: potential.generalCeilingModel, loadedRoleModel: potential.ceilingModel }),
+      status, marketValue: extractMarketValue(latest), referencePercentile, referenceLevel: referencePercentile === null ? null : referenceLevel(referencePercentile), referenceSample, referenceGroup,
+      columnScores: {}, columnSortScores: {}, tacticSlot: existingTactic?.set.id ?? null, tacticSlotLabel: existingTactic?.label ?? null, tacticGroupId: targetGroupId, tacticOptions, clubName, squadName, externalClub,
+    }
     for (const column of columns) {
       if (column.kind === 'role') row.columnScores[column.id] = scoreForRole(row, column, model)
       else if (column.kind === 'tacticRole') row.columnScores[column.id] = scoreForTacticRole(row, column, model)
+      if (column.kind === 'role' || column.kind === 'tacticRole') row.columnSortScores[column.id] = effectiveRoleSortScore({ showPotential: potential.showPotential, snapshot: latest, currentScore: row.columnScores[column.id] ?? null, scoreKey: projectionKeyForColumn(column, model), loadedModel: potential.ceilingModel })
     }
-    return row
-  }), [players, referenceScores, model, columns, activeTactic])
+    return [row]
+  }), [players, referenceScores, model, columns, activePlanning, primaryClubId, selected?.club_name, tacticAssignmentByPlayer, tacticalSetsByGroup, tacticSlotDescriptors, potential.showPotential, potential.generalCeilingModel, potential.generalCeilingModel?.manifest.potentialModelVersion, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
 
-  const quickMatches = (row: Row, id: QuickFilterId) => id === 'all' || (id === 'in-tactic' && Boolean(row.tacticSlot)) || (id === 'out-tactic' && !row.tacticSlot) || (id === 'planned' && row.status !== 'Não selecionado') || (id === 'unplanned' && row.status === 'Não selecionado') || (id === 'unknown' && !row.latest)
+  const quickMatches = (row: Row, id: QuickFilterId) => id === 'all' || (id === 'in-tactic' && Boolean(row.tacticSlot)) || (id === 'out-tactic' && !row.tacticSlot) || (id === 'plans' && row.status === 'Nos planos') || (id === 'loan' && row.status === 'Para empréstimo') || (id === 'sale' && row.status === 'Para venda') || (id === 'outside' && row.status === 'Fora do clube')
   const rows = useMemo(() => allRows.filter(row => row.player.current_name.toLowerCase().includes(search.toLowerCase())).filter(row => quickMatches(row, quickFilter)).filter(row => filters.every(filter => matchesFilter(row, filter)) && (positionFilters === null || positionFilters.length > 0 && positionFilters.some(target => canPlayPosition(row.latest?.positions ?? [], target)))).sort((a, b) => compareTableRows(a, b, sort.key, columns) * sort.direction || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')), [allRows, search, quickFilter, filters, positionFilters, sort, columns])
 
   const quickFilters = useMemo<DataTableQuickFilter[]>(() => ([
-    ['all', 'Todos'], ['in-tactic', 'Na tática'], ['out-tactic', 'Fora da tática'], ['planned', 'Planejados'], ['unplanned', 'Não planejados'], ['unknown', 'Sem observação'],
+    ['all', 'Todos'], ['in-tactic', 'Na tática'], ['out-tactic', 'Sem conjunto'], ['plans', 'Nos planos'], ['loan', 'Para empréstimo'], ['sale', 'Para venda'], ['outside', 'Fora do clube'],
   ] as Array<[QuickFilterId, string]>).map(([id, label]) => ({ id, label, count: allRows.filter(row => quickMatches(row, id)).length, active: quickFilter === id, onSelect: () => setQuickFilter(id) })), [allRows, quickFilter])
 
   const builtInViews = useMemo<BuiltInView[]>(() => {
@@ -166,14 +219,14 @@ export function SquadPage() {
     return [
       { id: 'overview', label: 'Visão geral', columns: () => defaultColumns, frozenIndex: 2 },
       { id: 'selection', label: 'Seleção', columns: () => (['tacticSlot', 'name', 'status', 'position', 'age', 'score'] as DataKey[]).map(dataColumn), frozenIndex: 1 },
-      { id: 'contract', label: 'Contrato', columns: () => (['name', 'team', 'age', 'value', 'contract', 'nationality'] as DataKey[]).map(dataColumn), frozenIndex: 0 },
+      { id: 'contract', label: 'Contrato', columns: () => (['name', 'team', 'squad', 'age', 'value', 'contract', 'nationality'] as DataKey[]).map(dataColumn), frozenIndex: 0 },
       { id: 'development', label: 'Desenvolvimento', columns: () => (['name', 'age', 'position', 'score', 'reference'] as DataKey[]).map(dataColumn), frozenIndex: 0 },
       { id: 'attributes', label: 'Atributos', columns: () => [dataColumn('name'), ...ATTRIBUTE_CATALOG.map(attribute => attributeColumn(attribute.key, attribute.label))], frozenIndex: 0 },
       { id: 'tactic', label: 'Tática atual', columns: () => uniqueColumns([dataColumn('tacticSlot'), dataColumn('name'), dataColumn('position'), dataColumn('score'), ...tacticScoreColumns]), frozenIndex: 1 },
     ]
   }, [activeTactic])
   const applyView = (viewColumns: TableColumn[], boundary: number, viewId: string) => { setColumns(uniqueColumns(viewColumns.map(column => ({ ...column })))); setFrozenIndex(boundary); setWidths({}); setActiveViewId(viewId) }
-  const viewOptions = useMemo<DataTableViewOption[]>(() => [...builtInViews.map(view => ({ id: view.id, label: view.label, active: activeViewId === view.id, onSelect: () => applyView(view.columns(), view.frozenIndex ?? Math.max(0, view.columns().findIndex(column => column.id === 'name')), view.id) })), ...customViews.map(view => ({ id: view.id, label: view.name, custom: true, active: activeViewId === view.id, onSelect: () => { setColumns(view.columns.map(column => ({ ...column }))); setFrozenIndex(view.frozenIndex); setWidths({ ...view.widths }); setActiveViewId(view.id) }, onDelete: () => { const next = customViews.filter(item => item.id !== view.id); setCustomViews(next); writeStoredDataTableViews(TABLE_VIEWS_KEY, next); if (activeViewId === view.id) setActiveViewId(null) } }))], [builtInViews, customViews, activeViewId])
+  const viewOptions = useMemo<DataTableViewOption[]>(() => [...builtInViews.map(view => ({ id: view.id, label: view.label, active: activeViewId === view.id, onSelect: () => applyView(view.columns(), view.frozenIndex ?? Math.max(0, view.columns().findIndex(column => column.id === 'name')), view.id) })), ...customViews.map(view => ({ id: view.id, label: view.name, custom: true, active: activeViewId === view.id, onSelect: () => { setColumns(normalizeStoredColumns(view.columns).map(column => ({ ...column }))); setFrozenIndex(view.frozenIndex); setWidths({ ...view.widths }); setActiveViewId(view.id) }, onDelete: () => { const next = customViews.filter(item => item.id !== view.id); setCustomViews(next); writeStoredDataTableViews(TABLE_VIEWS_KEY, next); if (activeViewId === view.id) setActiveViewId(null) } }))], [builtInViews, customViews, activeViewId])
 
   function markCustomized() { setActiveViewId(null) }
   function changeSort(key: string) { setSort(current => ({ key, direction: current.key === key ? current.direction === 1 ? -1 : 1 : key === 'score' || key === 'value' || key === 'reference' || key.startsWith('role|') || key.startsWith('tactic|') ? -1 : 1 })) }
@@ -185,17 +238,21 @@ export function SquadPage() {
   function autoSizeAll() { markCustomized(); const next: Record<string, number> = {}; columns.forEach((column, index) => { const cellLength = Math.max(column.label.length, ...rows.slice(0, 120).map(row => String(cellPlainValue(row, column) ?? '').length)); next[column.id] = Math.min(420, Math.max(minimumColumnWidth(column), Math.round(cellLength * 7.2 + 36))) }); setWidths(next) }
 
   function updateSaveStatus(next: string, detail?: string) { setSaveStatus(next); setSaveDetail(detail ?? '') }
-  function assignTacticSlot(playerId: string, slotId: string | null) {
-    if (!selected || !activeTactic) return
-    const nextTactics = (model.tactics ?? []).map(tactic => tactic.id === activeTactic.id ? assignPlayerToTacticSlot(tactic, playerId, slotId) : tactic)
-    setModel(current => ({ ...current, tactics: nextTactics }))
-    scheduleModelConfigPatch(selected.id, '2.9.0', { tactics: nextTactics }, updateSaveStatus)
+  function assignTacticSet(playerId: string, groupId: string | null, setId: string | null) {
+    if (!selected || !activeTactic || !primaryClubId) return
+    let nextPlanning = setId && groupId ? movePlayerToSet(activePlanning, groupId, setId, playerId) as Planning : clearPlayerTacticalSets(activePlanning, playerId)
+    let planningByClub = { ...(model.planning_by_club ?? {}), [primaryClubId]: nextPlanning }
+    if (setId) planningByClub = movePlayerAcrossClubPlans(planningByClub, primaryClubId, playerId, nextPlanning)
+    nextPlanning = planningByClub[primaryClubId]
+    const patch = patchClubPlanning({ ...model, planning_by_club: planningByClub }, primaryClubId, primaryClubId, nextPlanning)
+    setModel(current => ({ ...current, ...patch }))
+    scheduleModelConfigPatch(selected.id, '2.9.0', patch, updateSaveStatus)
   }
   async function retrySave() {
     if (!selected) return
     try {
       const result = await retryModelConfigPatch(selected.id, updateSaveStatus)
-      if (!result) scheduleModelConfigPatch(selected.id, '2.9.0', { tactics: model.tactics ?? [] }, updateSaveStatus)
+      if (!result) scheduleModelConfigPatch(selected.id, '2.9.0', { planning: model.planning ?? defaultPlanning(), planning_by_club: model.planning_by_club ?? {} }, updateSaveStatus)
     } catch (error) { updateSaveStatus('⚠ Não foi possível salvar', describeDbError(error).full) }
   }
 
@@ -220,7 +277,7 @@ export function SquadPage() {
       rows={rows}
       columns={columns}
       rowKey={row => row.player.id}
-      renderCell={(row, column) => <SquadCellContent column={column} row={row} model={model} activeTactic={activeTactic} assignTacticSlot={assignTacticSlot} openPlayer={() => navigate(`/players/${row.player.id}`)} />}
+      renderCell={(row, column) => <SquadCellContent column={column} row={row} model={model} hasActiveTactic={Boolean(activeTactic)} assignTacticSet={assignTacticSet} openPlayer={() => navigate(`/players/${row.player.id}`)} />}
       getColumnWidth={column => widths[column.id] ?? defaultWidth(column)}
       getColumnMinWidth={column => minimumColumnWidth(column)}
       getColumnMaxWidth={() => 640}
@@ -233,8 +290,7 @@ export function SquadPage() {
       loading={!players.length && (loading || isPending)}
       loadingMessage="Carregando jogadores…"
       emptyMessage={players.length ? 'Nenhum jogador corresponde aos filtros atuais.' : 'Nenhum jogador disponível.'}
-      getCellClassName={(row, column) => `${column.kind === 'role' || column.kind === 'tacticRole' || column.key === 'score' ? 'role-score-cell' : column.kind === 'attribute' ? 'attribute-table-cell' : column.key === 'name' ? 'frozen-player-name' : column.key === 'tacticSlot' ? 'tactic-slot-table-cell' : ''}${!row.latest ? ' is-current-unknown-cell' : ''}`.trim() || undefined}
-      getRowClassName={row => !row.latest ? 'is-current-unknown-row' : undefined}
+      getCellClassName={(row, column) => `${column.kind === 'role' || column.kind === 'tacticRole' || column.key === 'score' ? 'role-score-cell' : column.kind === 'attribute' ? 'attribute-table-cell' : column.key === 'name' ? 'frozen-player-name' : column.key === 'tacticSlot' ? 'tactic-slot-table-cell' : ''}`.trim() || undefined}
       onHeaderContextMenu={(event, _, index) => { event.preventDefault(); setColumnMenu({ x: event.clientX, y: event.clientY, index }) }}
       onColumnWidthChange={(column, width) => setColumnWidth(column, width)}
       onColumnMove={moveColumn}
@@ -245,34 +301,31 @@ export function SquadPage() {
   </div>
 }
 
-function SquadCellContent({ column, row, model, activeTactic, assignTacticSlot, openPlayer }: { column: TableColumn; row: Row; model: ModelConfig; activeTactic: Tactic | null; assignTacticSlot: (playerId: string, slotId: string | null) => void; openPlayer: () => void }) {
+function SquadCellContent({ column, row, model, hasActiveTactic, assignTacticSet, openPlayer }: { column: TableColumn; row: Row; model: ModelConfig; hasActiveTactic: boolean; assignTacticSet: (playerId: string, groupId: string | null, setId: string | null) => void; openPlayer: () => void }) {
   if (column.kind === 'tacticRole' || column.kind === 'role') {
     const score = row.columnScores[column.id] ?? null
-    let scoreKey = ''
-    if (column.kind === 'role' && column.phase && column.position && column.roleCode) scoreKey = functionProjectionKey([{ phase: column.phase, position: column.position, roleCode: column.roleCode }])
-    else if (column.kind === 'tacticRole' && column.tacticId && column.linkId) { const tactic = model.tactics?.find(item => item.id === column.tacticId); const ip = tactic?.ipAssignments.find(item => item.playerId === column.linkId); const oop = tactic?.oopAssignments.find(item => item.playerId === column.linkId) ?? ip; if (ip && oop) scoreKey = functionProjectionKey([{ phase: 'IP', position: ip.position, roleCode: ip.roleCode }, { phase: 'OOP', position: oop.position, roleCode: oop.roleCode }]) }
-    return <ScoreWithProjection playerId={row.player.id} currentScore={score} snapshot={row.latest} scoreType="function" scoreKey={scoreKey} variant="inline" currentTitle="Nota atual nesta função" projectionTitle="Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento." />
+    return <ScoreWithProjection playerId={row.player.id} currentScore={score} snapshot={row.latest} scoreType="function" scoreKey={projectionKeyForColumn(column, model)} variant="inline" currentTitle="Nota atual nesta função" projectionTitle="Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento." />
   }
-  if (column.kind === 'attribute') { const attribute = row.latest?.player_attributes.find(item => item.attribute_key === column.attributeKey); return <b>{attribute?.value ?? '—'}</b> }
+  if (column.kind === 'attribute') { const attribute = row.latest.player_attributes.find(item => item.attribute_key === column.attributeKey); return <b>{attribute?.value ?? '—'}</b> }
   if (column.kind === 'snapshot') return <>{formatScalar(snapshotScalarValue(row.latest, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }))}</>
   const key = column.key!
   if (key === 'tacticSlot') {
-    if (!activeTactic) return <span className="dt-table-muted">Sem tática</span>
-    const slots = tacticSlotAssignments(activeTactic)
-    return <select className="squad-tactic-slot-select" aria-label={`Posição de ${row.player.current_name} na tática`} value={row.tacticSlot ?? ''} onClick={event => event.stopPropagation()} onChange={event => { event.stopPropagation(); void assignTacticSlot(row.player.id, event.target.value || null) }}><option value="">Fora da tática</option>{slots.map(({ slotId, ip }) => <option value={slotId} key={slotId}>{slotLabel(activeTactic, ip)}</option>)}</select>
+    if (!hasActiveTactic) return <span className="dt-table-muted">Sem tática</span>
+    return <select className="squad-tactic-slot-select" aria-label={`Conjunto tático de ${row.player.current_name}`} value={row.tacticSlot ?? ''} onClick={event => event.stopPropagation()} onChange={event => { event.stopPropagation(); assignTacticSet(row.player.id, row.tacticGroupId, event.target.value || null) }}><option value="">Sem conjunto</option>{row.tacticOptions.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}</select>
   }
-  if (key === 'status') return <div><PlanningStatusBadge status={row.status} />{!row.latest && <small>Sem observação atual</small>}</div>
-  if (key === 'name') return <div className="squad-player-name-cell">{row.latest && <PlayerPeek player={row.player} snapshot={row.latest} />}<button className="player-name" onClick={event => { event.stopPropagation(); openPlayer() }}>{row.player.current_name}</button>{!row.latest && <small>Atual ?</small>}</div>
-  if (key === 'age') return <>{row.latest?.age ?? '—'}</>
-  if (key === 'nationality') return <>{row.player.nationality || '—'}</>
+  if (key === 'status') return <div className="squad-status-cell"><PlanningStatusBadge status={row.status} /><small>{row.status}</small></div>
+  if (key === 'name') return <div className="squad-player-name-cell"><PlayerPeek player={row.player} snapshot={row.latest} /><button className="player-name" onClick={event => { event.stopPropagation(); openPlayer() }}>{row.player.current_name}</button></div>
+  if (key === 'age') return <>{row.latest.age ?? '—'}</>
+  if (key === 'nationality') { const flag = countryFlagEmoji(row.player.nationality); return <span className="dt-country-with-flag">{flag && <span aria-hidden="true">{flag}</span>}<span>{row.player.nationality || '—'}</span></span> }
   if (key === 'value') return <>{row.marketValue || '—'}</>
-  if (key === 'team') return <>{row.latest?.club || row.latest?.squad || '—'}</>
-  if (key === 'position') return <>{row.latest?.positions?.join(', ') || '—'}</>
-  if (key === 'height') return <>{row.latest?.height ? `${row.latest.height} cm` : '—'}</>
-  if (key === 'weight') return <>{row.latest?.weight ? `${row.latest.weight} kg` : '—'}</>
-  if (key === 'foot') return <>{row.latest?.preferred_foot || '—'}</>
-  if (key === 'contract') return <>{row.latest?.contract_expiry || '—'}</>
-  if (key === 'snapshot') return <>{row.latest?.snapshot_date || '—'}</>
+  if (key === 'team') return <span className={`squad-current-club ${row.externalClub ? 'is-external' : ''}`}>{row.clubName || '—'}</span>
+  if (key === 'squad') return <>{row.squadName || '—'}</>
+  if (key === 'position') return <>{row.latest.positions?.join(', ') || '—'}</>
+  if (key === 'height') return <>{row.latest.height ? `${row.latest.height} cm` : '—'}</>
+  if (key === 'weight') return <>{row.latest.weight ? `${row.latest.weight} kg` : '—'}</>
+  if (key === 'foot') return <>{row.latest.preferred_foot || '—'}</>
+  if (key === 'contract') return <>{row.latest.contract_expiry || '—'}</>
+  if (key === 'snapshot') return <>{row.latest.snapshot_date || '—'}</>
   if (key === 'score') return <ScoreWithProjection playerId={row.player.id} currentScore={row.score} currentRank={row.referencePercentile} snapshot={row.latest} scoreType="general" variant="inline" currentTitle="Nota atual" />
   return <>{row.referencePercentile === null ? '—' : <span className={`reference-level level-${row.referenceLevel?.toLowerCase().replaceAll(' ', '-')}`}><b>P{row.referencePercentile}</b> {row.referenceLevel} · {row.referenceGroup}</span>}</>
 }
@@ -321,13 +374,13 @@ function buildColumnMenuItems(columns: TableColumn[], index: number, catalog: Re
 
 export function extractMarketValue(snapshot: Snapshot) { const normalized = snapshot.normalized_data ?? {}; for (const key of ['value', 'transfer_value', 'market_value', 'valor']) if (normalized[key] != null && String(normalized[key]).trim()) return String(normalized[key]); for (const [key, value] of Object.entries(snapshot.raw_data ?? {})) { const normalizedKey = key.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_'); if (['value', 'transfer_value', 'market_value', 'valor'].includes(normalizedKey) && String(value).trim()) return String(value) } return null }
 function numericMarketValue(raw: string | null) { if (!raw) return -1; const first = raw.split(/\s*[-–]\s*/)[0], match = first.replace(/\s/g, '').match(/([\d.,]+)\s*([KMB])?/i); if (!match) return -1; const number = Number(match[1].replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return number * ({ K: 1e3, M: 1e6, B: 1e9 }[match[2]?.toUpperCase() as 'K' | 'M' | 'B'] ?? 1) }
-function rowValue(row: Row, key: Exclude<DataKey, 'tacticSlot'>) { if (key === 'status') return row.status; if (key === 'name') return row.player.current_name; if (key === 'nationality') return row.player.nationality; if (key === 'team') return row.latest?.club || row.latest?.squad; if (key === 'position') return row.latest?.positions?.join(', '); if (key === 'age') return row.latest?.age; if (key === 'height') return row.latest?.height; if (key === 'weight') return row.latest?.weight; if (key === 'foot') return row.latest?.preferred_foot; if (key === 'contract') return row.latest?.contract_expiry; if (key === 'snapshot') return row.latest?.snapshot_date; if (key === 'score') return row.score; if (key === 'reference') return row.referencePercentile; return row.marketValue }
-function cellPlainValue(row: Row, column: TableColumn) { if (column.kind === 'attribute') return row.latest?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value; if (column.kind === 'snapshot') return snapshotScalarValue(row.latest, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }); if (column.kind === 'role' || column.kind === 'tacticRole') return row.columnScores[column.id]; if (column.key === 'tacticSlot') return row.tacticSlot ?? ''; return rowValue(row, column.key as Exclude<DataKey, 'tacticSlot'>) }
-function compareRows(a: Row, b: Row, key: DataKey) { if (key === 'tacticSlot') return String(a.tacticSlot ?? '').localeCompare(String(b.tacticSlot ?? ''), 'pt-BR'); if (key === 'position') { const ap = a.latest?.positions ?? [], bp = b.latest?.positions ?? []; return positionRank(ap) - positionRank(bp) || positionSideRank(ap) - positionSideRank(bp) } if (key === 'score') return (a.score ?? -1) - (b.score ?? -1); if (key === 'reference') return (a.referencePercentile ?? -1) - (b.referencePercentile ?? -1); if (key === 'value') return numericMarketValue(a.marketValue) - numericMarketValue(b.marketValue); if (key === 'age' || key === 'height' || key === 'weight') return Number(rowValue(a, key) ?? 999) - Number(rowValue(b, key) ?? 999); return String(rowValue(a, key as Exclude<DataKey, 'tacticSlot'>) ?? '').localeCompare(String(rowValue(b, key as Exclude<DataKey, 'tacticSlot'>) ?? ''), 'pt-BR') }
-function compareTableRows(a: Row, b: Row, key: string, columns: TableColumn[]) { const column = columns.find(item => item.id === key); if (!column) return 0; if (column.kind === 'tacticRole' || column.kind === 'role') return (a.columnScores[column.id] ?? -1) - (b.columnScores[column.id] ?? -1); if (column.kind === 'attribute') { const value = (row: Row) => row.latest?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value ?? -1; return value(a) - value(b) } if (column.kind === 'snapshot') return String(snapshotScalarValue(a.latest, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }) ?? '').localeCompare(String(snapshotScalarValue(b.latest, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }) ?? ''), 'pt-BR', { numeric: true }); return compareRows(a, b, column.key!) }
+function rowValue(row: Row, key: Exclude<DataKey, 'tacticSlot'>) { if (key === 'status') return row.status; if (key === 'name') return row.player.current_name; if (key === 'nationality') return row.player.nationality; if (key === 'team') return row.clubName; if (key === 'squad') return row.squadName; if (key === 'position') return row.latest?.positions?.join(', '); if (key === 'age') return row.latest?.age; if (key === 'height') return row.latest?.height; if (key === 'weight') return row.latest?.weight; if (key === 'foot') return row.latest?.preferred_foot; if (key === 'contract') return row.latest?.contract_expiry; if (key === 'snapshot') return row.latest?.snapshot_date; if (key === 'score') return row.score; if (key === 'reference') return row.referencePercentile; return row.marketValue }
+function cellPlainValue(row: Row, column: TableColumn) { if (column.kind === 'attribute') return row.latest?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value; if (column.kind === 'snapshot') return snapshotScalarValue(row.latest, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }); if (column.kind === 'role' || column.kind === 'tacticRole') return row.columnSortScores[column.id] ?? row.columnScores[column.id]; if (column.key === 'tacticSlot') return row.tacticSlotLabel ?? ''; return rowValue(row, column.key as Exclude<DataKey, 'tacticSlot'>) }
+function compareRows(a: Row, b: Row, key: DataKey) { if (key === 'tacticSlot') return String(a.tacticSlotLabel ?? '').localeCompare(String(b.tacticSlotLabel ?? ''), 'pt-BR'); if (key === 'position') { const ap = a.latest?.positions ?? [], bp = b.latest?.positions ?? []; return positionRank(ap) - positionRank(bp) || positionSideRank(ap) - positionSideRank(bp) } if (key === 'score') return (a.sortScore ?? -1) - (b.sortScore ?? -1); if (key === 'reference') return (a.referencePercentile ?? -1) - (b.referencePercentile ?? -1); if (key === 'value') return numericMarketValue(a.marketValue) - numericMarketValue(b.marketValue); if (key === 'age' || key === 'height' || key === 'weight') return Number(rowValue(a, key) ?? 999) - Number(rowValue(b, key) ?? 999); return String(rowValue(a, key as Exclude<DataKey, 'tacticSlot'>) ?? '').localeCompare(String(rowValue(b, key as Exclude<DataKey, 'tacticSlot'>) ?? ''), 'pt-BR') }
+function compareTableRows(a: Row, b: Row, key: string, columns: TableColumn[]) { const column = columns.find(item => item.id === key); if (!column) return 0; if (column.kind === 'tacticRole' || column.kind === 'role') return (a.columnSortScores[column.id] ?? a.columnScores[column.id] ?? -1) - (b.columnSortScores[column.id] ?? b.columnScores[column.id] ?? -1); if (column.kind === 'attribute') { const value = (row: Row) => row.latest?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value ?? -1; return value(a) - value(b) } if (column.kind === 'snapshot') return String(snapshotScalarValue(a.latest, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }) ?? '').localeCompare(String(snapshotScalarValue(b.latest, { source: column.snapshotSource!, fieldKey: column.snapshotFieldKey! }) ?? ''), 'pt-BR', { numeric: true }); return compareRows(a, b, column.key!) }
 function scoreForRole(row: Row, column: TableColumn, model: ModelConfig) { if (!row.latest || !column.phase || !column.position || !column.roleCode) return null; const roleName = rolesFor(column.position, column.phase).find(([code]) => code === column.roleCode)?.[1] ?? column.roleCode, id = `${column.phase}-${positionGroup(column.position)}-${column.roleCode}`, weights = resolveRoleWeights({ roleId: id, roleName, overrideWeights: model.role_weight_overrides?.[id] }); return roleScore(row.latest.player_attributes, weights) }
 function scoreForTacticRole(row: Row, column: TableColumn, model: ModelConfig) { if (!row.latest || !column.tacticId || !column.linkId) return null; const tactic = model.tactics?.find(item => item.id === column.tacticId), ip = tactic?.ipAssignments.find(item => item.playerId === column.linkId), oop = tactic?.oopAssignments.find(item => item.playerId === column.linkId) ?? ip; if (!tactic || !ip || !oop) return null; const weights = (assignment: Assignment, phase: 'IP' | 'OOP') => { const id = assignment.roleId ?? `${phase}-${positionGroup(assignment.position)}-${assignment.roleCode}`; return resolveRoleWeights({ roleId: id, roleName: assignment.roleName, overrideWeights: model.role_weight_overrides?.[id] ?? tactic.roles?.find(role => role.id === id)?.weights }) }; return pairedRoleScore(row.latest.player_attributes, weights(ip, 'IP'), weights(oop, 'OOP')) }
-const filterColumns: Array<[Filter['column'], string]> = [['status', 'Status'], ['name', 'Nome'], ['age', 'Idade'], ['nationality', 'Nacionalidade'], ['value', 'Valor'], ['team', 'Equipe'], ['position', 'Posições'], ['score', 'Nota'], ['reference', 'Percentil']]
+const filterColumns: Array<[Filter['column'], string]> = [['status', 'Status'], ['name', 'Nome'], ['age', 'Idade'], ['nationality', 'Nacionalidade'], ['value', 'Valor'], ['team', 'Clube'], ['squad', 'Elenco'], ['position', 'Posições'], ['score', 'Nota'], ['reference', 'Percentil']]
 function filterValue(row: Row, column: Filter['column']) { return rowValue(row, column) }
 function matchesFilter(row: Row, filter: Filter) { if (!filter.value.trim()) return true; const value = filterValue(row, filter.column); if (filter.operator === 'contains') return String(value ?? '').toLocaleLowerCase('pt-BR').includes(filter.value.toLocaleLowerCase('pt-BR')); if (filter.operator === 'equals') return String(value ?? '').toLocaleLowerCase('pt-BR') === filter.value.toLocaleLowerCase('pt-BR'); const left = Number(value), right = Number(filter.value); if (!Number.isFinite(left) || !Number.isFinite(right)) return false; return filter.operator === 'gte' ? left >= right : left <= right }
 function formatScalar(value: unknown) { if (value === null || value === undefined || value === '') return '—'; if (typeof value === 'boolean') return value ? 'Sim' : 'Não'; return String(value) }
