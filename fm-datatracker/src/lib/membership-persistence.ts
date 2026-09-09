@@ -27,6 +27,7 @@ export type MembershipPersistenceRow = {
   facts_version: typeof MEMBERSHIP_FACTS_INPUT_VERSION
   sync_version: typeof MEMBERSHIP_FACTS_SYNC_VERSION
   checkpoint_date: string
+  reader_version?: string
   structural_team: MembershipPersistenceFact
   structural_squad: MembershipPersistenceFact
   organization_identity: MembershipPersistenceFact<MembershipPersistenceOrganization>
@@ -176,6 +177,7 @@ export function buildMembershipPersistenceRow(rowValue: unknown): MembershipPers
     facts_version: MEMBERSHIP_FACTS_INPUT_VERSION,
     sync_version: MEMBERSHIP_FACTS_SYNC_VERSION,
     checkpoint_date: checkpointDate,
+    ...(provenance?.reader_parser_version === 'fm26-membership-reader/0.33.0' ? { reader_version: 'fm26-membership-reader/0.33.0' } : {}),
     structural_team: compactFact(facts.structural_team),
     structural_squad: compactFact(facts.structural_squad),
     organization_identity: compactOrganizationFact(facts.organization_identity),
@@ -206,4 +208,8 @@ export function buildMembershipPersistenceRows(rows: unknown[]): MembershipPersi
     byPlayer.set(compact.fm_player_id, compact)
   }
   return [...byPlayer.values()]
+}
+
+export function requiresReader033Membership(rows: unknown[]): boolean {
+  return rows.some(row => record(record(row)?.membership_persistence_v1)?.reader_version === 'fm26-membership-reader/0.33.0')
 }

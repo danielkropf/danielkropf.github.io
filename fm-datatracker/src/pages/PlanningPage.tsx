@@ -1,3 +1,4 @@
+import { safeStorage } from '../lib/safe-storage'
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -146,7 +147,7 @@ const PICKER_DEFAULT_COLUMNS: PickerColumn[] = (['name', 'score', 'positions', '
 const PICKER_WIDTHS: Record<PickerDataKey, number> = { name: 230, score: 178, positions: 150, age: 72, nationality: 140, club: 150, squad: 130, foot: 120, height: 88, weight: 82, contract: 125, snapshot: 125, fact: 160, plan: 180 }
 function readPickerLayout(): { columns: PickerColumn[]; frozenIndex: number; widths: Record<string, number> } {
   if (typeof window === 'undefined') return { columns: PICKER_DEFAULT_COLUMNS, frozenIndex: 0, widths: {} }
-  try { const saved = JSON.parse(localStorage.getItem(PICKER_LAYOUT_KEY) ?? 'null'); if (Array.isArray(saved?.columns) && saved.columns.some((column: PickerColumn) => column.id === 'name')) return { columns: saved.columns, frozenIndex: Number.isInteger(saved.frozenIndex) ? saved.frozenIndex : 0, widths: saved.widths ?? {} } } catch {}
+  try { const saved = JSON.parse(safeStorage.getItem(PICKER_LAYOUT_KEY) ?? 'null'); if (Array.isArray(saved?.columns) && saved.columns.some((column: PickerColumn) => column.id === 'name')) return { columns: saved.columns, frozenIndex: Number.isInteger(saved.frozenIndex) ? saved.frozenIndex : 0, widths: saved.widths ?? {} } } catch {}
   return { columns: PICKER_DEFAULT_COLUMNS, frozenIndex: 0, widths: {} }
 }
 function pickerDefaultWidth(column: PickerColumn) { if (column.kind === 'data') return PICKER_WIDTHS[column.key!]; if (column.kind === 'attribute' || column.kind === 'snapshot') return 112; return 120 }
@@ -257,7 +258,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       const existing = modelConfig as Config
       const tracked = selected.structure?.trackedClubs ?? []
       const primaryId = primaryPlanningClubId(tracked)
-      const remembered = typeof window === 'undefined' ? null : localStorage.getItem(planningClubStorageKey(selected.id))
+      const remembered = typeof window === 'undefined' ? null : safeStorage.getItem(planningClubStorageKey(selected.id))
       const nextClubId = resolvePlanningClubId(tracked, remembered)
       const membershipResult = await loadPlanningMembershipsWarm(selected.id, nextClubId, currentPlayers).then(rows => ({ rows, diagnostic: '' })).catch(error => ({ rows: [] as PlayerMembershipWithClubs[], diagnostic: describeDbError(error).full }))
       if (!alive) return
@@ -271,7 +272,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
         const legacyPlanning = primaryId && planningByClub[primaryId] ? planningByClub[primaryId] : normalizePlanning(existing.planning)
         setConfig({ ...existing, ...tacticSelection, planning: legacyPlanning, planning_by_club: planningByClub })
         setSelectedClubId(nextClubId)
-        if (typeof window !== 'undefined') { if (nextClubId) localStorage.setItem(planningClubStorageKey(selected.id), nextClubId); else localStorage.removeItem(planningClubStorageKey(selected.id)) }
+        if (typeof window !== 'undefined') { if (nextClubId) safeStorage.setItem(planningClubStorageKey(selected.id), nextClubId); else safeStorage.removeItem(planningClubStorageKey(selected.id)) }
         setSelectedGroup(selectedPlanning.groups[0]?.id ?? '')
         loaded.current = true; saveStatus('✓ Salvo'); setLoading(false)
       })
@@ -385,7 +386,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [pickerSetId])
-  useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem(PICKER_LAYOUT_KEY, JSON.stringify({ columns: pickerColumns, frozenIndex: pickerFrozenIndex, widths: pickerWidths })) }, [pickerColumns, pickerFrozenIndex, pickerWidths])
+  useEffect(() => { if (typeof window !== 'undefined') safeStorage.setItem(PICKER_LAYOUT_KEY, JSON.stringify({ columns: pickerColumns, frozenIndex: pickerFrozenIndex, widths: pickerWidths })) }, [pickerColumns, pickerFrozenIndex, pickerWidths])
 
   function resolvedWeights(slot: Assignment, phase: 'IP' | 'OOP') {
     const id = slot.roleId ?? `${phase}-${positionGroup(slot.position)}-${slot.roleCode}`
@@ -429,7 +430,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   function changePlanningClub(clubId: string) {
     if (!selected || clubId === selectedClubId || !planningClubs.some(item => item.club_id === clubId)) return
     const nextPlanning = resolveClubPlanning(config, clubId, primaryClubId, defaults)
-    setSelectedClubId(clubId); localStorage.setItem(planningClubStorageKey(selected.id), clubId); setSelectedGroup(nextPlanning.groups[0]?.id ?? ''); setUndoPlanning(null); setExpandedSets(new Set()); setFocusedSetId(null); setPickerSetId(null)
+    setSelectedClubId(clubId); safeStorage.setItem(planningClubStorageKey(selected.id), clubId); setSelectedGroup(nextPlanning.groups[0]?.id ?? ''); setUndoPlanning(null); setExpandedSets(new Set()); setFocusedSetId(null); setPickerSetId(null)
   }
   function selectClubTactic(id: string) {
     setExpandedSets(new Set()); setFocusedSetId(null); setPickerSetId(null)
@@ -787,7 +788,7 @@ function BoardPlayerRow({ player, snapshot, score, generalScore, scoreDetails, s
     <PlanningPitchRowCells
       showScores={showScores}
       peek={snapshot ? <PlayerPeek player={player} snapshot={snapshot} /> : null}
-      identity={<button type="button" className={`planning-pitch-player-name ${statusPlayerClass(status)}`} onClick={event => { event.stopPropagation(); open() }}><span>{player.current_name}</span><small className="planning-player-meta">{snapshot?.age ?? '—'} anos{countryFlagEmoji(player.nationality) ? <> · <span className="planning-country-flag" aria-label={player.nationality ?? undefined}>{countryFlagEmoji(player.nationality)}</span></> : ''}</small></button>}
+      identity={<button type="button" className={`planning-pitch-player-name ${statusPlayerClass(status)}`} onClick={event => { event.stopPropagation(); open() }}><span>{player.current_name}</span><small className="planning-player-meta">{snapshot ? `${snapshot.age ?? '—'} anos` : 'Sem observação atual'}{countryFlagEmoji(player.nationality) ? <> · <span className="planning-country-flag" aria-label={player.nationality ?? undefined}>{countryFlagEmoji(player.nationality)}</span></> : ''}</small></button>}
       score={scoreContent}
     />
   </article>

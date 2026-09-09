@@ -5,10 +5,10 @@ export type PlanningTeamLevel = 'first_team' | 'reserve' | 'academy' | 'other' |
 type PlanningGroupLike = { id: string; name: string }
 
 const normalize = (value: string | null | undefined) => (value ?? '').trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
-const marketKind = (group: PlanningGroupLike | string | null | undefined): 'loan' | 'sale' | null => {
-  const value = typeof group === 'string' ? normalize(group) : normalize(`${group?.id ?? ''} ${group?.name ?? ''}`)
-  if (value.includes('loan') || value.includes('emprest')) return 'loan'
-  if (value.includes('sale') || value.includes('vend')) return 'sale'
+export const marketPlanningGroupKind = (group: PlanningGroupLike | string | null | undefined): 'loan' | 'sale' | null => {
+  const values = typeof group === 'string' ? [normalize(group)] : [normalize(group?.id), normalize(group?.name)]
+  if (values.some(value => ['loan', 'loans', 'emprestimo', 'emprestimos', 'para emprestimo'].includes(value))) return 'loan'
+  if (values.some(value => ['sale', 'venda', 'vendas', 'para venda'].includes(value))) return 'sale'
   return null
 }
 
@@ -48,7 +48,7 @@ export function currentRosterLabel({ externalClub, factualSquadName, snapshotSqu
 }
 
 export function currentRosterStatus(externalClub: boolean, planningGroup: PlanningGroupLike | string | null | undefined, membershipKind: CurrentRosterMembershipKind = null): CurrentRosterStatus {
-  const kind = marketKind(planningGroup)
+  const kind = marketPlanningGroupKind(planningGroup)
   if (kind === 'loan') return 'Para empréstimo'
   if (kind === 'sale') return 'Para venda'
   if (membershipKind === 'loaned_out') return 'Emprestado para fora'
@@ -58,7 +58,7 @@ export function currentRosterStatus(externalClub: boolean, planningGroup: Planni
 }
 
 export function preferredTacticalPlanningGroupId(groups: PlanningGroupLike[], existingGroupId: string | null | undefined, teamLevel: PlanningTeamLevel, rosterLabel?: string | null): string | null {
-  const internal = groups.filter(group => !marketKind(group))
+  const internal = groups.filter(group => !marketPlanningGroupKind(group))
   if (existingGroupId && internal.some(group => group.id === existingGroupId)) return existingGroupId
 
   const roster = normalize(rosterLabel)

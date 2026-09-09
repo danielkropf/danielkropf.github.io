@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { readStoredDataTableViews, writeStoredDataTableViews } from './table-view-storage'
 

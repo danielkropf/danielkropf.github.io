@@ -27,7 +27,7 @@ function putOrganization(bytes: Uint8Array, offset: number, a: number[], b: numb
   for (const team of b) { putU32(bytes, cursor, team); cursor += 4 }
   return cursor
 }
-function putCompleteContract(bytes: Uint8Array, header: number, eid: number, team: number, wage: number, dates: { expiry: string; joined: string; effective: string }, typeIds: number[] = [], auxCount = 0) {
+function putCompleteContract(bytes: Uint8Array, header: number, eid: number, team: number, wage: number, dates: { expiry: string; joined: string; effective: string }, typeIds: number[] = [], auxCount = 0, count19 = 0, count29 = 0) {
   putPackedDate(bytes, header, dates.expiry)
   bytes.fill(0xff, header + 4, header + 12)
   bytes.fill(0, header + 12, header + 15)
@@ -38,9 +38,12 @@ function putCompleteContract(bytes: Uint8Array, header: number, eid: number, tea
   }
   bytes[cursor++] = auxCount
   for (let index = 0; index < auxCount; index++) { bytes.fill(index + 1, cursor, cursor + 31); cursor += 31 }
-  const anchor = cursor + 74
-  putPackedDate(bytes, anchor - 43, dates.expiry)
-  putPackedDate(bytes, anchor - 39, dates.joined)
+  bytes[cursor] = count19
+  const base = cursor + 19 * count19
+  putU32(bytes, base + 45, count29)
+  const anchor = base + 74 + 29 * count29
+  putPackedDate(bytes, base + 31, dates.expiry)
+  putPackedDate(bytes, base + 35, dates.joined)
   putPackedDate(bytes, anchor - 24, dates.effective)
   putPackedDate(bytes, anchor - 5, '1900-01-02', 0)
   putU32(bytes, anchor, eid); putU32(bytes, anchor + 4, team); putU32(bytes, anchor + 8, 0); putU32(bytes, anchor + 12, wage)
@@ -303,5 +306,29 @@ describe('E-MC-01A persistence fence', () => {
     expect(afterWithoutEnvelope).toBe(before)
     expect(p.membership_facts_v1).toMatchObject({ schema: 'membership_facts_v1', version: 'e-mc-01-v1' })
     expect(result).toHaveProperty('membership_facts_v1_diagnostics.persistence_authority', false)
+  })
+})
+
+describe('variable contract trailers characterized for 0.33.0', () => {
+  it.each([[0, 1], [1, 0], [1, 5]])('decodes optional19=%s and records29=%s without shifting expiry', (count19, count29) => {
+    const bytes = new Uint8Array(8192)
+    putOrganization(bytes, 6000, [679, 1993])
+    putCompleteContract(bytes, 200, 123, 679, 1000, { expiry: '2029-06-30', joined: '2024-07-01', effective: '2024-07-01' }, [1, 2, 3], 1, count19, count29)
+    putIdentity(bytes, 4000, 123, 900123)
+    const facts = buildPlayerMembershipFacts(player(123, 900123, 4000), bytes, '2025-08-01')!
+    expect(facts.contracts.complete_objects).toHaveLength(1)
+    expect(facts.contracts.complete_objects[0]).toMatchObject({ expiry_date: '2029-06-30', joined_or_start_date: '2024-07-01' })
+    expect(resolved(facts).current_standard_contract.status).toBe('confirmed')
+  })
+  it('does not turn an external active relation into ambiguity just because the player is listed under the owning club', () => {
+    const bytes = new Uint8Array(8192)
+    putOrganization(bytes, 6000, [679, 1993]); putOrganization(bytes, 6200, [534, 999])
+    putCompleteContract(bytes, 200, 123, 679, 1000, { expiry: '2029-06-30', joined: '2024-07-01', effective: '2024-07-01' })
+    putRelation(bytes, 900, 123, 534, 0, '2025-07-01', '2026-06-30')
+    putIdentity(bytes, 4000, 123, 900123)
+    const facts = resolved(buildPlayerMembershipFacts(player(123, 900123, 4000), bytes, '2025-08-01'))
+    expect(facts.is_loan).toMatchObject({ status: 'confirmed', value: true })
+    expect(facts.loan_from_organization.value?.organization_team_ids).toEqual([679, 1993])
+    expect(facts.loan_to_organization.value?.organization_team_ids).toEqual([534, 999])
   })
 })

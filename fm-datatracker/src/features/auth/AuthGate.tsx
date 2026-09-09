@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { setPrivateSession } from '../../lib/private-session'
+import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { AppVersion } from '../../components/AppVersion'
@@ -29,6 +30,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, next) => {
       if (!active) return
       authEventSeen = true
+      setPrivateSession(next?.user.id ?? null)
       setAuth(next
         ? { status: 'authenticated', session: next, error: '' }
         : unauthenticatedState())
@@ -40,6 +42,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         setAuth({ status: 'error', session: null, error: error.message })
         return
       }
+      setPrivateSession(data.session?.user.id ?? null)
       setAuth(data.session
         ? { status: 'authenticated', session: data.session, error: '' }
         : unauthenticatedState())
@@ -68,6 +71,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (error) {
         setMessage(error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : `Falha no login: ${error.message}`)
       } else if (data.session) {
+        setPrivateSession(data.session.user.id)
         setAuth({ status: 'authenticated', session: data.session, error: '' })
       }
     } catch (cause) {
@@ -85,5 +89,5 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (auth.status === 'unauthenticated') return <main className="center"><form className="card auth" onSubmit={submit}><span className="eyebrow">FM DATATRACKER</span><h1>Entre no vestiário</h1><p>Use o usuário criado no Supabase para acessar seu Banco Mestre.</p><label>E-mail<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="voce@exemplo.com" /></label><label>Senha<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} placeholder="Sua senha" /></label><button disabled={submitting}>{submitting ? 'Entrando…' : 'Entrar'}</button>{message && <p className="error" role="alert">{message}</p>}<AppVersion /></form></main>
 
-  return children
+  return <Fragment key={auth.session.user.id}>{children}</Fragment>
 }

@@ -1,3 +1,4 @@
+import { paginatedQuery } from './paginated-query'
 import { supabase } from './supabase'
 import {
   resolveFactualMembershipContext,
@@ -17,8 +18,7 @@ function db() {
 
 /**
  * Shared E-MC-01B loader. It scopes by save + explicit checkpoint and performs
- * one membership query (chunked only when a caller provides a large player-id
- * set). It never consults players.is_active and never substitutes another date.
+ * paginated membership queries (also chunked for large player-id sets). It never consults players.is_active and never substitutes another date.
  */
 export async function loadFactualMembershipContexts(
   saveId: string,
@@ -32,18 +32,24 @@ export async function loadFactualMembershipContexts(
   const rows: FactualMembershipObservation[] = []
 
   for (const chunk of chunks) {
-    let query = client
-      .from('player_memberships')
-      .select('id,player_id,observed_date,current_club_id,owner_club_id,team_level,squad_name,is_loan,loan_from_club_id,loan_to_club_id,provenance')
-      .eq('save_id', saveId)
-      .order('observed_date', { ascending: false })
-    query = options.includeLastConfirmed === false ? query.eq('observed_date', checkpointDate) : query.lte('observed_date', checkpointDate)
-    if (chunk) query = query.in('player_id', chunk)
-    const result = await query
-    if (result.error) throw new Error(result.error.message)
+    const result = await paginatedQuery(() => {
+      let query = client
+        .from('player_memberships')
+        .select('id,player_id,observed_date,current_club_id,owner_club_id,team_level,squad_name,is_loan,loan_from_club_id,loan_to_club_id,provenance')
+        .eq('save_id', saveId)
+        .order('observed_date', { ascending: false }).order('id')
+      query = options.includeLastConfirmed === false ? query.eq('observed_date', checkpointDate) : query.lte('observed_date', checkpointDate)
+      if (chunk) query = query.in('player_id', chunk)
+      return query
+    })
     rows.push(...((result.data ?? []) as unknown as FactualMembershipObservation[]))
   }
 
+  const byPlayer = new Map<string, FactualMembershipObservation[]>()
+  for (const row of rows) {
+    const observations = byPlayer.get(row.player_id) ?? []
+    observations.push(row); byPlayer.set(row.player_id, observations)
+  }
   const playerIds = ids.length ? ids : [...new Set(rows.map(row => row.player_id))]
-  return new Map(playerIds.map(playerId => [playerId, resolveFactualMembershipContext(rows, playerId, checkpointDate)]))
+  return new Map(playerIds.map(playerId => [playerId, resolveFactualMembershipContext(byPlayer.get(playerId) ?? [], playerId, checkpointDate)]))
 }

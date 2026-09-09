@@ -1,3 +1,4 @@
+import { indexStructuralTeamNames } from './fm26-team-structure'
 type UnknownRecord = Record<string, unknown>
 
 export type OfflineTeamNameResolution = {
@@ -10,7 +11,10 @@ export type OfflineTeamNameResolution = {
   squad_row_offset: number | null
   name_record_offset: number | null
   name_record_reference_raw: number | null
-  source: 'game_db_structural_team_key'
+  source: 'game_db_structural_team_key' | 'game_db_team_embedded_name' | 'game_db_team_name_reference'
+  category_raw?: number | null
+  age_raw?: number | null
+  tail_name_reference_raw?: number | null
   candidate_count: number
 }
 
@@ -158,8 +162,24 @@ function uniqueNameCandidates(candidates: TeamNameCandidate[]): TeamNameCandidat
 export function resolveOfflineTeamNames(gameDb: Uint8Array, teamIds: Iterable<number>): OfflineTeamNameResolution[] {
   const wanted = [...new Set([...teamIds].filter(teamId => Number.isInteger(teamId) && teamId > 0 && teamId < 100_000))].sort((a, b) => a - b)
   const nameCache = new Map<number, TeamNameCandidate[]>()
+  const structural = indexStructuralTeamNames(gameDb)
 
   return wanted.map(teamId => {
+    const rows = structural.get(teamId)
+    if (rows?.length) {
+      const row = rows.length === 1 ? rows[0] : null
+      const ambiguous = rows.length > 1 || Boolean(row?.ambiguous)
+      return {
+        team_id: teamId, team_index_zero_based: teamId - 1,
+        status: ambiguous ? 'ambiguous' as const : row?.name ? 'confirmed' as const : 'unresolved' as const,
+        name: ambiguous ? null : row?.name ?? null, short_name: ambiguous ? null : row?.shortName ?? null,
+        team_key: row?.key ?? null, squad_row_offset: row?.offset ?? null,
+        name_record_offset: row?.nameOffset ?? null, name_record_reference_raw: row ? row.reference - 1 : null,
+        source: row?.source ?? 'game_db_team_name_reference' as const,
+        category_raw: row?.type ?? null, age_raw: row?.age ?? null, tail_name_reference_raw: row?.reference ?? null,
+        candidate_count: ambiguous ? Math.max(2, rows.length) : row?.name ? 1 : 0,
+      }
+    }
     const chains: Array<{ row: TeamRowCandidate; name: TeamNameCandidate }> = []
     for (const row of findTeamRows(gameDb, teamId)) {
       let names = nameCache.get(row.teamKey)

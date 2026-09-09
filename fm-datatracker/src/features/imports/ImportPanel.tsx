@@ -1,3 +1,7 @@
+import { checkDatabaseCompatibility } from '../../lib/database-compatibility'
+import { requiresReader033Membership } from '../../lib/membership-persistence'
+import { safeSessionStorage } from '../../lib/safe-storage'
+import { assertPrivateSession, privateSessionGeneration } from '../../lib/private-session'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { chooseImportDirectory, chooseImportFile, getImportDirectoryName, IMPORT_DIRECTORY_CHANGED, supportsPersistentFilePicker, type ImportFileKind } from '../../lib/file-picker'
 import { detectNameColumn, filesHash, inferSnapshotYear, isValidIsoDate, normalizeHeader, parseCsvFile, prepareRows } from '../../lib/importer'
@@ -77,18 +81,18 @@ function errorMessage(error: unknown): string {
 function sessionJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
   try {
-    const value = sessionStorage.getItem(key)
+    const value = safeSessionStorage.getItem(key)
     return value ? JSON.parse(value) as T : null
   } catch { return null }
 }
 
 function writeImportFlash(saveId: string, message: string) {
   if (typeof window === 'undefined') return
-  sessionStorage.setItem(IMPORT_FLASH_KEY, JSON.stringify({ saveId, message, createdAt: Date.now() } satisfies ImportFlash))
+  safeSessionStorage.setItem(IMPORT_FLASH_KEY, JSON.stringify({ saveId, message, createdAt: Date.now() } satisfies ImportFlash))
 }
 
 function clearImportFlash() {
-  if (typeof window !== 'undefined') sessionStorage.removeItem(IMPORT_FLASH_KEY)
+  if (typeof window !== 'undefined') safeSessionStorage.removeItem(IMPORT_FLASH_KEY)
 }
 
 function comparePlayers(csvRows: PreparedRow[], fmRows: PreparedRow[]): DataComparison {
@@ -177,8 +181,20 @@ function tagRows(rows: PreparedRow[], source: string, validation: 'validated' | 
   return rows.map(row => ({ ...row, normalized_data: { ...row.normalized_data, import_source: source, fm_validation: validation } }))
 }
 
-export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }: ImportPanelProps) {
+export function ImportPanel(props: ImportPanelProps) {
   const { selected } = useSaves()
+  return <ScopedImportPanel key={`${selected?.id ?? 'none'}:${props.updateTarget?.id ?? 'new'}`} {...props} />
+}
+
+function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: ImportPanelProps) {
+  const { selected } = useSaves()
+  const csvTask = useRef(0), fmTask = useRef(0)
+  const cancelFm = useRef<(() => void) | null>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false; csvTask.current++; fmTask.current++; cancelFm.current?.() }
+  }, [])
   const csvInput = useRef<HTMLInputElement>(null)
   const fmInput = useRef<HTMLInputElement>(null)
   const [csvFile, setCsvFile] = useState<File | null>(null)
@@ -216,8 +232,8 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
     const interrupted = sessionJson<FmReadMarker>(FM_READ_MARKER_KEY)
     if (interrupted && interrupted.runtimeId !== IMPORT_PANEL_RUNTIME_ID && Date.now() - interrupted.startedAt <= FM_READ_MARKER_TTL_MS) {
       setFmStatus(`A leitura anterior de “${interrupted.fileName}” foi interrompida por um recarregamento da página. Selecione o arquivo novamente; nenhum import foi confirmado.`)
-      sessionStorage.removeItem(FM_READ_MARKER_KEY)
-    } else if (interrupted && (interrupted.runtimeId !== IMPORT_PANEL_RUNTIME_ID || Date.now() - interrupted.startedAt > FM_READ_MARKER_TTL_MS)) sessionStorage.removeItem(FM_READ_MARKER_KEY)
+      safeSessionStorage.removeItem(FM_READ_MARKER_KEY)
+    } else if (interrupted && (interrupted.runtimeId !== IMPORT_PANEL_RUNTIME_ID || Date.now() - interrupted.startedAt > FM_READ_MARKER_TTL_MS)) safeSessionStorage.removeItem(FM_READ_MARKER_KEY)
   }, [selected?.id])
 
   useEffect(() => {
@@ -283,20 +299,23 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
 
   async function chooseCsv(file: File | undefined) {
     if (!file) return
+    const task = ++csvTask.current
     clearSuccessForNewInput(); setCsvFile(file); setPreview(null); setLoadingCsv(true); setCsvStatus('Lendo CSV em segundo plano…')
     try {
       const next = await parseCsvFile(file)
+      if (task !== csvTask.current) return
       const detected = detectNameColumn(next.headers)
       setPreview(next); setNameColumn(detected); if (!updateTarget) setType(next.fileType === 'unknown' ? 'squad' : next.fileType)
       if (!updateTarget && !fmFile && !snapshotDate) setSnapshotDate('')
       setCsvStatus(`${next.rowCount} linhas e ${next.headers.length} dados detectados.`)
-    } catch (error) { setCsvStatus(`Não foi possível ler o CSV: ${errorMessage(error)}`) }
-    finally { setLoadingCsv(false) }
+    } catch (error) { if (task !== csvTask.current) return; setCsvStatus(`Não foi possível ler o CSV: ${errorMessage(error)}`) }
+    finally { if (task === csvTask.current) setLoadingCsv(false) }
   }
 
-  async function readFmInWorker(file: File): Promise<OfflineRead> {
+  async function readFmInWorker(file: File, task: number): Promise<OfflineRead> {
     const id = crypto.randomUUID()
     const bytes = await file.arrayBuffer()
+    if (task !== fmTask.current) throw new Error('Leitura substituída.')
     return new Promise((resolve, reject) => {
       let worker: Worker
       let settled = false
@@ -316,7 +335,9 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
         return
       }
 
+      cancelFm.current = () => fail('Leitura cancelada.')
       worker.onmessage = event => {
+        if (settled || task !== fmTask.current) return
         const response = event.data as { id: string; type: 'status' | 'result' | 'error'; status?: string; result?: OfflineRead; message?: string }
         if (response.id !== id) return
         if (response.type === 'status') {
@@ -344,11 +365,13 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
 
   async function chooseFm(file: File | undefined) {
     if (!file) return
+    const task = ++fmTask.current
+    cancelFm.current?.()
     clearSuccessForNewInput(); setFmFile(file); setFmRead(null); if (!updateTarget) setType('squad'); setLoadingFm(true); setFmStatus('Lendo o save localmente em segundo plano…')
-    if (typeof window !== 'undefined') sessionStorage.setItem(FM_READ_MARKER_KEY, JSON.stringify({ fileName: file.name, startedAt: Date.now(), runtimeId: IMPORT_PANEL_RUNTIME_ID } satisfies FmReadMarker))
+    if (typeof window !== 'undefined') safeSessionStorage.setItem(FM_READ_MARKER_KEY, JSON.stringify({ fileName: file.name, startedAt: Date.now(), runtimeId: IMPORT_PANEL_RUNTIME_ID } satisfies FmReadMarker))
     try {
-      const read = await readFmInWorker(file)
-      setFmRead(read)
+      const read = await readFmInWorker(file, task)
+      if (task !== fmTask.current) return
       if (updateTarget) {
         if (read.snapshot_date_precision === 'day' && read.snapshot_date && read.snapshot_date !== updateTarget.snapshot_date) throw new Error(`O arquivo selecionado está na data ${read.snapshot_date}, mas esta importação pertence a ${updateTarget.snapshot_date}.`)
         if (read.snapshot_date_precision === 'year' && read.snapshot_date && !updateTarget.snapshot_date.startsWith(`${read.snapshot_date.slice(0, 4)}-`)) throw new Error(`O arquivo selecionado pertence ao ano ${read.snapshot_date.slice(0, 4)}, mas esta importação pertence a ${updateTarget.snapshot_date}.`)
@@ -358,14 +381,17 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
         const year = read.snapshot_date.slice(0, 4)
         setSnapshotDate(current => current.startsWith(`${year}-`) ? current : '')
       } else setSnapshotDate('')
+      setFmRead(read)
       const tacticCount = read.tactics?.length ?? 0
       const tacticStatus = tacticCount === 1 ? ' 1 tática resolvida.' : tacticCount > 1 ? ` ${tacticCount} táticas resolvidas; a seleção automática ficará bloqueada.` : ' Nenhuma tática resolvida com segurança.'
       const clubCount = comparableNumber(read.diagnostics?.resolved_human_club_count) ?? 0
       const clubStatus = clubCount > 0 ? ` ${clubCount} clube(s) de human manager resolvido(s).` : ' Clube do human manager não resolvido; importação direta do .fm ficará bloqueada para evitar atribuição ao save errado.'
       setFmStatus(`${read.players.length} jogadores identificados pelo leitor beta.${tacticStatus}${clubStatus}${read.snapshot_date ? read.snapshot_date_precision === 'day' ? ` Data atual do save: ${read.snapshot_date}.` : ` Ano confirmado no save: ${read.snapshot_date.slice(0, 4)}. Informe dia e mês antes de confirmar; 01/01 não será usado como data inventada.` : ' A data exata do save ainda não foi localizada pelo leitor; informe a data manualmente antes de confirmar.'}`)
-    } catch (error) { setFmStatus(`Não foi possível ler o arquivo .fm: ${errorMessage(error)}`) }
+    } catch (error) { if (task !== fmTask.current) return; setFmRead(null); setFmStatus(`Não foi possível ler o arquivo .fm: ${errorMessage(error)}`) }
     finally {
-      if (typeof window !== 'undefined') sessionStorage.removeItem(FM_READ_MARKER_KEY)
+      if (task !== fmTask.current) return
+      cancelFm.current = null
+      if (typeof window !== 'undefined') safeSessionStorage.removeItem(FM_READ_MARKER_KEY)
       setLoadingFm(false)
     }
   }
@@ -417,6 +443,7 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
 
   async function confirm() {
     if (!selected || !canConfirm) return
+    const generation = privateSessionGeneration()
     setSaving(true); setMessage('')
     try {
       if (!supabase) throw new Error('Banco mestre não configurado.')
@@ -441,6 +468,12 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
         : null
       if (tacticPlan?.status === 'blocked') warnings.push(`Tática .fm não integrada automaticamente: ${tacticPlan.diagnostic}`)
 
+      if (requiresReader033Membership(importRows)) {
+        const compatibility = await checkDatabaseCompatibility(true)
+        if (!compatibility.capabilities.reader033MembershipRefresh) throw new Error('Aplique a migração 20260909142039_reader_033_membership_refresh antes de importar com o leitor 0.33.0. Os dados anteriores foram preservados.')
+      }
+      assertPrivateSession(generation)
+      if (!mounted.current) return
       const { data, error } = await supabase.rpc('import_fm_export', {
         p_save_id: selected.id, p_filename: [csvFile?.name, fmFile?.name].filter(Boolean).join(' + '),
         p_file_hash: importFileHash, p_file_type: effectiveType,
@@ -448,6 +481,7 @@ export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }:
         p_rows: importRows, p_warnings: warnings,
       })
       if (error) throw error
+      assertPrivateSession(generation)
       const result = data as { duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
       const tacticOutcome = await persistTacticPlan(tacticPlan)
       const tacticSuffix = tacticOutcome.note ? ` ${tacticOutcome.note}` : ''

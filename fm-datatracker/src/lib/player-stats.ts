@@ -1,3 +1,4 @@
+import { paginatedQuery } from './paginated-query'
 import { performanceConfidence } from './scoring'
 import { supabase } from './supabase'
 import type { PlayerStat } from '../types/domain'
@@ -42,13 +43,13 @@ export function statContextLabel(stat: Pick<PlayerStat,'season'|'competition'|'t
 
 export async function loadPlayerStats(saveId:string,playerId:string):Promise<PlayerStat[]> {
   if(!supabase)return[]
-  const result=await supabase
+  const result=await paginatedQuery(() => supabase!
     .from('player_stats')
     .select('id,player_id,save_id,import_id,snapshot_date,season,competition,team,minutes,appearances,starts,sub_appearances,raw_stats,normalized_stats,created_at')
     .eq('save_id',saveId)
     .eq('player_id',playerId)
     .order('snapshot_date',{ascending:false})
-    .order('created_at',{ascending:false})
+    .order('created_at',{ascending:false}).order('id'))
   if(result.error)throw result.error
   return(result.data??[]) as unknown as PlayerStat[]
 }

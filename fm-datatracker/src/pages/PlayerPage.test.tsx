@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlayerPage } from './PlayerPage'
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     filters: Array<[string, unknown]>
     result: Promise<{ data: unknown; error: { message: string } | null }>
   }>,
+  snapshotRead: undefined as Promise<{ data: any; error: unknown }> | undefined,
   loadEvolutionContext: vi.fn(),
   loadCurrentPlayers: vi.fn(),
   loadReferenceDataset: vi.fn(),
@@ -21,18 +22,20 @@ vi.mock('../lib/longitudinal-service', () => ({
   loadPlayerEvolutionContext: (...args: unknown[]) => mocks.loadEvolutionContext(...args),
 }))
 vi.mock('../lib/dataCache', () => ({
+  loadPlayerSnapshots: async () => (await mocks.snapshotRead)?.data?.player_snapshots ?? [],
   loadCurrentPlayers: (...args: unknown[]) => mocks.loadCurrentPlayers(...args),
   loadReferenceDataset: (...args: unknown[]) => mocks.loadReferenceDataset(...args),
 }))
 vi.mock('../lib/supabase', () => ({
   supabase: {
     from: vi.fn((table: string) => {
-      if (table === 'player_stats') {
+      if (table === 'player_stats' || table === 'save_events') {
         const result = Promise.resolve({ data: [], error: null })
         const builder = {
           select: () => builder,
           eq: () => builder,
           order: () => builder,
+          range: () => result,
           then: result.then.bind(result),
         }
         return builder
@@ -40,6 +43,7 @@ vi.mock('../lib/supabase', () => ({
 
       const query = mocks.queries.shift()
       if (!query) throw new Error('query mock ausente')
+      mocks.snapshotRead = query.result as Promise<{ data: any; error: unknown }>
       const builder = {
         select: () => builder,
         eq: (key: string, value: unknown) => { query.filters.push([key, value]); return builder },
@@ -145,6 +149,8 @@ describe('PlayerPage save isolation', () => {
     mocks.selected = { id: 'save-a', name: 'A' }
     mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [snapshot('s1', '2029-07-01')]), error: null }) })
     render(view())
+    await screen.findByRole('heading', { name: 'Jogador A' })
+    fireEvent.click(screen.getByRole('button', { name: 'Evolução' }))
     expect(await screen.findByRole('heading', { name: 'Evolução' })).not.toBeNull()
     expect(screen.getByText('Baseline único')).not.toBeNull()
     expect(screen.getByText(/não fabrica tendência ou delta/i)).not.toBeNull()
@@ -154,6 +160,8 @@ describe('PlayerPage save isolation', () => {
     mocks.selected = { id: 'save-a', name: 'A' }
     mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [snapshot('s1', '2029-07-01'), snapshot('s2', '2030-07-01')]), error: null }) })
     render(view())
+    await screen.findByRole('heading', { name: 'Jogador A' })
+    fireEvent.click(screen.getByRole('button', { name: 'Evolução' }))
     expect(await screen.findByRole('heading', { name: 'Comparar checkpoints' })).not.toBeNull()
     expect(screen.getByLabelText('Checkpoint inicial')).not.toBeNull()
     expect(screen.getByLabelText('Checkpoint final')).not.toBeNull()
@@ -164,6 +172,8 @@ describe('PlayerPage save isolation', () => {
     mocks.loadEvolutionContext.mockResolvedValue({ memberships: [], seasons: [], diagnostic: 'membership unavailable' })
     mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [snapshot('s1', '2029-07-01')]), error: null }) })
     render(view())
+    await screen.findByRole('heading', { name: 'Jogador A' })
+    fireEvent.click(screen.getByRole('button', { name: 'Evolução' }))
     expect(await screen.findByText(/Contexto normalizado indisponível: membership unavailable/)).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'Jogador A' })).not.toBeNull()
   })
@@ -196,10 +206,47 @@ describe('PlayerPage save isolation', () => {
     mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Alisson', [currentSnapshot]), error: null }) })
 
     render(view())
-    expect(await screen.findByRole('heading', { name: 'Situação no checkpoint atual' })).not.toBeNull()
-    expect(screen.getAllByText('Empréstimo confirmado').length).toBeGreaterThan(0)
+    expect(await screen.findByRole('heading', { name: 'Situação atual' })).not.toBeNull()
+    expect(screen.getAllByText('Emprestado').length).toBeGreaterThan(0)
     expect(screen.getAllByText('FLU').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Não resolvido').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Não identificado').length).toBeGreaterThan(0)
     expect(screen.queryByText(/São Paulo/i)).toBeNull()
+  })
+})
+
+describe('PlayerPage focused profile', () => {
+  it('abre resumo, mantém atributos em sua seção e permite voltar à data atual', async () => {
+    mocks.selected = { id: 'save-a', name: 'A' }
+    mocks.currentCheckpoint = { saveId: 'save-a', status: 'ready', date: '2030-07-01' }
+    const old = snapshot('old', '2029-07-01')
+    const current = snapshot('current', '2030-07-01')
+    mocks.loadCurrentPlayers.mockResolvedValue([player('player-1', 'Jogador A', [current])])
+    mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [old, current]), error: null }) })
+    render(view())
+    await screen.findByRole('heading', { name: 'Qualidade atual' })
+    expect(screen.queryByRole('heading', { name: 'Evolução' })).toBeNull()
+    expect(screen.queryByLabelText('Comparar com')).toBeNull()
+    const method = screen.getByText('Como a avaliação é calculada').closest('details')
+    expect(method?.open).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Atributos' }))
+    expect(screen.getByLabelText('Comparar com')).not.toBeNull()
+    fireEvent.change(screen.getByLabelText('Data da observação'), { target: { value: '0' } })
+    expect(screen.getByText(/Você está vendo/).textContent).toContain('2029')
+    fireEvent.change(screen.getByLabelText('Data da observação'), { target: { value: '-1' } })
+    expect(screen.queryByText(/Você está vendo/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Resumo' }))
+    expect(screen.getByRole('heading', { name: 'Qualidade atual' })).not.toBeNull()
+  })
+
+  it('não promove a última observação para atual e mantém acesso ao histórico', async () => {
+    mocks.selected = { id: 'save-a', name: 'A' }
+    mocks.currentCheckpoint = { saveId: 'save-a', status: 'ready', date: '2030-07-01' }
+    mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [snapshot('old', '2029-07-01')]), error: null }) })
+    render(view())
+    await screen.findByRole('heading', { name: 'Sem observação na data atual' })
+    expect(screen.queryByRole('heading', { name: 'Qualidade atual' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Ver última observação/ }))
+    expect(screen.getByRole('heading', { name: 'Qualidade nesta data' })).not.toBeNull()
+    expect(screen.getByText(/Você está vendo/)).not.toBeNull()
   })
 })

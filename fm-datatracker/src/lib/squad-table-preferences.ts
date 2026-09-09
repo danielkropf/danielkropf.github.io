@@ -1,3 +1,4 @@
+import { safeStorage } from './safe-storage'
 export const SQUAD_TABLE_STORAGE_KEY = 'fm-datatracker:squad-table-v2'
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -5,7 +6,7 @@ type StoredColumn = { id?: unknown; kind?: unknown; [key: string]: unknown }
 
 const isSaveAgnosticColumn = (column: StoredColumn) => column.kind === 'data' || column.kind === 'attribute'
 
-export function sanitizeSquadTablePreferencesForSaveChange(storage: StorageLike = localStorage) {
+export function sanitizeSquadTablePreferencesForSaveChange(storage: StorageLike = safeStorage) {
   const raw = storage.getItem(SQUAD_TABLE_STORAGE_KEY)
   if (!raw) return false
 

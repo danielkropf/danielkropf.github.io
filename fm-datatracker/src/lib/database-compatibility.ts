@@ -20,6 +20,7 @@ export type DatabaseCapabilities = {
   longitudinalImports: boolean
   analyzerStatsContext: boolean
   factualMembershipEmc01b: boolean
+  reader033MembershipRefresh: boolean
 }
 
 export type DatabaseCompatibility = {
@@ -33,7 +34,7 @@ const NO_CAPABILITIES: DatabaseCapabilities = {
   importRpc: false, deleteImportRpc: false, modelConfigPatch: false, projections: false,
   diagnosticsTable: false, diagnosticsBucket: false, diagnosticsReservations: false, diagnosticsServerRetention: false, diagnosticsUpload: false,
   longitudinalCore: false, longitudinalBackfill: false, longitudinalSaveStructure: false, longitudinalImports: false,
-  analyzerStatsContext: false, factualMembershipEmc01b: false,
+  analyzerStatsContext: false, factualMembershipEmc01b: false, reader033MembershipRefresh: false,
 }
 
 let cached: Promise<DatabaseCompatibility> | null = null
@@ -59,7 +60,7 @@ export function parseDatabaseCompatibilityInfo(value: unknown): DatabaseCompatib
     diagnosticsTable: capability(source, 'diagnostics_table'), diagnosticsBucket: capability(source, 'diagnostics_bucket'), diagnosticsReservations: capability(source, 'diagnostics_reservations'),
     diagnosticsServerRetention, diagnosticsUpload: capability(source, 'diagnostics_upload') && diagnosticsServerRetention,
     longitudinalCore: capability(source, 'longitudinal_core'), longitudinalBackfill: capability(source, 'longitudinal_backfill'), longitudinalSaveStructure: capability(source, 'longitudinal_save_structure'), longitudinalImports: capability(source, 'longitudinal_imports'),
-    analyzerStatsContext: capability(source, 'analyzer_stats_context'), factualMembershipEmc01b: capability(source, 'factual_membership_emc01b'),
+    analyzerStatsContext: capability(source, 'analyzer_stats_context'), factualMembershipEmc01b: capability(source, 'factual_membership_emc01b'), reader033MembershipRefresh: capability(source, 'reader_033_membership_refresh'),
   }
   const missingCore = [
     capabilities.importRpc ? null : 'import RPC', capabilities.deleteImportRpc ? null : 'delete import RPC', capabilities.modelConfigPatch ? null : 'model config patch', capabilities.projections ? null : 'projections',

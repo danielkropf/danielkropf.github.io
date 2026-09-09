@@ -1,3 +1,5 @@
+import { assertPrivateSession, onPrivateSessionChange, privateSessionGeneration } from './private-session'
+import { paginatedQuery } from './paginated-query'
 import { supabase } from './supabase'
 import type { Club, PlayerRow } from '../types/domain'
 import { createReferenceDatasetLoader } from './reference-cache'
@@ -66,17 +68,13 @@ export function loadPlayers(saveId: string) {
   if (cached) return cached
   const request = (async () => {
     if (!supabase) return []
-    const result = await supabase
-      .from('players')
-      .select(`id,current_name,nationality,last_seen_date,is_active,${PLAYER_SNAPSHOT_EMBED}(id,snapshot_date,age,club,squad,positions,contract_expiry,preferred_foot,height,weight,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category))`)
-      .eq('save_id', saveId)
-      .order('current_name')
-    if (result.error) throw result.error
-    return (result.data ?? []).map(row => ({
-      ...(row as unknown as Omit<RichPlayer, 'current_factual'>),
-      current_factual: emptyCurrentState(null),
-    }))
-  })().catch(error => { players.delete(saveId); throw error })
+    const [identities, snapshots] = await Promise.all([loadCurrentIdentities(saveId), loadPlayerSnapshots(saveId)])
+    const byPlayer = new Map<string, SnapshotQueryRow[]>()
+    for (const snapshot of snapshots) {
+      const rows = byPlayer.get(snapshot.player_id) ?? []; rows.push(snapshot); byPlayer.set(snapshot.player_id, rows)
+    }
+    return identities.map(identity => ({ ...identity, player_snapshots: byPlayer.get(identity.id) ?? [], current_factual: emptyCurrentState(null) }))
+  })().catch(error => { if (players.get(saveId) === request) players.delete(saveId); throw error })
   players.set(saveId, request)
   return request
 }
@@ -96,28 +94,31 @@ export function loadCurrentCheckpoint(saveId: string): Promise<string | null> {
       .limit(1)
     if (result.error) throw result.error
     return resolveCurrentCheckpointDate((result.data ?? []) as Array<{ status: string; snapshot_date: string | null }>)
-  })().catch(error => { checkpoints.delete(saveId); throw error })
+  })().catch(error => { if (checkpoints.get(saveId) === request) checkpoints.delete(saveId); throw error })
   checkpoints.set(saveId, request)
   return request
 }
 
 async function loadCurrentIdentities(saveId: string): Promise<IdentityRow[]> {
   if (!supabase) return []
-  const result = await supabase.from('players').select('id,current_name,nationality,last_seen_date,is_active').eq('save_id', saveId).order('current_name')
+  const result = await paginatedQuery(() => supabase!.from('players').select('id,current_name,nationality,last_seen_date,is_active').eq('save_id', saveId).order('current_name').order('id'))
   if (result.error) throw result.error
   return (result.data ?? []) as unknown as IdentityRow[]
 }
 
-async function loadExactSnapshots(saveId: string, checkpointDate: string): Promise<SnapshotQueryRow[]> {
+export async function loadPlayerSnapshots(saveId: string, playerId?: string, checkpointDate?: string): Promise<SnapshotQueryRow[]> {
   if (!supabase) return []
-  const result = await supabase
-    .from('player_snapshots')
-    .select('id,player_id,snapshot_date,age,club,squad,positions,contract_expiry,preferred_foot,height,weight,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category)')
-    .eq('save_id', saveId)
-    .eq('snapshot_date', checkpointDate)
-  if (result.error) throw result.error
-  return (result.data ?? []) as unknown as SnapshotQueryRow[]
+  const result = await paginatedQuery(() => {
+    let query = supabase!.from('player_snapshots')
+      .select('id,player_id,snapshot_date,age,club,squad,positions,contract_expiry,preferred_foot,height,weight,raw_data,normalized_data,player_attributes(attribute_key,attribute_label,value,category)')
+      .eq('save_id', saveId).order('snapshot_date').order('id')
+    if (playerId) query = query.eq('player_id', playerId)
+    if (checkpointDate) query = query.eq('snapshot_date', checkpointDate)
+    return query
+  })
+  return result.data as unknown as SnapshotQueryRow[]
 }
+function loadExactSnapshots(saveId: string, checkpointDate: string) { return loadPlayerSnapshots(saveId, undefined, checkpointDate) }
 
 function isFmSnapshot(snapshot: SnapshotQueryRow) {
   const normalized = snapshot.normalized_data ?? {}
@@ -222,7 +223,9 @@ async function resolvePortrait(saveId: string, identities: IdentityRow[], snapsh
 export function loadCurrentPlayers(saveId: string): Promise<RichPlayer[]>
 export function loadCurrentPlayers(saveId: string, options: CurrentPlayerOptions): Promise<CurrentPlayerSummary[]>
 export async function loadCurrentPlayers(saveId: string, options?: CurrentPlayerOptions): Promise<RichPlayer[] | CurrentPlayerSummary[]> {
+  const generation = privateSessionGeneration()
   const checkpointDate = await loadCurrentCheckpoint(saveId)
+  assertPrivateSession(generation)
   const key = portraitKey(saveId, checkpointDate)
 
   if (options?.summary) {
@@ -233,9 +236,9 @@ export async function loadCurrentPlayers(saveId: string, options?: CurrentPlayer
       const snapshots = await loadExactSnapshots(saveId, checkpointDate)
       const observedIds = [...new Set(snapshots.map(snapshot => snapshot.player_id))]
       if (!observedIds.length || !supabase) return []
-      const identitiesResult = await supabase.from('players').select('id,current_name,is_active,nationality,last_seen_date').eq('save_id', saveId).in('id', observedIds).order('current_name')
-      if (identitiesResult.error) throw identitiesResult.error
-      const portrait = await resolvePortrait(saveId, (identitiesResult.data ?? []) as unknown as IdentityRow[], snapshots, checkpointDate)
+      const observed = new Set(observedIds)
+      const identities = (await loadCurrentIdentities(saveId)).filter(row => observed.has(row.id))
+      const portrait = await resolvePortrait(saveId, identities, snapshots, checkpointDate)
       return portrait.flatMap(player => {
         const exact = player.player_snapshots[0]
         return exact ? [{
@@ -245,7 +248,7 @@ export async function loadCurrentPlayers(saveId: string, options?: CurrentPlayer
           player_snapshots: [{ id: exact.id, snapshot_date: exact.snapshot_date, age: exact.age, club: exact.club, squad: exact.squad, positions: exact.positions, source_snapshot_ids: exact.source_snapshot_ids }],
         }] : []
       })
-    })().catch(error => { currentPlayerSummaries.delete(key); throw error })
+    })().catch(error => { if (currentPlayerSummaries.get(key) === request) currentPlayerSummaries.delete(key); throw error })
     currentPlayerSummaries.set(key, request)
     return request
   }
@@ -258,7 +261,7 @@ export async function loadCurrentPlayers(saveId: string, options?: CurrentPlayer
       checkpointDate ? loadExactSnapshots(saveId, checkpointDate) : Promise.resolve([] as SnapshotQueryRow[]),
     ])
     return resolvePortrait(saveId, identities, snapshots, checkpointDate)
-  })().catch(error => { currentPlayers.delete(key); throw error })
+  })().catch(error => { if (currentPlayers.get(key) === request) currentPlayers.delete(key); throw error })
   currentPlayers.set(key, request)
   return request
 }
@@ -275,3 +278,9 @@ export function invalidateSaveData(saveId: string) {
 export function loadReferenceDataset() {
   return referenceLoader()
 }
+
+export function clearAllSaveData() {
+  players.clear(); checkpoints.clear(); currentPlayers.clear(); currentPlayerSummaries.clear()
+}
+
+onPrivateSessionChange(clearAllSaveData)

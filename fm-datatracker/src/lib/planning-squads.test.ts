@@ -58,3 +58,22 @@ describe('planning squads', () => {
     expect(reconciled.groups.map(group => group.name)).toContain('Empréstimo')
   })
 })
+
+describe('squad reconciliation preserves user intent', () => {
+  it('retains an empty custom squad and a legacy squad with saved positions', () => {
+    const planning = { ...base(), groups: [...base().groups, { id: 'custom', name: 'Desenvolvimento' }], slotAssignments: {}, setLayouts: { tactic: { principal: [{ id: 'st', label: 'Ataque', slotIds: ['st'] }] } } }
+    const next = reconcilePlanningSquadGroups(planning, ['Numantia'])
+    expect(next.groups.map(group => group.id)).toEqual(expect.arrayContaining(['custom', 'principal']))
+    expect(next.setLayouts).toBe(planning.setLayouts)
+  })
+  it('does not classify Salernitana as a sale group and deduplicates equivalent squad names', () => {
+    const next = reconcilePlanningSquadGroups({ groups: [{ id: 'salernitana', name: 'Salernitana' }], slotAssignments: {} }, ['Salernitana', ' SÁLERNITANA '])
+    expect(next.groups).toHaveLength(1)
+    expect(effectivePlanningSquadGroupId(next, 'player', 'Salernitana')).toBe('salernitana')
+  })
+})
+
+it('retains an explicit order of factual squads across reconciliation', () => {
+  const planning = { groups: [{ id: 'b', name: 'B' }, { id: 'principal', name: 'A' }], slotAssignments: {} }
+  expect(reconcilePlanningSquadGroups(planning, ['A', 'B'])).toBe(planning)
+})

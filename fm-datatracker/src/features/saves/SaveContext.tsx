@@ -1,3 +1,4 @@
+import { safeStorage } from '../../lib/safe-storage'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
 import { invalidateSaveData, loadCurrentCheckpoint, SAVE_FACTS_INVALIDATED_EVENT } from '../../lib/dataCache'
@@ -84,7 +85,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     if (selectedRef.current?.id && selectedRef.current.id !== save.id) sanitizeSquadTablePreferencesForSaveChange()
     selectedRef.current = save
     setSelected(save)
-    localStorage.setItem(ACTIVE_SAVE_KEY, save.id)
+    safeStorage.setItem(ACTIVE_SAVE_KEY, save.id)
   }
 
   async function refresh() {
@@ -107,7 +108,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       const resolution = resolveSaveRefresh({
         currentSaves: savesRef.current,
         currentSelected: selectedRef.current,
-        rememberedId: localStorage.getItem(ACTIVE_SAVE_KEY),
+        rememberedId: safeStorage.getItem(ACTIVE_SAVE_KEY),
         data: structuredData,
         error: result.error?.message ?? null,
       })
@@ -119,8 +120,8 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       selectedRef.current = resolution.selected
       setSaves(resolution.saves)
       setSelected(resolution.selected)
-      if (resolution.persistActiveSaveId) localStorage.setItem(ACTIVE_SAVE_KEY, resolution.persistActiveSaveId)
-      else if (resolution.persistActiveSaveId === null) localStorage.removeItem(ACTIVE_SAVE_KEY)
+      if (resolution.persistActiveSaveId) safeStorage.setItem(ACTIVE_SAVE_KEY, resolution.persistActiveSaveId)
+      else if (resolution.persistActiveSaveId === null) safeStorage.removeItem(ACTIVE_SAVE_KEY)
     } catch (cause) {
       if (!refreshGuard.current.isCurrent(token)) return
       setError(cause instanceof Error ? cause.message : 'Falha inesperada ao carregar os saves.')
@@ -152,7 +153,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       sanitizeSquadTablePreferencesForSaveChange()
       selectedRef.current = null
       setSelected(null)
-      localStorage.removeItem(ACTIVE_SAVE_KEY)
+      safeStorage.removeItem(ACTIVE_SAVE_KEY)
     }
     await refresh()
     return null

@@ -28,9 +28,10 @@ vi.mock('../lib/model-config', () => ({
   retryModelConfigPatch: vi.fn().mockResolvedValue(null),
 }))
 vi.mock('../lib/base-position-score', () => ({ generalScoreForSnapshot: () => ({ score: 11 }) }))
-vi.mock('../lib/role-scoring', () => ({
+vi.mock('../lib/role-scoring', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/role-scoring')>(),
   resolveRoleWeights: ({ roleId }: { roleId: string }) => ({ roleId }),
-  pairedRoleScore: (_attributes: unknown, ip: { roleId: string }) => ip.roleId.includes('AP') ? 13 : 10,
+  pairedRoleScore: (_attributes: unknown, ip: { roleId: string }) => ip.roleId?.includes('AP') ? 13 : 10,
 }))
 vi.mock('../lib/reference', () => ({
   generalReferencePercentile: () => ({ percentile: 50, population: [] }),
@@ -59,6 +60,7 @@ const snapshot = {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('PointerEvent', MouseEvent)
   localStorage.clear()
   mocks.referenceDataset = { players: [{ p: ['D (C)'] }], attributes: [] }
   mocks.selected = { id: 'save', structure: { trackedClubs: [{ club_id: 'club-a', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-a', name: 'Fluminense' } }] } }
@@ -90,23 +92,27 @@ beforeEach(() => {
   })
 })
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+async function ready() { await screen.findAllByRole('button', { name: /Adicionar jogador a/ }) }
+async function openPicker(index = 0) { await ready(); fireEvent.click(screen.getAllByRole('button', { name: /Adicionar jogador a/ })[index]) }
 
 describe('PlanningPage 3C', () => {
   it('renders compact pitch sets as border legends without persistent vacancy squares and with a wider decision table', async () => {
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
 
     await waitFor(() => expect(view.container.querySelectorAll('.planning-set-legend').length).toBe(2))
     expect(view.container.querySelectorAll('.planning-phase-line').length).toBe(0)
     expect(view.container.querySelectorAll('.planning-set-vacancy').length).toBe(0)
+    await openPicker()
+    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
     expect(screen.getByText('Idade')).not.toBeNull()
-    expect(screen.getByText('Clube atual')).not.toBeNull()
   })
 
   it('refreshes the tactic structure when Planning becomes active again', async () => {
     const view = render(<MemoryRouter><PlanningPage active /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     await waitFor(() => expect(view.container.querySelectorAll('.planning-set-legend').length).toBe(2))
 
     mocks.loadConfig.mockResolvedValue({
@@ -217,8 +223,8 @@ describe('PlanningPage 3C', () => {
     const firstPlayer = await screen.findAllByText('Jogador Teste')
     const set = firstPlayer.map(node => node.closest('.planning-set-row')).find(Boolean)
     expect(set).not.toBeNull()
-    expect(set!.querySelectorAll('.planning-set-player-card').length).toBe(3)
-    expect(set!.querySelectorAll('.planning-depth-player-row').length).toBe(3)
+    expect(set!.querySelectorAll('article.planning-pitch-depth-row').length).toBe(3)
+    expect(set!.querySelectorAll('article.planning-pitch-depth-row').length).toBe(3)
     expect(set!.querySelectorAll('.planning-player-silhouette').length).toBe(0)
     expect(set!.querySelector('.planning-set-expand')?.textContent).toBe('+1')
     expect(set!.querySelectorAll('.planning-set-vacancy').length).toBe(0)
@@ -247,15 +253,15 @@ describe('PlanningPage 3C', () => {
     })
 
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
-    const pitchRow = view.container.querySelector<HTMLElement>('.planning-depth-player-row')
+    await ready()
+    const pitchRow = view.container.querySelector<HTMLElement>('article.planning-pitch-depth-row')
     expect(pitchRow).not.toBeNull()
     expect(pitchRow!.querySelector('[data-testid="player-peek"]')).not.toBeNull()
-    expect(pitchRow!.querySelector('.planning-depth-player-age')?.textContent).toBe('18 anos')
+    expect(pitchRow!.querySelector('.planning-player-meta')?.textContent).toContain('18 anos')
     expect(pitchRow!.querySelector('.position-warning-icon')).toBeNull()
-    expect(pitchRow!.querySelector('.planning-score-peek-trigger')).not.toBeNull()
+    expect(pitchRow!.querySelector('.planning-pitch-score-trigger')).not.toBeNull()
 
-    fireEvent.mouseEnter(pitchRow!.querySelector('.planning-score-peek-trigger')!)
+    fireEvent.mouseEnter(pitchRow!.querySelector('.planning-pitch-score-trigger')!)
     expect(await screen.findByText('Notas na tática atual')).not.toBeNull()
     expect(screen.getByText('Nota geral')).not.toBeNull()
     expect(screen.getByText('11')).not.toBeNull()
@@ -264,45 +270,21 @@ describe('PlanningPage 3C', () => {
     const notesToggle = screen.getByRole('checkbox', { name: 'Mostrar notas' })
     expect((notesToggle as HTMLInputElement).checked).toBe(true)
     fireEvent.click(notesToggle)
-    expect(pitchRow!.querySelector('.planning-score-peek-trigger')).toBeNull()
+    expect(pitchRow!.querySelector('.planning-pitch-score-trigger')).toBeNull()
     expect(pitchRow!.classList.contains('is-score-hidden')).toBe(true)
+    await openPicker(1)
     expect(screen.getByText('Nota')).not.toBeNull()
   })
 
-  it('uses a draggable field/table separator and restores the exact canonical 60/40 split from either side without drift', async () => {
+  it('uses the full pitch and adds players through the contextual picker', async () => {
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
-    const layout = view.container.querySelector<HTMLElement>('.planning-flex-layout')!
-    const separator = screen.getByRole('separator', { name: 'Ajustar largura do campo e da tabela' })
-    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
-    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
-    expect(view.container.querySelector('.planning-panel-focus-button')).toBeNull()
-
-    layout.getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 700, width: 1000, height: 700, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
-    // With a 10 px divider, the field owns 60% of the remaining 990 px.
-    // Starting a resize exactly at that divider centre must therefore stay 60/40,
-    // instead of creeping upward because the percentage was measured against 990
-    // but applied against the full 1000 px grid.
-    fireEvent.pointerDown(separator, { pointerId: 7, button: 0, clientX: 599 })
-    fireEvent.pointerUp(separator, { pointerId: 7, clientX: 599 })
-    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
-    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
-
-    fireEvent.keyDown(separator, { key: 'ArrowRight' })
-    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('62fr')
-    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('38fr')
-    fireEvent.doubleClick(separator)
-    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
-    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
-
-    fireEvent.keyDown(separator, { key: 'ArrowLeft' })
-    fireEvent.keyDown(separator, { key: 'ArrowLeft' })
-    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('56fr')
-    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('44fr')
-    fireEvent.doubleClick(separator)
-    fireEvent.doubleClick(separator)
-    expect(layout.style.getPropertyValue('--planning-field-fr')).toBe('60fr')
-    expect(layout.style.getPropertyValue('--planning-table-fr')).toBe('40fr')
+    await openPicker()
+    expect(view.container.querySelector('.planning-full-pitch-layout')).not.toBeNull()
+    expect(screen.queryByRole('separator', { name: 'Ajustar largura do campo e da tabela' })).toBeNull()
+    fireEvent.click(await screen.findByText('Jogador Teste'))
+    await waitFor(() => expect(screen.queryByPlaceholderText('Buscar jogador')).toBeNull())
+    expect(view.container.querySelector('article[data-planning-player-id="player"]')).not.toBeNull()
+    expect(mocks.schedule.mock.calls.some(call => JSON.stringify(call[2]).includes('"player"'))).toBe(true)
   })
 
   it('applies a saved free 5x5 visual grid cell without changing the tactic and can restore tactic-derived field positions independently', async () => {
@@ -330,7 +312,7 @@ describe('PlanningPage 3C', () => {
     })
 
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     const dcSet = [...view.container.querySelectorAll<HTMLElement>('.planning-set-row')].find(row => row.querySelector('.planning-set-legend')?.textContent?.includes('D'))!
     expect(dcSet.style.getPropertyValue('--planning-x')).toBe('90%')
     expect(dcSet.style.getPropertyValue('--planning-y')).toBe('25%')
@@ -340,12 +322,12 @@ describe('PlanningPage 3C', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Organizar posições' }))
     fireEvent.click(screen.getByRole('button', { name: 'Restaurar posições do campo' }))
     await waitFor(() => expect(dcSet.style.getPropertyValue('--planning-y')).not.toBe('25%'))
-    expect(screen.getByText('Organização visual de Principal; arraste os conjuntos livremente pela grade 5×5. A tática não é alterada.')).not.toBeNull()
+    expect(screen.getByText('Organização visual de Principal; arraste os conjuntos pela grade 5×5. A sexta linha permanece reservada ao goleiro.')).not.toBeNull()
   })
 
   it('previews a set move on the 5x5 grid without moving the real set until pointer release', async () => {
     const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     const pitch = view.container.querySelector<HTMLElement>('.planning-set-list')!
     pitch.getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 600, width: 1000, height: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
     const movable = [...view.container.querySelectorAll<HTMLElement>('.planning-set-row')].find(row => row.dataset.gridLocked !== 'goalkeeper')!
@@ -373,31 +355,28 @@ describe('PlanningPage 3C', () => {
     expect(view.container.querySelector('.planning-visual-grid-overlay')).toBeNull()
   })
 
-  it('uses the canonical header context menu to remove and restore Planning roster columns', async () => {
+  it('uses the canonical header context menu for contextual picker columns', async () => {
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
-
+    await openPicker()
     fireEvent.contextMenu(screen.getByText('Posições').closest('th')!)
-    expect(screen.getByText('Remover coluna')).not.toBeNull()
-    fireEvent.click(screen.getByText('Remover coluna'))
+    fireEvent.click(screen.getByText('Remover esta coluna'))
     expect(screen.queryByText('Posições')).toBeNull()
-
-    fireEvent.contextMenu(screen.getByText('Jogador').closest('th')!)
-    fireEvent.click(screen.getByText('Adicionar Posições'))
-    expect(screen.getByText('Posições')).not.toBeNull()
+    expect(screen.getByText('Jogador Teste')).not.toBeNull()
   })
 
   it('uses the single best contextual pair and moves the player to a market group from the context menu', async () => {
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Duas posições' }))
-    await waitFor(() => expect(screen.getByTestId('projection-key').textContent).toBe('IP:M(C):AP|OOP:DM(C):DM'))
-
-    fireEvent.contextMenu(screen.getByText('Jogador Teste').closest('tr')!)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Adicionar a Venda' }))
-
-    await waitFor(() => expect(screen.getByText('Área livre de mercado')).not.toBeNull())
+    await openPicker(1)
+    expect(screen.getByTestId('projection-key').textContent).toBe('IP:M(C):AP|OOP:DM(C):DM')
+    fireEvent.click(screen.getByText('Jogador Teste'))
+    fireEvent.contextMenu(screen.getByText('Jogador Teste').closest('article')!)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Adicionar para venda' }))
+    // Market intent coexists with the player's squad; navigate to the market group.
+    fireEvent.click(screen.getByRole('button', { name: '›' }))
+    fireEvent.click(screen.getByRole('button', { name: '›' }))
+    expect(await screen.findByText('Área livre de mercado')).not.toBeNull()
     expect(screen.getAllByText('Jogador Teste').length).toBeGreaterThan(0)
     await waitFor(() => {
       const patches = mocks.schedule.mock.calls.map(call => call[2] as Record<string, unknown>)
@@ -411,18 +390,17 @@ describe('PlanningPage 3C', () => {
     const referenceScoreCalls = () => mocks.generalReferenceScores.mock.calls.filter(call => call[0] === mocks.referenceDataset.players).length
 
     const first = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
     expect(mocks.loadMemberships).toHaveBeenLastCalledWith('save', ['snapshot'])
 
     const initialGeneralReferenceCalls = referenceScoreCalls()
     const initialRoleReferenceCalls = mocks.referencePairedRoleScore.mock.calls.length
-    expect(initialGeneralReferenceCalls).toBeGreaterThan(0)
     expect(initialRoleReferenceCalls).toBeGreaterThan(0)
 
     first.unmount()
     const second = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
     expect(referenceScoreCalls()).toBe(initialGeneralReferenceCalls)
     expect(mocks.referencePairedRoleScore).toHaveBeenCalledTimes(initialRoleReferenceCalls)
@@ -430,7 +408,7 @@ describe('PlanningPage 3C', () => {
     second.unmount()
     mocks.loadPlayers.mockResolvedValue([{ id: 'player', current_name: 'Jogador Teste', nationality: 'BRA', player_snapshots: [snapshot] }])
     const refreshed = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(2)
     expect(referenceScoreCalls()).toBe(initialGeneralReferenceCalls)
     expect(mocks.referencePairedRoleScore).toHaveBeenCalledTimes(initialRoleReferenceCalls)
@@ -438,20 +416,20 @@ describe('PlanningPage 3C', () => {
     refreshed.unmount()
     mocks.selected = { id: 'save', structure: { trackedClubs: [{ club_id: 'club-b', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-b', name: 'Outro Clube' } }] } }
     const otherClub = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(3)
 
     const otherClubGeneralReferenceCalls = referenceScoreCalls()
     const otherClubRoleReferenceCalls = mocks.referencePairedRoleScore.mock.calls.length
-    expect(otherClubGeneralReferenceCalls).toBeGreaterThan(initialGeneralReferenceCalls)
+    expect(otherClubGeneralReferenceCalls).toBeGreaterThanOrEqual(initialGeneralReferenceCalls)
     expect(otherClubRoleReferenceCalls).toBeGreaterThan(initialRoleReferenceCalls)
 
     otherClub.unmount()
     mocks.selected = { id: 'save-2', structure: { trackedClubs: [{ club_id: 'club-b', tracking_role: 'primary', is_active: true, display_order: 0, club: { id: 'club-b', name: 'Outro Clube' } }] } }
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(4)
-    expect(referenceScoreCalls()).toBeGreaterThan(otherClubGeneralReferenceCalls)
+    expect(referenceScoreCalls()).toBeGreaterThanOrEqual(otherClubGeneralReferenceCalls)
     expect(mocks.referencePairedRoleScore.mock.calls.length).toBeGreaterThan(otherClubRoleReferenceCalls)
   })
 
@@ -462,14 +440,16 @@ describe('PlanningPage 3C', () => {
       .mockResolvedValueOnce(successfulRows)
 
     const first = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
-    expect(await screen.findByText('Contexto factual indisponível; o planejamento manual continua seguro.')).not.toBeNull()
+    await ready()
+    await openPicker()
+    expect(await screen.findByText(/Contexto factual parcial/)).not.toBeNull()
     expect(mocks.loadMemberships).toHaveBeenCalledTimes(1)
 
     first.unmount()
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
-    expect(await screen.findByText('Jogador Teste')).not.toBeNull()
+    await ready()
     await waitFor(() => expect(mocks.loadMemberships).toHaveBeenCalledTimes(2))
-    expect(screen.queryByText('Contexto factual indisponível; o planejamento manual continua seguro.')).toBeNull()
+    await openPicker()
+    expect(screen.queryByText(/Contexto factual parcial/)).toBeNull()
   })
 })

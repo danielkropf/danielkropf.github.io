@@ -1,0 +1,33 @@
+.player-profile .profile-header{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-shrink:0;padding:8px 0 16px}
+.player-profile .profile-identity{display:flex;align-items:center;gap:20px;min-width:0}
+.player-profile .profile-identity h1{margin:4px 0;font-size:28px;overflow-wrap:anywhere}
+.player-profile .profile-identity p{margin:0;color:var(--dt-text-2)}
+.player-profile .profile-date{display:grid;gap:6px;flex-shrink:0;color:var(--dt-text-2);font-size:12px}
+.player-profile .profile-date select{min-width:200px}
+.player-profile .profile-navigation{display:flex;gap:6px;flex-shrink:0;border-bottom:1px solid var(--dt-border);padding-bottom:10px;overflow-x:auto}
+.player-profile .profile-navigation button{background:transparent;color:var(--dt-text-2);border:1px solid transparent;border-radius:8px;padding:10px 18px;white-space:nowrap;font-weight:600}
+.player-profile .profile-navigation button[aria-pressed=true]{background:var(--dt-surface-3);border-color:var(--dt-border);color:var(--dt-lime)}
+.player-profile button:focus-visible,.player-profile summary:focus-visible,.player-profile select:focus-visible{outline:2px solid var(--dt-lime);outline-offset:3px}
+.player-profile .profile-content{padding-top:16px;min-height:0;flex:1;gap:16px}
+.player-profile .profile-content>.card,.player-profile .profile-overview{flex-shrink:0}
+.player-profile .profile-overview{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px}
+.player-profile .card{min-width:0;padding:20px}
+.player-profile .card h2{font-size:17px;margin:4px 0 16px}
+.player-profile .profile-quality{background:linear-gradient(135deg,var(--dt-surface-3),var(--dt-surface-2))}
+.player-profile .profile-score{display:flex;align-items:center;gap:18px;margin:12px 0}
+.player-profile .profile-score>strong{font-size:52px;line-height:1.1;color:var(--dt-lime);font-variant-numeric:tabular-nums}
+.player-profile .profile-score>div{display:grid;gap:5px}
+.player-profile .profile-score span,.player-profile .profile-quality p,.player-profile .profile-method{color:var(--dt-text-2);font-size:13px;line-height:1.6}
+.player-profile .profile-reference{display:grid;gap:4px}
+.player-profile .profile-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 24px}
+.player-profile .profile-facts>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.player-profile .profile-facts small{font-size:12px;color:var(--dt-text-3)}
+.player-profile .profile-facts strong{font-size:15px;overflow-wrap:anywhere}
+.player-profile .profile-facts .feet-info{grid-column:1/-1}
+.player-profile .profile-method{margin-top:12px}
+.player-profile summary{cursor:pointer;font-weight:600;color:var(--dt-text-2)}
+.player-profile .profile-history-notice{margin:0 0 8px;flex-shrink:0}
+.player-profile .player-attributes-panel{min-height:0}
+.player-profile .base-position-list{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
+@media(max-width:900px){.player-profile .profile-overview{grid-template-columns:1fr}.player-profile .profile-header{align-items:flex-start;gap:12px}.player-profile .profile-identity{gap:10px}.player-profile .profile-identity h1{font-size:23px}}
+@media(max-width:600px){.player-profile .profile-header{flex-direction:column}.player-profile .profile-date{width:100%}.player-profile .profile-navigation button{padding:9px 12px}.player-profile .card{padding:14px}}

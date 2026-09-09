@@ -1,3 +1,4 @@
+import { assertPrivateSession, onPrivateSessionChange, privateSessionGeneration } from './private-session'
 import { supabase } from './supabase'
 import { checkDatabaseCompatibility, resetDatabaseCompatibilityCache, type DatabaseCompatibility } from './database-compatibility'
 import { describeDbError, isMissingRpcError } from './db-error'
@@ -33,6 +34,7 @@ const dirtyPatches = new Map<string, DirtyPatchState>()
 const dirtyMeta = new Map<string, DirtyMeta>()
 const writeChains = new Map<string, Promise<void>>()
 let dirtyRevision = 0
+const cancellations = new Map<string, number>()
 
 function cacheKey(saveId: string, name: string) { return `${saveId}:${name}` }
 function nextDirtyRevision() { dirtyRevision += 1; return dirtyRevision }
@@ -71,17 +73,19 @@ export async function loadModelConfig(saveId: string, name = 'Model Lab') {
   const existing = modelConfigLoads.get(key)
   if (existing) return existing
 
-  const request = (async () => {
+  let request!: Promise<ModelConfig>
+  request = (async () => {
     if (!supabase) return {}
     const { data, error } = await supabase.from('scoring_models').select('id,config').eq('save_id', saveId).eq('name', name).eq('is_active', true).order('created_at').limit(2)
     if (error) throw new Error(describeDbError(error).full)
     if ((data?.length ?? 0) > 1) throw new Error('Há mais de um Model Lab ativo para este save. Aplique a migration de identidade canônica antes de continuar.')
+    if (modelConfigLoads.get(key) !== request) throw new Error('Carregamento obsoleto do planejamento descartado.')
     const row = data?.[0]
     const config = (row?.config ?? {}) as ModelConfig
     confirmedConfigCache.set(key, config)
     if (row?.id) modelConfigIds.set(key, String(row.id))
     return rebuildOptimisticCache(key)
-  })().finally(() => modelConfigLoads.delete(key))
+  })().finally(() => { if (modelConfigLoads.get(key) === request) modelConfigLoads.delete(key) })
 
   modelConfigLoads.set(key, request)
   return request
@@ -99,6 +103,7 @@ export function invalidateModelConfig(saveId: string, name = 'Model Lab') {
 /** Removes every local Model Lab resource for a deleted save, including queued/dirty autosaves. */
 export function discardModelConfigState(saveId: string, name = 'Model Lab') {
   const key = cacheKey(saveId, name)
+  cancellations.set(key, (cancellations.get(key) ?? 0) + 1)
   const pending = pendingPatches.get(key)
   if (pending?.timer) clearTimeout(pending.timer)
   pendingPatches.delete(key)
@@ -118,7 +123,7 @@ async function withBrowserFallbackLock<T>(key: string, task: () => Promise<T>): 
   return lockManager.request(`fm-datatracker:model-config:${key}`, task)
 }
 
-async function directPatchModelConfig(saveId: string, version: string, patch: ModelConfigPatch, name: string) {
+async function directPatchModelConfig(saveId: string, version: string, patch: ModelConfigPatch, name: string, assertActive: () => void) {
   const client = supabase
   if (!client) throw new Error('Banco Mestre não configurado.')
   return withBrowserFallbackLock(cacheKey(saveId, name), async () => {
@@ -137,6 +142,7 @@ async function directPatchModelConfig(saveId: string, version: string, patch: Mo
     if (readError) throw new Error(describeDbError(readError).full)
     if ((rows?.length ?? 0) > 1) throw new Error('Há mais de um Model Lab ativo para este save. O fallback recusou escolher um registro arbitrariamente; aplique a migration mais recente.')
 
+    assertActive()
     const existing = rows?.[0]
     const current = existing?.config && typeof existing.config === 'object' && !Array.isArray(existing.config) ? existing.config as ModelConfig : {}
     const config = { ...current, ...patch }
@@ -152,9 +158,10 @@ async function directPatchModelConfig(saveId: string, version: string, patch: Mo
   })
 }
 
-async function persistModelConfig(saveId: string, version: string, patch: ModelConfigPatch, name: string): Promise<ModelConfigSaveResult> {
+async function persistModelConfig(saveId: string, version: string, patch: ModelConfigPatch, name: string, assertActive: () => void): Promise<ModelConfigSaveResult> {
   if (!supabase) throw new Error('Banco Mestre não configurado.')
   const compatibility = await checkDatabaseCompatibility()
+  assertActive()
   const { data, error } = await supabase.rpc('patch_scoring_model_config', { p_save_id: saveId, p_name: name, p_version: version, p_patch: patch })
 
   if (!error) {
@@ -171,7 +178,7 @@ async function persistModelConfig(saveId: string, version: string, patch: ModelC
 
   const info = describeDbError(error)
   console.warn('RPC patch_scoring_model_config ausente; usando fallback direto temporário.', { saveId, name, version, error: info })
-  const direct = await directPatchModelConfig(saveId, version, patch, name)
+  const direct = await directPatchModelConfig(saveId, version, patch, name, assertActive)
   // Do not pin an outdated/unversioned answer for the rest of the session.
   resetDatabaseCompatibilityCache()
   const refreshedCompatibility = await checkDatabaseCompatibility(true)
@@ -191,6 +198,11 @@ async function noopResult(key: string): Promise<ModelConfigSaveResult> {
 
 async function flushDirtyModelConfig(saveId: string, version: string, name: string): Promise<ModelConfigSaveResult> {
   const key = cacheKey(saveId, name)
+  const generation = privateSessionGeneration(), cancellation = cancellations.get(key) ?? 0
+  const assertActive = () => {
+    assertPrivateSession(generation)
+    if ((cancellations.get(key) ?? 0) !== cancellation) throw new Error('Save descartado; operação cancelada.')
+  }
   const previous = writeChains.get(key) ?? Promise.resolve()
   let release: () => void = () => {}
   const marker = new Promise<void>(resolve => { release = resolve })
@@ -198,6 +210,7 @@ async function flushDirtyModelConfig(saveId: string, version: string, name: stri
 
   try {
     await previous.catch(() => undefined)
+    assertActive()
     const state = dirtyPatches.get(key) ?? {}
     const snapshot = captureDirtyPatch(state)
     if (!snapshot) return noopResult(key)
@@ -205,7 +218,8 @@ async function flushDirtyModelConfig(saveId: string, version: string, name: stri
     const meta = dirtyMeta.get(key)
     const effectiveVersion = meta?.version ?? version
     const effectiveName = meta?.name ?? name
-    const result = await persistModelConfig(saveId, effectiveVersion, snapshot.patch, effectiveName)
+    const result = await persistModelConfig(saveId, effectiveVersion, snapshot.patch, effectiveName, assertActive)
+    assertActive()
     confirmedConfigCache.set(key, result.config)
     modelConfigIds.set(key, result.id)
 
@@ -307,3 +321,11 @@ export async function retryModelConfigPatch(saveId: string, onStatus?: SaveStatu
 export function hasDirtyModelConfig(saveId: string, name = 'Model Lab') {
   return Object.keys(dirtyPatches.get(cacheKey(saveId, name)) ?? {}).length > 0
 }
+
+// Auth transitions invalidate private memory and queued writes; token refresh for
+// the same user does not. In-flight responses are rejected before touching cache.
+onPrivateSessionChange(() => {
+  for (const pending of pendingPatches.values()) if (pending.timer) clearTimeout(pending.timer)
+  pendingPatches.clear(); dirtyPatches.clear(); dirtyMeta.clear(); writeChains.clear()
+  modelConfigCache.clear(); confirmedConfigCache.clear(); modelConfigIds.clear(); modelConfigLoads.clear()
+})

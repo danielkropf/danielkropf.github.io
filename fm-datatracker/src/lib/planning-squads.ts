@@ -1,11 +1,10 @@
-import { preferredTacticalPlanningGroupId, type PlanningTeamLevel } from './current-roster'
+import { marketPlanningGroupKind, preferredTacticalPlanningGroupId, type PlanningTeamLevel } from './current-roster'
 import type { FlexiblePlanning, PlanningGroup } from './planningSets'
 
 const normalize = (value: string | null | undefined) => (value ?? '').trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
 
 export function isMarketPlanningGroup(group: PlanningGroup | null | undefined) {
-  const value = normalize(`${group?.id ?? ''} ${group?.name ?? ''}`)
-  return value.includes('loan') || value.includes('emprest') || value.includes('sale') || value.includes('vend')
+  return marketPlanningGroupKind(group) !== null
 }
 
 function tacticalGroupForPlayer(planning: FlexiblePlanning, playerId: string): string | null {
@@ -59,7 +58,7 @@ export function reconcilePlanningSquadGroups(
   factualSquadNames: Array<string | null | undefined>,
   factualSquadByPlayer?: ReadonlyMap<string, string | null | undefined>,
 ): FlexiblePlanning {
-  const factual = [...new Set(factualSquadNames.map(value => value?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  const factual = [...new Map(factualSquadNames.map(value => value?.trim()).filter((value): value is string => Boolean(value)).map(name => [normalize(name), name])).values()].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   if (!factual.length) return planning
 
   const canonicalByName = new Map(factual.map(name => [normalize(name), name]))
@@ -72,7 +71,9 @@ export function reconcilePlanningSquadGroups(
   // them in-place only when their current positional population points to one
   // and only one factual squad, and no manual squad override targets the group.
   // Keeping the group id preserves setLayouts and slotAssignments byte-for-byte.
+  const legacyIds = new Set(['principal', 'b', 'base'])
   const existingInternal = rawInternal.map(group => {
+    if (!legacyIds.has(group.id)) return group
     const currentName = normalize(group.name)
     if (canonicalByName.has(currentName) || explicitTargets.has(group.id) || !factualSquadByPlayer) return group
     const playerIds = [...new Set(Object.values(planning.slotAssignments[group.id] ?? {}).flat())]
@@ -103,9 +104,12 @@ export function reconcilePlanningSquadGroups(
   const referencedIds = new Set<string>([
     ...Object.entries(planning.slotAssignments).filter(([, rows]) => Object.values(rows).some(ids => ids.length > 0)).map(([groupId]) => groupId),
     ...Object.values(planning.squadAssignments ?? {}),
+    ...Object.values(planning.setLayouts ?? {}).flatMap(groups => Object.entries(groups).filter(([, layouts]) => layouts.length > 0).map(([id]) => id)),
   ])
-  const preserved = existingInternal.filter(group => !factualIds.has(group.id) && referencedIds.has(group.id))
-  const groups = [...factualGroups, ...preserved, ...market]
+  const preserved = existingInternal.filter(group => !factualIds.has(group.id) && (referencedIds.has(group.id) || (!legacyIds.has(group.id) && !group.id.startsWith('squad-'))))
+  const kept = new Set([...factualIds, ...preserved.map(group => group.id)])
+  const knownIds = new Set(existingInternal.map(group => group.id))
+  const groups = [...existingInternal.filter(group => kept.has(group.id)), ...factualGroups.filter(group => !knownIds.has(group.id)), ...market]
   if (groups.length === planning.groups.length && groups.every((group, index) => group.id === planning.groups[index]?.id && group.name === planning.groups[index]?.name)) return planning
   return { ...planning, groups }
 }

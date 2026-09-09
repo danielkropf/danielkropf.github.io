@@ -2,7 +2,7 @@ type UnknownRecord = Record<string, unknown>
 
 export const MEMBERSHIP_FACTS_SCHEMA = 'membership_facts_v1' as const
 export const MEMBERSHIP_FACTS_VERSION = 'e-mc-01-v1' as const
-export const MEMBERSHIP_READER_VERSION = 'fm26-membership-reader/e-mc-01-v1' as const
+export const MEMBERSHIP_READER_VERSION = 'fm26-membership-reader/0.33.0' as const
 
 export type FactualStatus = 'confirmed' | 'unknown' | 'ambiguous' | 'unsupported'
 export type FactualValue<T> = {
@@ -468,12 +468,15 @@ type HeaderCandidate = {
   termsEnd: number
   auxiliaryCount: number
   expectedAnchor: number
+  trailerBase: number
+  count19: number
+  count29: number
 }
 
 function termHeaderCandidates(bytes: Uint8Array, anchorOffset: number): { exact: HeaderCandidate[]; nearbyMismatch: HeaderCandidate[] } {
   const exact: HeaderCandidate[] = []
   const nearbyMismatch: HeaderCandidate[] = []
-  const start = Math.max(0, anchorOffset - 384)
+  const start = Math.max(0, anchorOffset - 4096)
   const end = Math.min(anchorOffset - 15, bytes.length - 16)
   for (let headerOffset = start; headerOffset <= end; headerOffset++) {
     const headerDate = decodeMembershipPackedDate(bytes, headerOffset)
@@ -485,8 +488,24 @@ function termHeaderCandidates(bytes: Uint8Array, anchorOffset: number): { exact:
     if (termsEnd >= bytes.length || termsEnd >= anchorOffset) continue
     const auxiliaryCount = bytes[termsEnd]
     if (auxiliaryCount > 32) continue
-    const expectedAnchor = termsEnd + 1 + auxiliaryCount * 31 + 74
-    const candidate = { headerOffset, headerDate, count, termsOffset, termsEnd, auxiliaryCount, expectedAnchor }
+    const trailerStart = termsEnd + 1 + auxiliaryCount * 31
+    if (trailerStart + 74 > bytes.length) continue
+    const count19 = bytes[trailerStart]
+    if (count19 > 1) {
+      const expectedAnchor = trailerStart + 74
+      if (Math.abs(expectedAnchor - anchorOffset) <= 96) nearbyMismatch.push({ headerOffset, headerDate, count, termsOffset, termsEnd, auxiliaryCount, expectedAnchor, trailerBase: trailerStart, count19, count29: 0 })
+      continue
+    }
+    const trailerBase = trailerStart + 19 * count19
+    if (trailerBase + 74 > bytes.length) continue
+    const count29 = u32(bytes, trailerBase + 45)
+    if (count29 > 128) {
+      const expectedAnchor = trailerBase + 74
+      if (Math.abs(expectedAnchor - anchorOffset) <= 96) nearbyMismatch.push({ headerOffset, headerDate, count, termsOffset, termsEnd, auxiliaryCount, expectedAnchor, trailerBase, count19, count29 })
+      continue
+    }
+    const expectedAnchor = trailerBase + 74 + 29 * count29
+    const candidate = { headerOffset, headerDate, count, termsOffset, termsEnd, auxiliaryCount, expectedAnchor, trailerBase, count19, count29 }
     if (expectedAnchor === anchorOffset) exact.push(candidate)
     else if (Math.abs(expectedAnchor - anchorOffset) <= 96) nearbyMismatch.push(candidate)
   }
@@ -528,9 +547,12 @@ function parseContractEvidence(bytes: Uint8Array, eid: number, identityOffset: n
 
   for (const anchor of findAnchors(bytes, eid, identityOffset)) {
     const ref = `game_db.dat@${anchor.offset}`
-    const dates = trailerDates(bytes, anchor.offset)
-    const invalidTrailer = !dates.expiry || !dates.joined || !dates.effective || !dates.state
+    let dates = trailerDates(bytes, anchor.offset)
     const headers = termHeaderCandidates(bytes, anchor.offset)
+    if (headers.exact.length === 1) {
+      dates = {...dates, expiry: decodeMembershipPackedDate(bytes, headers.exact[0].trailerBase + 31), joined: decodeMembershipPackedDate(bytes, headers.exact[0].trailerBase + 35)}
+    }
+    const invalidTrailer = !dates.expiry || !dates.joined || !dates.effective || !dates.state
 
     if (headers.exact.length > 1) {
       unsupportedAnchors.push({ ref, team_id_raw: anchor.teamId, wage_raw: anchor.wage, anchor_offset: anchor.offset, reason_code: 'multiple_complete_contract_preambles' })
@@ -583,12 +605,21 @@ function parseContractEvidence(bytes: Uint8Array, eid: number, identityOffset: n
     // A nearby valid term-header shape whose derived anchor misses by a small
     // structural unit is evidence of a malformed/unsupported complete variant,
     // not permission to silently reinterpret it as a relationship.
-    if (headers.nearbyMismatch.length > 0) {
+    if (headers.nearbyMismatch.some(header => !complete.some(object => object.offsets.terms_header === header.headerOffset))) {
       unsupportedAnchors.push({ ref, team_id_raw: anchor.teamId, wage_raw: anchor.wage, anchor_offset: anchor.offset, reason_code: 'complete_contract_layout_mismatch' })
       continue
     }
 
-    if (invalidTrailer) {
+    const secondaryCandidates = []
+    for (let n = 0; n <= 128; n++) {
+      const base = anchor.offset - 74 - 29 * n
+      if (base < scanStart || u32(bytes, base + 45) !== n) continue
+      const expiry = decodeMembershipPackedDate(bytes, base + 31)
+      const joined = decodeMembershipPackedDate(bytes, base + 35)
+      if (expiry && joined && dates.effective && dates.state) secondaryCandidates.push({...dates, expiry, joined})
+    }
+    if (secondaryCandidates.length === 1) dates = secondaryCandidates[0]
+    if (secondaryCandidates.length !== 1) {
       unsupportedAnchors.push({ ref, team_id_raw: anchor.teamId, wage_raw: anchor.wage, anchor_offset: anchor.offset, reason_code: 'secondary_relationship_dates_unsupported' })
       continue
     }
@@ -909,7 +940,8 @@ function evaluateMembershipFacts(args: {
     }
     const evidence = relations.map(relation => relation.ref)
     if (args.structuralOrg.status === 'confirmed' && args.structuralOrg.value
-      && args.structuralOrg.value.organization_ref !== organizationRef) {
+      && args.structuralOrg.value.organization_ref !== organizationRef
+      && args.structuralOrg.value.organization_ref !== args.owner.value.organization_ref) {
       const contradiction = [...evidence, ...args.structuralOrg.evidence_refs]
       return {
         current_organization: ambiguous('external_relation_conflicts_with_structural_membership', contradiction),
@@ -1036,8 +1068,8 @@ export function buildPlayerMembershipFacts(
   const structuralTeamFact: FactualValue<StructuralTeamReference> = structuralTeamId === null
     ? unknown('structural_team_unresolved')
     : confirmed({ team_id_raw: structuralTeamId, team_name_raw: structuralTeamName, roster_group_label_raw: rosterLabel }, 'structural_roster_team_observed', rosterRecordOffset === null ? [] : [`game_db.dat@${rosterRecordOffset}`])
-  const structuralSquadFact = rosterLabel
-    ? confirmed({ label_raw: rosterLabel, index_raw: rosterIndex }, 'structural_roster_group_observed', rosterRecordOffset === null ? [] : [`game_db.dat@${rosterRecordOffset}`])
+  const structuralSquadFact = structuralTeamName
+    ? confirmed({ label_raw: structuralTeamName, index_raw: rosterIndex }, 'structural_team_literal_name_observed', rosterRecordOffset === null ? [] : [`game_db.dat@${rosterRecordOffset}`])
     : unknown<{ label_raw: string; index_raw: number | null }>('structural_roster_group_label_unresolved')
   const teamLevel = rosterPrimary === true
     ? confirmed<'first_team'>('first_team', 'primary_roster_group_structurally_explicit', rosterRecordOffset === null ? [] : [`game_db.dat@${rosterRecordOffset}`])

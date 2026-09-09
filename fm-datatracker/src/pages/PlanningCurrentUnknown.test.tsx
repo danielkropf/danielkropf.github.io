@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlanningPage } from './PlanningPage'
@@ -63,12 +63,11 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('PlanningPage current unknown', () => {
-  it('mantém identidade sem snapshot atual utilizável e não promove score/peek histórico', async () => {
+  it('exclui identidade sem observação atual do seletor sem promover histórico', async () => {
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
 
-    expect(await screen.findByText('Jogador sem snapshot')).not.toBeNull()
-    expect(screen.getByText('Sem observação no checkpoint atual')).not.toBeNull()
-    expect(screen.getByText('Situação atual desconhecida')).not.toBeNull()
+    fireEvent.click((await screen.findAllByRole('button', { name: /Adicionar jogador a/ }))[0])
+    expect(screen.queryByText('Jogador sem snapshot')).toBeNull()
     expect(screen.queryByTestId('projection')).toBeNull()
     expect(screen.queryByTestId('peek')).toBeNull()
   })
@@ -87,7 +86,7 @@ describe('PlanningPage current unknown', () => {
     render(<MemoryRouter><PlanningPage /></MemoryRouter>)
 
     expect(await screen.findByText('Jogador sem snapshot')).not.toBeNull()
-    expect(screen.getByText('Sem observação atual')).not.toBeNull()
+    expect(screen.getByText(/Sem observação atual/)).not.toBeNull()
     expect(screen.queryByTestId('projection')).toBeNull()
   })
 })

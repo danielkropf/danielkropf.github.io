@@ -161,7 +161,7 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
       players.push({
         fm_player_id: String(uid), current_name: name, normalized_name: normalizedName(name), identity_key: `fm:${uid}`,
         date_of_birth: stringOrNull(player.birth_date), nationality: stringOrNull(player.nation), age: null,
-        club: currentTeamName, squad: stringOrNull(rosterGroup.label) ?? groupLabel, positions, preferred_foot: preferredFoot,
+        club: currentTeamName, squad: stringOrNull(rosterGroup.team_name) ?? stringOrNull(rosterGroup.label) ?? groupLabel, positions, preferred_foot: preferredFoot,
         height: numberOrNull(player.height_cm), weight: null, contract_expiry: expiryDate, attributes, statistics, tactic,
         membership_facts_v1: membershipFacts, membership_persistence_v1: membershipPersistence, raw_data: legacyRawPlayer,
         normalized_data: {

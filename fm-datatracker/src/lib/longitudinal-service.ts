@@ -1,3 +1,4 @@
+import { paginatedQuery } from './paginated-query'
 import { supabase } from './supabase'
 import { buildSaveStructure, withLegacySaveStructure } from './longitudinal-domain'
 import type {
@@ -26,17 +27,17 @@ export type IntakeArchiveClass = IntakeClass & { club: Club | null; season: Seas
 export async function loadIntakeArchive(saveId: string): Promise<IntakeArchiveClass[]> {
   const db = client()
   const [classesResult, membersResult, clubsResult, seasonsResult] = await Promise.all([
-    db.from('intake_classes').select('*').eq('save_id', saveId).order('intake_date', { ascending: false }).order('label'),
-    db.from('intake_class_members').select('*').eq('save_id', saveId),
-    db.from('clubs').select('*').eq('save_id', saveId),
-    db.from('seasons').select('*').eq('save_id', saveId),
+    paginatedQuery(() => db.from('intake_classes').select('*').eq('save_id', saveId).order('intake_date', { ascending: false }).order('label').order('id')),
+    paginatedQuery(() => db.from('intake_class_members').select('*').eq('save_id', saveId).order('id')),
+    paginatedQuery(() => db.from('clubs').select('*').eq('save_id', saveId).order('id')),
+    paginatedQuery(() => db.from('seasons').select('*').eq('save_id', saveId).order('id')),
   ])
   for (const result of [classesResult, membersResult, clubsResult, seasonsResult]) if (result.error) throw new Error(dbError(result.error))
   const classes = (classesResult.data ?? []) as IntakeClass[]
   const members = (membersResult.data ?? []) as IntakeClassMember[]
   const playerIds = [...new Set(members.map(member => member.player_id))]
   const playersResult = playerIds.length
-    ? await db.from('players').select('id,current_name').eq('save_id', saveId).in('id', playerIds)
+    ? await paginatedQuery(() => db.from('players').select('id,current_name').eq('save_id', saveId).order('id'))
     : { data: [], error: null }
   if (playersResult.error) throw new Error(dbError(playersResult.error))
   const clubs = new Map(((clubsResult.data ?? []) as Club[]).map(row => [row.id, row]))
@@ -71,17 +72,17 @@ export type SaveHistoryEvent = SaveEvent & { club: Club | null; season: Season |
 export async function loadSaveHistory(saveId: string): Promise<SaveHistoryEvent[]> {
   const db = client()
   const [eventsResult, clubsResult, seasonsResult] = await Promise.all([
-    db.from('save_events').select('*').eq('save_id', saveId).order('event_date', { ascending: false }).order('created_at', { ascending: false }),
-    db.from('clubs').select('*').eq('save_id', saveId),
-    db.from('seasons').select('*').eq('save_id', saveId),
+    paginatedQuery(() => db.from('save_events').select('*').eq('save_id', saveId).order('event_date', { ascending: false }).order('created_at', { ascending: false }).order('id')),
+    paginatedQuery(() => db.from('clubs').select('*').eq('save_id', saveId).order('id')),
+    paginatedQuery(() => db.from('seasons').select('*').eq('save_id', saveId).order('id')),
   ])
   for (const result of [eventsResult, clubsResult, seasonsResult]) if (result.error) throw new Error(dbError(result.error))
   const eventRows = (eventsResult.data ?? []) as SaveEvent[]
   const playerIds = [...new Set(eventRows.map(row => row.player_id).filter((value): value is string => Boolean(value)))]
   const classIds = [...new Set(eventRows.map(row => row.intake_class_id).filter((value): value is string => Boolean(value)))]
   const [playersResult, classesResult] = await Promise.all([
-    playerIds.length ? db.from('players').select('id,current_name').eq('save_id', saveId).in('id', playerIds) : Promise.resolve({ data: [], error: null }),
-    classIds.length ? db.from('intake_classes').select('*').eq('save_id', saveId).in('id', classIds) : Promise.resolve({ data: [], error: null }),
+    playerIds.length ? paginatedQuery(() => db.from('players').select('id,current_name').eq('save_id', saveId).order('id')) : Promise.resolve({ data: [], error: null }),
+    classIds.length ? paginatedQuery(() => db.from('intake_classes').select('*').eq('save_id', saveId).order('id')) : Promise.resolve({ data: [], error: null }),
   ])
   for (const result of [playersResult, classesResult]) if (result.error) throw new Error(dbError(result.error))
   const clubs = new Map(((clubsResult.data ?? []) as Club[]).map(row => [row.id, row]))
@@ -105,12 +106,12 @@ function dbError(error: { message?: string; details?: string; hint?: string } | 
 
 export async function loadTrackedClubs(saveId: string): Promise<TrackedClub[]> {
   const db = client()
-  const memberships = await db.from('save_clubs').select('*').eq('save_id', saveId).order('display_order')
+  const memberships = await paginatedQuery(() => db.from('save_clubs').select('*').eq('save_id', saveId).order('display_order').order('id'))
   if (memberships.error) throw new Error(dbError(memberships.error))
   const rows = (memberships.data ?? []) as SaveClub[]
   const clubIds = [...new Set(rows.map(row => row.club_id))]
   if (!clubIds.length) return []
-  const clubsResult = await db.from('clubs').select('*').eq('save_id', saveId).in('id', clubIds)
+  const clubsResult = await paginatedQuery(() => db.from('clubs').select('*').eq('save_id', saveId).order('id'))
   if (clubsResult.error) throw new Error(dbError(clubsResult.error))
   const clubs = new Map(((clubsResult.data ?? []) as Club[]).map(club => [club.id, club]))
   return rows.flatMap(row => {
@@ -120,7 +121,7 @@ export async function loadTrackedClubs(saveId: string): Promise<TrackedClub[]> {
 }
 
 export async function loadClubCatalog(saveId: string): Promise<Club[]> {
-  const result = await client().from('clubs').select('*').eq('save_id', saveId).order('name')
+  const result = await paginatedQuery(() => client().from('clubs').select('*').eq('save_id', saveId).order('name').order('id'))
   if (result.error) throw new Error(dbError(result.error))
   return (result.data ?? []) as Club[]
 }
@@ -149,7 +150,7 @@ export async function setTrackedClubActive(saveId: string, clubId: string, activ
 }
 
 export async function loadSeasons(saveId: string): Promise<Season[]> {
-  const result = await client().from('seasons').select('*').eq('save_id', saveId).order('ordinal').order('label')
+  const result = await paginatedQuery(() => client().from('seasons').select('*').eq('save_id', saveId).order('ordinal').order('label').order('id'))
   if (result.error) throw new Error(dbError(result.error))
   return (result.data ?? []) as Season[]
 }
@@ -175,9 +176,9 @@ export async function loadSaveStructures(saves: Save[]): Promise<Save[]> {
   const saveIds = saves.map(save => save.id)
   try {
     const [saveClubsResult, clubsResult, seasonsResult] = await Promise.all([
-      db.from('save_clubs').select('*').in('save_id', saveIds).order('display_order'),
-      db.from('clubs').select('*').in('save_id', saveIds),
-      db.from('seasons').select('*').in('save_id', saveIds).order('ordinal').order('label'),
+      paginatedQuery(() => db.from('save_clubs').select('*').in('save_id', saveIds).order('display_order').order('id')),
+      paginatedQuery(() => db.from('clubs').select('*').in('save_id', saveIds).order('id')),
+      paginatedQuery(() => db.from('seasons').select('*').in('save_id', saveIds).order('ordinal').order('label').order('id')),
     ])
     if (saveClubsResult.error) throw new Error(dbError(saveClubsResult.error))
     if (clubsResult.error) throw new Error(dbError(clubsResult.error))
@@ -211,13 +212,13 @@ export async function loadPlayerMembershipHistory(
   playerId: string,
 ): Promise<PlayerMembershipWithClubs[]> {
   const db = client()
-  const membershipsResult = await db
+  const membershipsResult = await paginatedQuery(() => db
     .from('player_memberships')
     .select('*')
     .eq('save_id', saveId)
     .eq('player_id', playerId)
     .order('observed_date')
-    .order('created_at')
+    .order('created_at').order('id'))
 
   if (membershipsResult.error) throw new Error(dbError(membershipsResult.error))
   const memberships = (membershipsResult.data ?? []) as PlayerMembership[]
@@ -238,7 +239,7 @@ async function hydrateMembershipClubs(
 
   let clubs = new Map<string, Club>()
   if (clubIds.length) {
-    const clubsResult = await db.from('clubs').select('*').eq('save_id', saveId).in('id', clubIds)
+    const clubsResult = await paginatedQuery(() => db.from('clubs').select('*').eq('save_id', saveId).order('id'))
     if (clubsResult.error) throw new Error(dbError(clubsResult.error))
     clubs = new Map(((clubsResult.data ?? []) as Club[]).map(club => [club.id, club]))
   }
@@ -276,13 +277,13 @@ export async function loadPlanningMemberships(
   const memberships: PlayerMembership[] = []
   const chunkSize = 400
   for (let index = 0; index < ids.length; index += chunkSize) {
-    const result = await db
+    const result = await paginatedQuery(() => db
       .from('player_memberships')
       .select('*')
       .eq('save_id', saveId)
       .in('source_snapshot_id', ids.slice(index, index + chunkSize))
       .order('observed_date')
-      .order('created_at')
+      .order('created_at').order('id'))
     if (result.error) throw new Error(dbError(result.error))
     memberships.push(...((result.data ?? []) as PlayerMembership[]))
   }

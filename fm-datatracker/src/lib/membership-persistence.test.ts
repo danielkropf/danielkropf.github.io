@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMembershipPersistenceRow, buildMembershipPersistenceRows } from './membership-persistence'
+import { buildMembershipPersistenceRow, buildMembershipPersistenceRows, requiresReader033Membership } from './membership-persistence'
 
 function fact(status: string, value: unknown, reason = 'fixture_reason') {
   return { status, reason_code: reason, value, evidence_refs: ['game_db.dat@42'] }
@@ -75,4 +75,13 @@ describe('E-MC-01B membership persistence payload', () => {
     source.membership_facts_v1.version = 'future-version'
     expect(buildMembershipPersistenceRow(source)).toBeNull()
   })
+})
+
+it('carries the characterized reader version so old databases cannot silently persist generic squad labels', () => {
+  const source = row()
+  Object.assign(source.membership_facts_v1.provenance, { reader_parser_version: 'fm26-membership-reader/0.33.0' })
+  const compact = buildMembershipPersistenceRow(source)
+  expect(compact?.reader_version).toBe('fm26-membership-reader/0.33.0')
+  expect(requiresReader033Membership([{ membership_persistence_v1: compact }])).toBe(true)
+  expect(requiresReader033Membership([{ membership_persistence_v1: buildMembershipPersistenceRow(row()) }])).toBe(false)
 })
