@@ -1,3 +1,4 @@
+import { hasPlayerMarketFlag, togglePlayerMarketFlag } from '../lib/planningSets'
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type Dispatch, type DragEvent, type MouseEvent, type ReactNode, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -27,7 +28,7 @@ import { DATA_TABLE_PRESETS } from '../components/data-table/presets'
 import { patchClubPlanning, patchClubTacticId, primaryPlanningClubId, resolveClubPlanning, sanitizeClubTacticSelections } from '../lib/multiclub-planning'
 import { RosterPlayerContextMenu } from '../components/RosterPlayerContextMenu'
 import { effectivePlanningSquadGroupId, isMarketPlanningGroup, movePlayerToPlanningSquad, reconcilePlanningSquadGroups } from '../lib/planning-squads'
-import { movePlayerToSet, type FlexiblePlanning } from '../lib/planningSets'
+import { type FlexiblePlanning } from '../lib/planningSets'
 
 type Role = { id: string; name: string; weights: Record<string, number> }
 type Assignment = { playerId: string; nodeId: string; position: string; roleId: string; roleCode: string; roleName: string }
@@ -354,7 +355,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
     if (!playerMenu) return
     const candidate = candidates.find(item => item.id === playerMenu.playerId)
     const currentSquad = effectivePlanningSquadGroupId(planning, playerMenu.playerId, candidate?.latest?.squad)
-    let next = movePlayerToSet(planning, groupId, 'market', playerMenu.playerId)
+    let next = togglePlayerMarketFlag(planning, playerMenu.playerId, groupId)
     if (currentSquad) next = movePlayerToPlanningSquad(next, playerMenu.playerId, currentSquad)
     persistPlanning(next)
     setPlayerMenu(null)
@@ -917,7 +918,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
 
     {playerMenu && (() => {
       const candidate = candidates.find(item => item.id === playerMenu.playerId)
-      return <RosterPlayerContextMenu
+      return <RosterPlayerContextMenu markedForLoan={hasPlayerMarketFlag(planning, playerMenu.playerId, 'loan')} markedForSale={hasPlayerMarketFlag(planning, playerMenu.playerId, 'sale')}
         x={playerMenu.x}
         y={playerMenu.y}
         squads={planningSquads}

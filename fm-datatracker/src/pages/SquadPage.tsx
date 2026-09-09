@@ -1,3 +1,4 @@
+import { hasPlayerMarketFlag, togglePlayerMarketFlag } from '../lib/planningSets'
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -231,7 +232,7 @@ export function SquadPage() {
     const factualSquadName = confirmedFieldValue(player.current_factual.membership?.current.squadName)
     const factualRosterName = currentRosterLabel({ externalClub, factualSquadName, snapshotSquadName: latest.squad, teamLevel, primaryClubName: selected?.club_name ?? null })
     const membershipKind = rosterMembershipKind(player, primaryClubId)
-    const status = currentRosterStatus(externalClub, marketGroup, membershipKind)
+    const status = hasPlayerMarketFlag(activePlanning, player.id, 'loan') && hasPlayerMarketFlag(activePlanning, player.id, 'sale') ? 'Para venda e empréstimo' : currentRosterStatus(externalClub, marketGroup, membershipKind)
     const existingTactic = tacticAssignmentByPlayer.get(player.id)
     const squadGroupId = effectivePlanningSquadGroupId(activePlanning, player.id, factualRosterName, teamLevel)
     const squadName = planningSquadLabel(activePlanning, squadGroupId) ?? factualRosterName
@@ -252,7 +253,7 @@ export function SquadPage() {
     return [row]
   }), [players, referenceScores, model, columns, activePlanning, primaryClubId, selected?.club_name, tacticAssignmentByPlayer, tacticalSetsByGroup, tacticSlotDescriptors, potential.showPotential, potential.generalCeilingModel, potential.generalCeilingModel?.manifest.potentialModelVersion, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
 
-  const quickMatches = (row: Row, id: QuickFilterId) => id === 'all' || (id === 'in-tactic' && Boolean(row.tacticSlot)) || (id === 'out-tactic' && !row.tacticSlot) || (id === 'plans' && row.status === 'Nos planos') || (id === 'loan' && row.status === 'Para empréstimo') || (id === 'sale' && row.status === 'Para venda') || (id === 'loaned-out' && row.status === 'Emprestado para fora') || (id === 'loaned-in' && row.status === 'Emprestado para dentro') || (id === 'outside' && row.status === 'Fora do clube') || (id.startsWith('squad:') && row.squadGroupId === id.slice(6))
+  const quickMatches = (row: Row, id: QuickFilterId) => id === 'all' || (id === 'in-tactic' && Boolean(row.tacticSlot)) || (id === 'out-tactic' && !row.tacticSlot) || (id === 'plans' && row.status === 'Nos planos') || (id === 'loan' && hasPlayerMarketFlag(activePlanning, row.player.id, 'loan')) || (id === 'sale' && hasPlayerMarketFlag(activePlanning, row.player.id, 'sale')) || (id === 'loaned-out' && row.status === 'Emprestado para fora') || (id === 'loaned-in' && row.status === 'Emprestado para dentro') || (id === 'outside' && row.status === 'Fora do clube') || (id.startsWith('squad:') && row.squadGroupId === id.slice(6))
   const rows = useMemo(() => allRows.filter(row => row.player.current_name.toLowerCase().includes(search.toLowerCase())).filter(row => quickMatches(row, quickFilter)).filter(row => filters.every(filter => matchesFilter(row, filter)) && (positionFilters === null || positionFilters.length > 0 && positionFilters.some(target => canPlayPosition(row.latest?.positions ?? [], target)))).sort((a, b) => compareTableRows(a, b, sort.key, columns) * sort.direction || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')), [allRows, search, quickFilter, filters, positionFilters, sort, columns])
 
   const quickFilters = useMemo<DataTableQuickFilter[]>(() => {
@@ -306,7 +307,7 @@ export function SquadPage() {
   function assignPlanningSquad(playerId: string, groupId: string) { persistPlayerPlanning(playerId, movePlayerToPlanningSquad(activePlanning, playerId, groupId) as Planning) }
   function markPlayerForMarket(playerId: string, groupId: 'loan' | 'sale') {
     const currentSquad = allRows.find(row => row.player.id === playerId)?.squadGroupId
-    let next = movePlayerToSet(activePlanning, groupId, 'market', playerId) as Planning
+    let next = togglePlayerMarketFlag(activePlanning, playerId, groupId) as Planning
     if (currentSquad) next = movePlayerToPlanningSquad(next, playerId, currentSquad) as Planning
     persistPlayerPlanning(playerId, next)
   }
@@ -359,7 +360,7 @@ export function SquadPage() {
       onColumnMove={moveColumn}
     />
     {columnMenu && <DataTableColumnMenu x={columnMenu.x} y={columnMenu.y} title={columns[columnMenu.index]?.label} items={menuItems} onClose={() => setColumnMenu(null)} />}
-    {playerMenu && (() => { const row = allRows.find(item => item.player.id === playerMenu.playerId); return <RosterPlayerContextMenu x={playerMenu.x} y={playerMenu.y} squads={activePlanning.groups.filter(group => !isMarketPlanningGroup(group))} activeSquadId={row?.squadGroupId} onMoveSquad={groupId => { assignPlanningSquad(playerMenu.playerId, groupId); setPlayerMenu(null) }} onLoan={() => { markPlayerForMarket(playerMenu.playerId, 'loan'); setPlayerMenu(null) }} onSale={() => { markPlayerForMarket(playerMenu.playerId, 'sale'); setPlayerMenu(null) }} onClose={() => setPlayerMenu(null)} /> })()}
+    {playerMenu && (() => { const row = allRows.find(item => item.player.id === playerMenu.playerId); return <RosterPlayerContextMenu markedForLoan={hasPlayerMarketFlag(activePlanning, playerMenu.playerId, 'loan')} markedForSale={hasPlayerMarketFlag(activePlanning, playerMenu.playerId, 'sale')} x={playerMenu.x} y={playerMenu.y} squads={activePlanning.groups.filter(group => !isMarketPlanningGroup(group))} activeSquadId={row?.squadGroupId} onMoveSquad={groupId => { assignPlanningSquad(playerMenu.playerId, groupId); setPlayerMenu(null) }} onLoan={() => { markPlayerForMarket(playerMenu.playerId, 'loan'); setPlayerMenu(null) }} onSale={() => { markPlayerForMarket(playerMenu.playerId, 'sale'); setPlayerMenu(null) }} onClose={() => setPlayerMenu(null)} /> })()}
     <TableViewSaveDialog open={saveViewOpen} value={saveViewName} onChange={setSaveViewName} onCancel={() => { setSaveViewOpen(false); setSaveViewName('') }} onSave={saveCustomView} />
     {filterOpen && <div className="settings-overlay" onClick={() => setFilterOpen(false)}><section className="filter-modal" onClick={event => event.stopPropagation()}><header><div><span className="eyebrow">ELENCO</span><h2>Filtros</h2></div><button className="close" onClick={() => setFilterOpen(false)}>×</button></header><div className="filter-list">{filters.map(filter => <div className="filter-row" key={filter.id}><CustomSelect value={filter.column} ariaLabel="Campo do filtro" options={filterColumns.map(([value, label]) => ({ value, label }))} onChange={value => setFilters(current => current.map(item => item.id === filter.id ? { ...item, column: value as Filter['column'] } : item))} /><CustomSelect value={filter.operator} ariaLabel="Operador do filtro" options={[{ value: 'contains', label: 'contém' }, { value: 'equals', label: 'é igual a' }, { value: 'gte', label: 'maior ou igual' }, { value: 'lte', label: 'menor ou igual' }]} onChange={value => setFilters(current => current.map(item => item.id === filter.id ? { ...item, operator: value as Filter['operator'] } : item))} /><input value={filter.value} onChange={event => setFilters(current => current.map(item => item.id === filter.id ? { ...item, value: event.target.value } : item))} /><button className="column-delete" onClick={() => setFilters(current => current.filter(item => item.id !== filter.id))}>×</button></div>)}</div><footer><button className="ghost" onClick={() => setFilters([])}>Limpar</button><button onClick={() => setFilters(current => [...current, { id: crypto.randomUUID(), column: 'name', operator: 'contains', value: '' }])}>+ Adicionar filtro</button><button onClick={() => setFilterOpen(false)}>Aplicar</button></footer></section></div>}
   </div>

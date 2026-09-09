@@ -62,3 +62,11 @@ describe('derivePlanningDistribution', () => {
     expect(result.duplicatePlayerIds).toEqual(['p2'])
   })
 })
+
+it('counts market intent alongside squad placement without a false duplicate', () => {
+  const result = derivePlanningDistribution(['p'], { groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: { principal: { st: ['p'] }, sale: { market: ['p'] } } })
+  expect(result.assigned).toBe(1)
+  expect(result.duplicatePlayerIds).toEqual([])
+  expect(result.groups.find(group => group.id === 'principal')?.count).toBe(1)
+  expect(result.groups.find(group => group.id === 'sale')?.count).toBe(1)
+})

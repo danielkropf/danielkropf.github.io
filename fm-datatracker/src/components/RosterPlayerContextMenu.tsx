@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 
 type SquadOption = { id: string; name: string }
 
-export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, onMoveSquad, onLoan, onSale, onRemove, onClose }: {
+export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, markedForLoan = false, markedForSale = false, onMoveSquad, onLoan, onSale, onRemove, onClose }: {
   x: number
   y: number
   squads: SquadOption[]
   activeSquadId?: string | null
+  markedForLoan?: boolean
+  markedForSale?: boolean
   onMoveSquad: (groupId: string) => void
   onLoan: () => void
   onSale: () => void
@@ -32,8 +34,8 @@ export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, onMoveSqu
   return <>
     <div className="planning-context-menu roster-player-context-menu" role="menu" style={{ left: mainLeft, top: mainTop }} onClick={event => event.stopPropagation()}>
       <button role="menuitem" className="context-menu-branch" aria-haspopup="menu" aria-expanded={squadOpen} onPointerEnter={() => setSquadOpen(true)} onFocus={() => setSquadOpen(true)} onClick={() => setSquadOpen(open => !open)}><span>Mover para elenco</span><b aria-hidden="true">›</b></button>
-      <button role="menuitem" onPointerEnter={() => setSquadOpen(false)} onClick={onLoan}>Adicionar para empréstimo</button>
-      <button role="menuitem" onPointerEnter={() => setSquadOpen(false)} onClick={onSale}>Adicionar para venda</button>
+      <button role="menuitem" onPointerEnter={() => setSquadOpen(false)} onClick={onLoan}>{markedForLoan ? 'Remover de empréstimo' : 'Adicionar para empréstimo'}</button>
+      <button role="menuitem" onPointerEnter={() => setSquadOpen(false)} onClick={onSale}>{markedForSale ? 'Remover de venda' : 'Adicionar para venda'}</button>
       {onRemove && <button role="menuitem" className="is-danger" onPointerEnter={() => setSquadOpen(false)} onClick={onRemove}>Remover do planejamento</button>}
     </div>
     {squadOpen && <div className="planning-context-menu roster-player-context-submenu" role="menu" aria-label="Mover para elenco" style={{ left: submenuLeft, top: submenuTop }} onClick={event => event.stopPropagation()} onPointerLeave={() => setSquadOpen(false)}>

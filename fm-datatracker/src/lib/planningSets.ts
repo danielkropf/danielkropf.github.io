@@ -1,3 +1,4 @@
+import { marketPlanningGroupKind } from './current-roster'
 export type PlanningGroup = { id: string; name: string }
 export type TacticSlotDescriptor = { id: string; position: string; oopPosition?: string; nodeId?: string; x?: number }
 export type PlanningSetLayout = {
@@ -358,9 +359,11 @@ export function restoreDefaultPlanningSets(planning: FlexiblePlanning, tacticId:
 }
 
 export function movePlayerToSet(planning: FlexiblePlanning, groupId: string, setId: string, playerId: string, beforePlayerId?: string | null): FlexiblePlanning {
+  const targetKind = marketPlanningGroupKind(planning.groups.find(group => group.id === groupId))
   const cleaned: Record<string, Record<string, string[]>> = {}
   for (const [id, rows] of Object.entries(planning.slotAssignments)) {
-    cleaned[id] = Object.fromEntries(Object.entries(rows).map(([key, ids]) => [key, ids.filter(value => value && value !== playerId)]))
+    const sameDomain = marketPlanningGroupKind(planning.groups.find(group => group.id === id)) === targetKind
+    cleaned[id] = sameDomain ? Object.fromEntries(Object.entries(rows).map(([key, ids]) => [key, ids.filter(value => value && value !== playerId)])) : rows
   }
   const group = { ...(cleaned[groupId] ?? {}) }
   const target = [...(group[setId] ?? [])]
@@ -385,4 +388,17 @@ export function removePlayerFromPlanning(planning: FlexiblePlanning, playerId: s
 
 export function primarySetForPlayer(planning: FlexiblePlanning, groupId: string, sets: PlanningSetLayout[], playerId: string): PlanningSetLayout | null {
   return sets.find(set => (planning.slotAssignments[groupId]?.[set.id] ?? []).includes(playerId)) ?? null
+}
+
+export function hasPlayerMarketFlag(planning: FlexiblePlanning, playerId: string, kind: 'loan' | 'sale'): boolean {
+  return planning.groups.some(group => marketPlanningGroupKind(group) === kind && Object.values(planning.slotAssignments[group.id] ?? {}).some(ids => ids.includes(playerId)))
+}
+
+export function togglePlayerMarketFlag(planning: FlexiblePlanning, playerId: string, kind: 'loan' | 'sale'): FlexiblePlanning {
+  if (!hasPlayerMarketFlag(planning, playerId, kind)) {
+    const group = planning.groups.find(group => marketPlanningGroupKind(group) === kind)
+    const target = group ? planning : { ...planning, groups: [...planning.groups, { id: kind, name: kind === 'loan' ? 'Empréstimo' : 'Venda' }] }
+    return movePlayerToSet(target, group?.id ?? kind, 'market', playerId)
+  }
+  return { ...planning, slotAssignments: Object.fromEntries(Object.entries(planning.slotAssignments).map(([id, rows]) => [id, marketPlanningGroupKind(planning.groups.find(group => group.id === id)) === kind ? Object.fromEntries(Object.entries(rows).map(([set, ids]) => [set, ids.filter(value => value !== playerId)])) : rows])) }
 }

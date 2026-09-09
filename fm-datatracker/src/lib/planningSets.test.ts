@@ -1,3 +1,4 @@
+import { togglePlayerMarketFlag } from './planningSets'
 import { describe, expect, it } from 'vitest'
 import { canGroupAdjacentPlanningSets, defaultPlanningSets, groupAdjacentPlanningSets, groupEquivalentSets, layoutsFor, movePlanningSetVisualGrid, movePlayerToSet, PLANNING_VISUAL_GOALKEEPER_Y, PLANNING_VISUAL_GRID_ROWS, planningSetDisplayLabel, planningSlotDisplayLabel, planningVisualGridCellForSet, positionFamily, primarySetForPlayer, renamePlanningSet, renamePlanningSlotLabel, reorderPlanningGroups, reorderPlanningSets, restoreDefaultPlanningSets, restorePlanningSetVisualGrid, splitPlanningSet, type FlexiblePlanning } from './planningSets'
 
@@ -176,4 +177,34 @@ describe('flexible planning sets', () => {
     expect(planningVisualGridCellForSet(defaultPlanningSets([{ id: 'st', position: 'ST(C)', x: 50 }])[0], 50, 'st').row).toBe(1)
   })
 
+})
+
+it('keeps market intent independent from tactical placement in both directions', () => {
+  let planning: FlexiblePlanning = { groups: [{ id: 'principal', name: 'Principal' }, { id: 'b', name: 'B' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }], slotAssignments: { principal: { st: ['p'] } } }
+  planning = movePlayerToSet(planning, 'sale', 'market', 'p')
+  expect(planning.slotAssignments.principal.st).toEqual(['p'])
+  expect(planning.slotAssignments.sale.market).toEqual(['p'])
+  planning = movePlayerToSet(planning, 'b', 'mc', 'p')
+  expect(planning.slotAssignments.principal.st).toEqual([])
+  expect(planning.slotAssignments.b.mc).toEqual(['p'])
+  expect(planning.slotAssignments.sale.market).toEqual(['p'])
+  planning = movePlayerToSet(planning, 'loan', 'market', 'p')
+  expect(planning.slotAssignments.b.mc).toEqual(['p'])
+  expect(planning.slotAssignments.sale.market).toEqual(['p'])
+  expect(planning.slotAssignments.loan.market).toEqual(['p'])
+})
+
+it('toggles sale and loan independently without losing the tactical set', () => {
+  const original: FlexiblePlanning = { groups: [{ id: 'principal', name: 'Principal' }], slotAssignments: { principal: { st: ['p'] } } }
+  let next = togglePlayerMarketFlag(original, 'p', 'sale')
+  next = togglePlayerMarketFlag(next, 'p', 'loan')
+  expect(next.slotAssignments.sale.market).toEqual(['p'])
+  expect(next.slotAssignments.loan.market).toEqual(['p'])
+  next = togglePlayerMarketFlag(next, 'p', 'sale')
+  expect(next.slotAssignments.sale.market).toEqual([])
+  expect(next.slotAssignments.loan.market).toEqual(['p'])
+  expect(next.slotAssignments.principal.st).toEqual(['p'])
+  next = togglePlayerMarketFlag(next, 'p', 'loan')
+  expect(next.slotAssignments.loan.market).toEqual([])
+  expect(next.slotAssignments.principal.st).toEqual(['p'])
 })

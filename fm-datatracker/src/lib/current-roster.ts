@@ -1,4 +1,4 @@
-export type CurrentRosterStatus = 'Nos planos' | 'Para empréstimo' | 'Para venda' | 'Emprestado para fora' | 'Emprestado para dentro' | 'Fora do clube'
+export type CurrentRosterStatus = 'Nos planos' | 'Para venda e empréstimo' | 'Para empréstimo' | 'Para venda' | 'Emprestado para fora' | 'Emprestado para dentro' | 'Fora do clube'
 export type CurrentRosterMembershipKind = 'current' | 'loaned_in' | 'loaned_out' | 'other_club' | 'unknown' | null
 export type PlanningTeamLevel = 'first_team' | 'reserve' | 'academy' | 'other' | 'unknown' | null
 

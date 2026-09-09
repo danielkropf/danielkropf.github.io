@@ -49,6 +49,7 @@ export function derivePlanningDistribution(
 
   const globallyAssigned = new Set<string>()
   const duplicatePlayerIds = new Set<string>()
+  const assignedByDomain = { squad: new Set<string>(), loan: new Set<string>(), sale: new Set<string>() }
   const slotAssignments = planning?.slotAssignments ?? {}
 
   const distributionGroups: PlanningDistributionGroup[] = groups.map(group => {
@@ -60,12 +61,14 @@ export function derivePlanningDistribution(
       groupIds.add(playerId)
     }
 
+    const domainAssigned = assignedByDomain[groupKind(group.id)]
     const uniqueIds: string[] = []
     for (const playerId of groupIds) {
-      if (globallyAssigned.has(playerId)) {
+      if (domainAssigned.has(playerId)) {
         duplicatePlayerIds.add(playerId)
         continue
       }
+      domainAssigned.add(playerId)
       globallyAssigned.add(playerId)
       uniqueIds.push(playerId)
     }

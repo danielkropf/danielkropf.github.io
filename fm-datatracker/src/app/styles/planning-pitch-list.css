@@ -593,3 +593,19 @@
   .tactics-workspace-planning .planning-pitch-list-page .planning-pitch-row-peek .player-peek svg{width:11px!important;height:11px!important}
   .tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name{font-size:.64rem!important}
 }
+
+/* Picker controls grow naturally; only the result table consumes remaining space. */
+.tactics-workspace-planning .planning-add-player-modal{display:flex!important;flex-direction:column!important;min-height:0!important}
+.tactics-workspace-planning .planning-add-player-modal>header,
+.tactics-workspace-planning .planning-add-player-modal>footer,
+.tactics-workspace-planning .planning-add-player-search,
+.tactics-workspace-planning .planning-picker-local-options,
+.tactics-workspace-planning .planning-add-player-modal>.dt-table-chrome,
+.tactics-workspace-planning .planning-membership-warning{flex:0 0 auto!important}
+.tactics-workspace-planning .planning-add-player-table{flex:1 1 auto!important;min-height:0!important;overflow:hidden!important}
+.tactics-workspace-planning .planning-picker-local-options{display:flex!important;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:10px 20px}
+.tactics-workspace-planning .planning-picker-local-options>label{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:8px;margin:0!important;width:auto!important;cursor:pointer;font-size:13px}
+.tactics-workspace-planning .planning-picker-local-options input[type=checkbox]{appearance:auto!important;position:static!important;display:inline-block!important;flex:0 0 16px!important;width:16px!important;height:16px!important;min-width:16px!important;min-height:16px!important;max-width:16px!important;max-height:16px!important;margin:0!important;padding:0!important;transform:none!important;accent-color:var(--dt-lime);cursor:pointer}
+.tactics-workspace-planning .planning-picker-local-options>label.is-disabled{opacity:.55;cursor:not-allowed}
+.tactics-workspace-planning .planning-picker-local-options input:disabled{cursor:not-allowed}
+.tactics-workspace-planning .planning-membership-warning{padding:6px 20px;font-size:12px}
