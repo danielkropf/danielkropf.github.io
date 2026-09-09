@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 
 type PositionItem = { value: string; label: string }
 type PositionGroup = { label: string; className: string; slots: Array<PositionItem | null> }
@@ -43,6 +43,8 @@ export function PositionSelector({ selected, onChange, availablePositions, class
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({})
   const available = useMemo(() => {
     if (!availablePositions) return allPositions
     const wanted = new Set(availablePositions.map(normalize))
@@ -60,6 +62,28 @@ export function PositionSelector({ selected, onChange, availablePositions, class
 
   usePopoverDismiss(open, rootRef, triggerRef, close)
 
+  useEffect(() => {
+    if (!open) return
+    const place = () => {
+      const trigger = triggerRef.current?.getBoundingClientRect()
+      if (!trigger) return
+      const margin = 8
+      const width = Math.min(340, window.innerWidth - margin * 2)
+      const measuredHeight = menuRef.current?.getBoundingClientRect().height ?? 390
+      const below = window.innerHeight - trigger.bottom - margin
+      const above = trigger.top - margin
+      const openAbove = below < Math.min(measuredHeight, 320) && above > below
+      const maxHeight = Math.max(160, Math.min(measuredHeight, (openAbove ? above : below) - 6))
+      const left = Math.max(margin, Math.min(trigger.left, window.innerWidth - width - margin))
+      const top = openAbove ? Math.max(margin, trigger.top - Math.min(measuredHeight, maxHeight) - 5) : Math.min(window.innerHeight - margin - Math.min(measuredHeight, maxHeight), trigger.bottom + 5)
+      setMenuStyle({ left, top, width, maxHeight })
+    }
+    const frame = requestAnimationFrame(place)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) }
+  }, [open])
+
   function togglePosition(position: string, checked: boolean) {
     const base = selected === null ? [...available] : [...selectedSet]
     const next = checked ? [...new Set([...base, position])] : base.filter(item => item !== position)
@@ -68,7 +92,7 @@ export function PositionSelector({ selected, onChange, availablePositions, class
 
   return <div className={`dt-position-selector ${open ? 'is-open' : ''} ${className}`.trim()} ref={rootRef}>
     <button ref={triggerRef} type="button" className="dt-position-trigger dt-control" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(current => !current)}><span>{summary}</span><b aria-hidden="true">⌄</b></button>
-    {open && <div className="dt-position-menu" role="group" aria-label="Filtrar posições">
+    {open && <div ref={menuRef} className="dt-position-menu" role="group" aria-label="Filtrar posições" style={menuStyle}>
       <label className="dt-position-master"><input type="checkbox" checked={allChecked} onChange={event => onChange(event.target.checked ? null : [])} /><span>Todas as posições</span></label>
       {GLOBAL_POSITION_GROUPS.map(group => <section className={`dt-position-group ${group.className}`} key={group.label}><h4>{group.label}</h4><div>{group.slots.map((item, index) => item ? <label className={!available.includes(item.value) ? 'is-unavailable' : ''} key={item.value}><input type="checkbox" disabled={!available.includes(item.value)} checked={available.includes(item.value) && selectedSet.has(item.value)} onChange={event => togglePosition(item.value, event.target.checked)} /><span>{item.label}</span></label> : <span className="dt-position-spacer" key={`${group.label}-${index}`} />)}</div></section>)}
     </div>}

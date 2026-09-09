@@ -21,6 +21,7 @@ import { loadCurrentPlayers, loadReferenceDataset, type RichPlayer } from '../li
 import { useSaves } from '../features/saves/SaveContext'
 import { PlayerPeek } from '../components/PlayerPeek'
 import { PlanningStatusBadge } from '../components/PlanningStatusBadge'
+import { RosterPlayerContextMenu } from '../components/RosterPlayerContextMenu'
 import type { PlayerRow } from '../types/domain'
 import { loadModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
 import { describeDbError } from '../lib/db-error'
@@ -28,7 +29,8 @@ import { movePlayerAcrossClubPlans, patchClubPlanning, primaryPlanningClubId, re
 import { layoutsFor, movePlayerToSet, planningSetDisplayLabel, type FlexiblePlanning, type PlanningSetLayout, type TacticSlotDescriptor } from '../lib/planningSets'
 import { usePotential } from '../features/potential/PotentialContext'
 import { effectiveGeneralSortScore, effectiveRoleSortScore } from '../lib/score-sort'
-import { countryFlagEmoji, currentRosterLabel, currentRosterStatus, isExternalCurrentClub, preferredTacticalPlanningGroupId, type PlanningTeamLevel } from '../lib/current-roster'
+import { countryFlagEmoji, currentRosterLabel, currentRosterStatus, isExternalCurrentClub, preferredTacticalPlanningGroupId, type CurrentRosterMembershipKind, type PlanningTeamLevel } from '../lib/current-roster'
+import { effectivePlanningSquadGroupId, isMarketPlanningGroup, movePlayerToPlanningSquad, planningSquadLabel, reconcilePlanningSquadGroups } from '../lib/planning-squads'
 import { discoverSnapshotScalarColumns, snapshotScalarValue, type SnapshotScalarColumn, type SnapshotFieldCategory } from '../lib/player-table-columns'
 
 type DataKey = 'tacticSlot' | 'status' | 'name' | 'age' | 'nationality' | 'value' | 'team' | 'squad' | 'position' | 'height' | 'weight' | 'foot' | 'contract' | 'snapshot' | 'score' | 'reference'
@@ -38,9 +40,9 @@ type TableColumn = { id: string; kind: 'data' | 'attribute' | 'role' | 'tacticRo
 type Snapshot = PlayerRow['player_snapshots'][number]
 type Planning = FlexiblePlanning & { groups: Array<{ id: string; name: string }>; assignments?: Record<string, string> }
 type ModelConfig = { role_weight_overrides?: Record<string, Record<string, number>>; planning?: Planning; planning_by_club?: Record<string, Planning>; tactics?: Tactic[]; selected_tactic_id?: string | null; selected_tactic_id_by_club?: Record<string, string | null> }
-type Row = { player: RichPlayer; latest: Snapshot; score: number | null; sortScore: number | null; status: string; marketValue: string | null; referencePercentile: number | null; referenceLevel: ReferenceLevel | null; referenceSample: number; referenceGroup: string; columnScores: Record<string, number | null>; columnSortScores: Record<string, number | null>; tacticSlot: string | null; tacticSlotLabel: string | null; tacticGroupId: string | null; tacticOptions: Array<{ id: string; label: string }>; clubName: string | null; squadName: string | null; externalClub: boolean }
+type Row = { player: RichPlayer; latest: Snapshot; score: number | null; sortScore: number | null; status: string; marketValue: string | null; referencePercentile: number | null; referenceLevel: ReferenceLevel | null; referenceSample: number; referenceGroup: string; columnScores: Record<string, number | null>; columnSortScores: Record<string, number | null>; tacticSlot: string | null; tacticSlotLabel: string | null; tacticGroupId: string | null; tacticOptions: Array<{ id: string; label: string }>; clubName: string | null; factualSquadName: string | null; squadName: string | null; squadGroupId: string | null; squadOptions: Array<{ id: string; label: string }>; membershipKind: CurrentRosterMembershipKind; externalClub: boolean }
 type Filter = { id: string; column: Exclude<DataKey, 'tacticSlot'>; operator: 'contains' | 'equals' | 'gte' | 'lte'; value: string }
-type QuickFilterId = 'all' | 'in-tactic' | 'out-tactic' | 'plans' | 'loan' | 'sale' | 'outside'
+type QuickFilterId = string
 
 type BuiltInView = { id: string; label: string; columns: () => TableColumn[]; frozenIndex?: number }
 
@@ -98,6 +100,19 @@ const defaultPlanning = (): Planning => ({ groups: [{ id: 'principal', name: 'Pr
 function normalizePlanning(raw: Planning | undefined): Planning { return raw ? { ...defaultPlanning(), ...raw, groups: raw.groups ?? defaultPlanning().groups, slotAssignments: raw.slotAssignments ?? {}, setLayouts: raw.setLayouts ?? {} } : defaultPlanning() }
 function confirmedFieldValue<T>(field: { status: string; value: T | null } | undefined): T | null { return field?.status === 'confirmed' ? field.value : null }
 function planningGroupForPlayer(planning: Planning, playerId: string) { return Object.entries(planning.slotAssignments).find(([, sets]) => Object.values(sets).some(ids => ids.includes(playerId)))?.[0] ?? null }
+function marketPlanningGroupForPlayer(planning: Planning, playerId: string) { return planning.groups.find(group => isMarketPlanningGroup(group) && Object.values(planning.slotAssignments[group.id] ?? {}).some(ids => ids.includes(playerId))) ?? null }
+function rosterMembershipKind(player: RichPlayer, primaryClubId: string | null): CurrentRosterMembershipKind {
+  const currentClubId = confirmedFieldValue(player.current_factual.membership?.current.currentClubId)
+  const ownerClubId = confirmedFieldValue(player.current_factual.membership?.current.ownerClubId)
+  const isLoan = confirmedFieldValue(player.current_factual.membership?.current.isLoan)
+  if (!primaryClubId) return null
+  if (currentClubId === primaryClubId && isLoan === true && ownerClubId && ownerClubId !== primaryClubId) return 'loaned_in'
+  if (ownerClubId === primaryClubId && currentClubId && currentClubId !== primaryClubId && isLoan === true) return 'loaned_out'
+  if (currentClubId && currentClubId !== primaryClubId) return 'other_club'
+  if (currentClubId === primaryClubId) return 'current'
+  return 'unknown'
+}
+function statusPlayerClass(status: string) { return status === 'Para empréstimo' ? 'is-for-loan' : status === 'Para venda' ? 'is-for-sale' : status === 'Emprestado para fora' ? 'is-loaned-out' : status === 'Emprestado para dentro' ? 'is-loaned-in' : '' }
 function clearPlayerTacticalSets(planning: Planning, playerId: string): Planning {
   return { ...planning, slotAssignments: Object.fromEntries(Object.entries(planning.slotAssignments).map(([groupId, sets]) => [groupId, groupId === 'loan' || groupId === 'sale' ? sets : Object.fromEntries(Object.entries(sets).map(([setId, ids]) => [setId, ids.filter(id => id !== playerId)]))])) }
 }
@@ -139,6 +154,7 @@ export function SquadPage() {
   const [saveViewName, setSaveViewName] = useState('')
   const [saveStatus, setSaveStatus] = useState('✓ Salvo')
   const [saveDetail, setSaveDetail] = useState('')
+  const [playerMenu, setPlayerMenu] = useState<{ x: number; y: number; playerId: string } | null>(null)
 
   useEffect(() => { void loadReferenceDataset().then(setReference) }, [])
   useEffect(() => { localStorage.setItem(TABLE_LAYOUT_KEY, JSON.stringify({ columns, frozenIndex, widths })) }, [columns, frozenIndex, widths])
@@ -161,7 +177,26 @@ export function SquadPage() {
   const primaryClubId = primaryPlanningClubId(selected?.structure?.trackedClubs ?? [])
   const selectedTacticId = primaryClubId ? resolveClubTacticId(model, primaryClubId, primaryClubId, (model.tactics ?? []).map(item => item.id)) : model.selected_tactic_id ?? null
   const activeTactic = model.tactics?.find(item => item.id === selectedTacticId) ?? null
-  const activePlanning = useMemo(() => normalizePlanning(primaryClubId ? resolveClubPlanning(model, primaryClubId, primaryClubId, defaultPlanning) : model.planning), [model, primaryClubId])
+  const sourcePlanning = useMemo(() => normalizePlanning(primaryClubId ? resolveClubPlanning(model, primaryClubId, primaryClubId, defaultPlanning) : model.planning), [model, primaryClubId])
+  const factualSquadState = useMemo(() => {
+    const byPlayer = new Map<string, string | null>()
+    const names: string[] = []
+    for (const player of players) {
+      const latest = player.player_snapshots[0]
+      if (!latest || !player.current_factual.observedAtCheckpoint) continue
+      const currentClubId = confirmedFieldValue(player.current_factual.membership?.current.currentClubId)
+      const clubName = player.current_factual.currentClubName ?? latest.club ?? null
+      const externalClub = isExternalCurrentClub({ currentClubId, primaryClubId, currentClubName: clubName, primaryClubName: selected?.club_name ?? null })
+      const factualSquadName = confirmedFieldValue(player.current_factual.membership?.current.squadName)
+      const actualSquadName = externalClub ? null : factualSquadName?.trim() || latest.squad?.trim() || null
+      byPlayer.set(player.id, actualSquadName)
+      if (actualSquadName) names.push(actualSquadName)
+    }
+    return { names, byPlayer }
+  }, [players, primaryClubId, selected?.club_name])
+  const factualSquadNames = factualSquadState.names
+  const factualSquadByPlayer = factualSquadState.byPlayer
+  const activePlanning = useMemo(() => reconcilePlanningSquadGroups(sourcePlanning, factualSquadNames, factualSquadByPlayer), [sourcePlanning, factualSquadState])
   const tacticSlotDescriptors = useMemo<TacticSlotDescriptor[]>(() => activeTactic ? activeTactic.ipAssignments.map(ip => ({ id: ip.playerId, position: ip.position, oopPosition: activeTactic.oopAssignments.find(oop => oop.playerId === ip.playerId)?.position ?? ip.position, nodeId: ip.nodeId, x: PITCH_NODES.find(node => node.id === ip.nodeId)?.x })) : [], [activeTactic])
   const tacticalSetsByGroup = useMemo(() => new Map(activePlanning.groups.filter(group => group.id !== 'loan' && group.id !== 'sale').map(group => [group.id, activeTactic ? layoutsFor(activePlanning, activeTactic.id, group.id, tacticSlotDescriptors) : []])), [activePlanning, activeTactic, tacticSlotDescriptors])
   const tacticAssignmentByPlayer = useMemo(() => {
@@ -172,6 +207,13 @@ export function SquadPage() {
   const availableSnapshotColumns = useMemo(() => discoverSnapshotScalarColumns(players.map(player => player.player_snapshots[0])), [players])
   const referenceScores = useMemo(() => generalReferenceScoresByFamily(reference?.players.filter(player => player.c === referenceCountry && player.d === referenceDivision) ?? [], reference?.attributes ?? []), [reference, referenceCountry, referenceDivision])
 
+  useEffect(() => {
+    if (!selected || !primaryClubId || activePlanning === sourcePlanning) return
+    const patch = patchClubPlanning(model, primaryClubId, primaryClubId, activePlanning)
+    setModel(current => ({ ...current, ...patch }))
+    scheduleModelConfigPatch(selected.id, '2.9.0', patch, updateSaveStatus)
+  }, [selected?.id, primaryClubId, activePlanning, sourcePlanning])
+
   const allRows = useMemo(() => players.flatMap(player => {
     const latest = player.player_snapshots[0]
     if (!latest || !player.current_factual.observedAtCheckpoint) return []
@@ -181,23 +223,26 @@ export function SquadPage() {
     const referencePercentile = referenceResult?.percentile ?? null
     const referenceSample = referenceResult?.population.length ?? 0
     const planningGroupId = planningGroupForPlayer(activePlanning, player.id)
-    const planningGroup = activePlanning.groups.find(group => group.id === planningGroupId) ?? null
+    const marketGroup = marketPlanningGroupForPlayer(activePlanning, player.id)
     const currentClubId = confirmedFieldValue(player.current_factual.membership?.current.currentClubId)
     const clubName = player.current_factual.currentClubName ?? latest.club ?? null
     const externalClub = isExternalCurrentClub({ currentClubId, primaryClubId, currentClubName: clubName, primaryClubName: selected?.club_name ?? null })
     const teamLevel = confirmedFieldValue(player.current_factual.membership?.current.teamLevel) as PlanningTeamLevel
     const factualSquadName = confirmedFieldValue(player.current_factual.membership?.current.squadName)
-    const squadName = currentRosterLabel({ externalClub, factualSquadName, snapshotSquadName: latest.squad, teamLevel, primaryClubName: selected?.club_name ?? null })
-    const status = currentRosterStatus(externalClub, planningGroup)
+    const factualRosterName = currentRosterLabel({ externalClub, factualSquadName, snapshotSquadName: latest.squad, teamLevel, primaryClubName: selected?.club_name ?? null })
+    const membershipKind = rosterMembershipKind(player, primaryClubId)
+    const status = currentRosterStatus(externalClub, marketGroup, membershipKind)
     const existingTactic = tacticAssignmentByPlayer.get(player.id)
-    const targetGroupId = preferredTacticalPlanningGroupId(activePlanning.groups, existingTactic?.groupId ?? null, teamLevel, squadName)
+    const squadGroupId = effectivePlanningSquadGroupId(activePlanning, player.id, factualRosterName, teamLevel)
+    const squadName = planningSquadLabel(activePlanning, squadGroupId) ?? factualRosterName
+    const targetGroupId = preferredTacticalPlanningGroupId(activePlanning.groups, existingTactic?.groupId ?? squadGroupId ?? null, teamLevel, squadName)
     const targetSets = targetGroupId ? tacticalSetsByGroup.get(targetGroupId) ?? [] : []
     const tacticOptions = targetSets.map(set => ({ id: set.id, label: planningSetDisplayLabel(set, targetSets, tacticSlotDescriptors) }))
     const row: Row = {
       player, latest, score,
       sortScore: effectiveGeneralSortScore({ showPotential: potential.showPotential, snapshot: latest, currentScore: score, loadedGeneralModel: potential.generalCeilingModel, loadedRoleModel: potential.ceilingModel }),
       status, marketValue: extractMarketValue(latest), referencePercentile, referenceLevel: referencePercentile === null ? null : referenceLevel(referencePercentile), referenceSample, referenceGroup,
-      columnScores: {}, columnSortScores: {}, tacticSlot: existingTactic?.set.id ?? null, tacticSlotLabel: existingTactic?.label ?? null, tacticGroupId: targetGroupId, tacticOptions, clubName, squadName, externalClub,
+      columnScores: {}, columnSortScores: {}, tacticSlot: existingTactic?.set.id ?? null, tacticSlotLabel: existingTactic?.label ?? null, tacticGroupId: targetGroupId, tacticOptions, clubName, factualSquadName: factualRosterName, squadName, squadGroupId, squadOptions: activePlanning.groups.filter(group => !isMarketPlanningGroup(group)).map(group => ({ id: group.id, label: group.name })), membershipKind, externalClub,
     }
     for (const column of columns) {
       if (column.kind === 'role') row.columnScores[column.id] = scoreForRole(row, column, model)
@@ -207,12 +252,14 @@ export function SquadPage() {
     return [row]
   }), [players, referenceScores, model, columns, activePlanning, primaryClubId, selected?.club_name, tacticAssignmentByPlayer, tacticalSetsByGroup, tacticSlotDescriptors, potential.showPotential, potential.generalCeilingModel, potential.generalCeilingModel?.manifest.potentialModelVersion, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
 
-  const quickMatches = (row: Row, id: QuickFilterId) => id === 'all' || (id === 'in-tactic' && Boolean(row.tacticSlot)) || (id === 'out-tactic' && !row.tacticSlot) || (id === 'plans' && row.status === 'Nos planos') || (id === 'loan' && row.status === 'Para empréstimo') || (id === 'sale' && row.status === 'Para venda') || (id === 'outside' && row.status === 'Fora do clube')
+  const quickMatches = (row: Row, id: QuickFilterId) => id === 'all' || (id === 'in-tactic' && Boolean(row.tacticSlot)) || (id === 'out-tactic' && !row.tacticSlot) || (id === 'plans' && row.status === 'Nos planos') || (id === 'loan' && row.status === 'Para empréstimo') || (id === 'sale' && row.status === 'Para venda') || (id === 'loaned-out' && row.status === 'Emprestado para fora') || (id === 'loaned-in' && row.status === 'Emprestado para dentro') || (id === 'outside' && row.status === 'Fora do clube') || (id.startsWith('squad:') && row.squadGroupId === id.slice(6))
   const rows = useMemo(() => allRows.filter(row => row.player.current_name.toLowerCase().includes(search.toLowerCase())).filter(row => quickMatches(row, quickFilter)).filter(row => filters.every(filter => matchesFilter(row, filter)) && (positionFilters === null || positionFilters.length > 0 && positionFilters.some(target => canPlayPosition(row.latest?.positions ?? [], target)))).sort((a, b) => compareTableRows(a, b, sort.key, columns) * sort.direction || a.player.current_name.localeCompare(b.player.current_name, 'pt-BR')), [allRows, search, quickFilter, filters, positionFilters, sort, columns])
 
-  const quickFilters = useMemo<DataTableQuickFilter[]>(() => ([
-    ['all', 'Todos'], ['in-tactic', 'Na tática'], ['out-tactic', 'Sem conjunto'], ['plans', 'Nos planos'], ['loan', 'Para empréstimo'], ['sale', 'Para venda'], ['outside', 'Fora do clube'],
-  ] as Array<[QuickFilterId, string]>).map(([id, label]) => ({ id, label, count: allRows.filter(row => quickMatches(row, id)).length, active: quickFilter === id, onSelect: () => setQuickFilter(id) })), [allRows, quickFilter])
+  const quickFilters = useMemo<DataTableQuickFilter[]>(() => {
+    const fixed: Array<[QuickFilterId, string]> = [['all', 'Todos'], ['in-tactic', 'Na tática'], ['out-tactic', 'Sem conjunto'], ['plans', 'Nos planos'], ['loan', 'Para empréstimo'], ['sale', 'Para venda'], ['loaned-out', 'Emprestados fora'], ['loaned-in', 'Emprestados dentro'], ['outside', 'Fora do clube']]
+    const squads: Array<[QuickFilterId, string]> = activePlanning.groups.filter(group => !isMarketPlanningGroup(group)).map(group => [`squad:${group.id}`, group.name])
+    return [...fixed, ...squads].map(([id, label]) => ({ id, label, count: allRows.filter(row => quickMatches(row, id)).length, active: quickFilter === id, onSelect: () => setQuickFilter(id) }))
+  }, [allRows, quickFilter, activePlanning.groups])
 
   const builtInViews = useMemo<BuiltInView[]>(() => {
     const tacticScoreColumns = activeTactic ? activeTactic.ipAssignments.map(ip => tacticColumn(activeTactic, ip, activeTactic.oopAssignments.find(item => item.playerId === ip.playerId) ?? ip)) : []
@@ -248,6 +295,21 @@ export function SquadPage() {
     setModel(current => ({ ...current, ...patch }))
     scheduleModelConfigPatch(selected.id, '2.9.0', patch, updateSaveStatus)
   }
+  function persistPlayerPlanning(playerId: string, nextPlanning: Planning) {
+    if (!selected || !primaryClubId) return
+    const planningByClub = movePlayerAcrossClubPlans({ ...(model.planning_by_club ?? {}), [primaryClubId]: nextPlanning }, primaryClubId, playerId, nextPlanning)
+    const resolved = planningByClub[primaryClubId]
+    const patch = patchClubPlanning({ ...model, planning_by_club: planningByClub }, primaryClubId, primaryClubId, resolved)
+    setModel(current => ({ ...current, ...patch }))
+    scheduleModelConfigPatch(selected.id, '2.9.0', patch, updateSaveStatus)
+  }
+  function assignPlanningSquad(playerId: string, groupId: string) { persistPlayerPlanning(playerId, movePlayerToPlanningSquad(activePlanning, playerId, groupId) as Planning) }
+  function markPlayerForMarket(playerId: string, groupId: 'loan' | 'sale') {
+    const currentSquad = allRows.find(row => row.player.id === playerId)?.squadGroupId
+    let next = movePlayerToSet(activePlanning, groupId, 'market', playerId) as Planning
+    if (currentSquad) next = movePlayerToPlanningSquad(next, playerId, currentSquad) as Planning
+    persistPlayerPlanning(playerId, next)
+  }
   async function retrySave() {
     if (!selected) return
     try {
@@ -277,7 +339,7 @@ export function SquadPage() {
       rows={rows}
       columns={columns}
       rowKey={row => row.player.id}
-      renderCell={(row, column) => <SquadCellContent column={column} row={row} model={model} hasActiveTactic={Boolean(activeTactic)} assignTacticSet={assignTacticSet} openPlayer={() => navigate(`/players/${row.player.id}`)} />}
+      renderCell={(row, column) => <SquadCellContent column={column} row={row} model={model} hasActiveTactic={Boolean(activeTactic)} assignTacticSet={assignTacticSet} assignPlanningSquad={assignPlanningSquad} openPlayer={() => navigate(`/players/${row.player.id}`)} />}
       getColumnWidth={column => widths[column.id] ?? defaultWidth(column)}
       getColumnMinWidth={column => minimumColumnWidth(column)}
       getColumnMaxWidth={() => 640}
@@ -292,16 +354,18 @@ export function SquadPage() {
       emptyMessage={players.length ? 'Nenhum jogador corresponde aos filtros atuais.' : 'Nenhum jogador disponível.'}
       getCellClassName={(row, column) => `${column.kind === 'role' || column.kind === 'tacticRole' || column.key === 'score' ? 'role-score-cell' : column.kind === 'attribute' ? 'attribute-table-cell' : column.key === 'name' ? 'frozen-player-name' : column.key === 'tacticSlot' ? 'tactic-slot-table-cell' : ''}`.trim() || undefined}
       onHeaderContextMenu={(event, _, index) => { event.preventDefault(); setColumnMenu({ x: event.clientX, y: event.clientY, index }) }}
+      onRowContextMenu={(event, row) => { event.preventDefault(); event.stopPropagation(); setPlayerMenu({ x: event.clientX, y: event.clientY, playerId: row.player.id }) }}
       onColumnWidthChange={(column, width) => setColumnWidth(column, width)}
       onColumnMove={moveColumn}
     />
     {columnMenu && <DataTableColumnMenu x={columnMenu.x} y={columnMenu.y} title={columns[columnMenu.index]?.label} items={menuItems} onClose={() => setColumnMenu(null)} />}
+    {playerMenu && (() => { const row = allRows.find(item => item.player.id === playerMenu.playerId); return <RosterPlayerContextMenu x={playerMenu.x} y={playerMenu.y} squads={activePlanning.groups.filter(group => !isMarketPlanningGroup(group))} activeSquadId={row?.squadGroupId} onMoveSquad={groupId => { assignPlanningSquad(playerMenu.playerId, groupId); setPlayerMenu(null) }} onLoan={() => { markPlayerForMarket(playerMenu.playerId, 'loan'); setPlayerMenu(null) }} onSale={() => { markPlayerForMarket(playerMenu.playerId, 'sale'); setPlayerMenu(null) }} onClose={() => setPlayerMenu(null)} /> })()}
     <TableViewSaveDialog open={saveViewOpen} value={saveViewName} onChange={setSaveViewName} onCancel={() => { setSaveViewOpen(false); setSaveViewName('') }} onSave={saveCustomView} />
     {filterOpen && <div className="settings-overlay" onClick={() => setFilterOpen(false)}><section className="filter-modal" onClick={event => event.stopPropagation()}><header><div><span className="eyebrow">ELENCO</span><h2>Filtros</h2></div><button className="close" onClick={() => setFilterOpen(false)}>×</button></header><div className="filter-list">{filters.map(filter => <div className="filter-row" key={filter.id}><CustomSelect value={filter.column} ariaLabel="Campo do filtro" options={filterColumns.map(([value, label]) => ({ value, label }))} onChange={value => setFilters(current => current.map(item => item.id === filter.id ? { ...item, column: value as Filter['column'] } : item))} /><CustomSelect value={filter.operator} ariaLabel="Operador do filtro" options={[{ value: 'contains', label: 'contém' }, { value: 'equals', label: 'é igual a' }, { value: 'gte', label: 'maior ou igual' }, { value: 'lte', label: 'menor ou igual' }]} onChange={value => setFilters(current => current.map(item => item.id === filter.id ? { ...item, operator: value as Filter['operator'] } : item))} /><input value={filter.value} onChange={event => setFilters(current => current.map(item => item.id === filter.id ? { ...item, value: event.target.value } : item))} /><button className="column-delete" onClick={() => setFilters(current => current.filter(item => item.id !== filter.id))}>×</button></div>)}</div><footer><button className="ghost" onClick={() => setFilters([])}>Limpar</button><button onClick={() => setFilters(current => [...current, { id: crypto.randomUUID(), column: 'name', operator: 'contains', value: '' }])}>+ Adicionar filtro</button><button onClick={() => setFilterOpen(false)}>Aplicar</button></footer></section></div>}
   </div>
 }
 
-function SquadCellContent({ column, row, model, hasActiveTactic, assignTacticSet, openPlayer }: { column: TableColumn; row: Row; model: ModelConfig; hasActiveTactic: boolean; assignTacticSet: (playerId: string, groupId: string | null, setId: string | null) => void; openPlayer: () => void }) {
+function SquadCellContent({ column, row, model, hasActiveTactic, assignTacticSet, assignPlanningSquad, openPlayer }: { column: TableColumn; row: Row; model: ModelConfig; hasActiveTactic: boolean; assignTacticSet: (playerId: string, groupId: string | null, setId: string | null) => void; assignPlanningSquad: (playerId: string, groupId: string) => void; openPlayer: () => void }) {
   if (column.kind === 'tacticRole' || column.kind === 'role') {
     const score = row.columnScores[column.id] ?? null
     return <ScoreWithProjection playerId={row.player.id} currentScore={score} snapshot={row.latest} scoreType="function" scoreKey={projectionKeyForColumn(column, model)} variant="inline" currentTitle="Nota atual nesta função" projectionTitle="Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento." />
@@ -313,13 +377,13 @@ function SquadCellContent({ column, row, model, hasActiveTactic, assignTacticSet
     if (!hasActiveTactic) return <span className="dt-table-muted">Sem tática</span>
     return <select className="squad-tactic-slot-select" aria-label={`Conjunto tático de ${row.player.current_name}`} value={row.tacticSlot ?? ''} onClick={event => event.stopPropagation()} onChange={event => { event.stopPropagation(); assignTacticSet(row.player.id, row.tacticGroupId, event.target.value || null) }}><option value="">Sem conjunto</option>{row.tacticOptions.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}</select>
   }
-  if (key === 'status') return <div className="squad-status-cell"><PlanningStatusBadge status={row.status} /><small>{row.status}</small></div>
-  if (key === 'name') return <div className="squad-player-name-cell"><PlayerPeek player={row.player} snapshot={row.latest} /><button className="player-name" onClick={event => { event.stopPropagation(); openPlayer() }}>{row.player.current_name}</button></div>
+  if (key === 'status') return <div className="squad-status-cell"><PlanningStatusBadge status={row.status} /></div>
+  if (key === 'name') return <div className="squad-player-name-cell"><PlayerPeek player={row.player} snapshot={row.latest} /><button className={`player-name ${statusPlayerClass(row.status)}`} onClick={event => { event.stopPropagation(); openPlayer() }}>{row.player.current_name}</button></div>
   if (key === 'age') return <>{row.latest.age ?? '—'}</>
   if (key === 'nationality') { const flag = countryFlagEmoji(row.player.nationality); return <span className="dt-country-with-flag">{flag && <span aria-hidden="true">{flag}</span>}<span>{row.player.nationality || '—'}</span></span> }
   if (key === 'value') return <>{row.marketValue || '—'}</>
   if (key === 'team') return <span className={`squad-current-club ${row.externalClub ? 'is-external' : ''}`}>{row.clubName || '—'}</span>
-  if (key === 'squad') return <>{row.squadName || '—'}</>
+  if (key === 'squad') return <select className="squad-tactic-slot-select squad-roster-select" aria-label={`Elenco de ${row.player.current_name}`} value={row.squadGroupId ?? ''} onClick={event => event.stopPropagation()} onChange={event => { event.stopPropagation(); if (event.target.value) assignPlanningSquad(row.player.id, event.target.value) }}><option value="" disabled>{row.squadName || 'Sem elenco'}</option>{row.squadOptions.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}</select>
   if (key === 'position') return <>{row.latest.positions?.join(', ') || '—'}</>
   if (key === 'height') return <>{row.latest.height ? `${row.latest.height} cm` : '—'}</>
   if (key === 'weight') return <>{row.latest.weight ? `${row.latest.weight} kg` : '—'}</>

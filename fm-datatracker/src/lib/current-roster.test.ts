@@ -15,11 +15,13 @@ describe('current roster facts and planning context', () => {
     expect(currentRosterLabel({ externalClub: true, factualSquadName: 'Under20', snapshotSquadName: 'Under20', teamLevel: 'academy', primaryClubName: 'Fluminense' })).toBeNull()
   })
 
-  it('maps planned market groups to the four canonical status labels', () => {
+  it('maps market and factual loan states to the canonical status labels', () => {
     expect(currentRosterStatus(false, null)).toBe('Nos planos')
     expect(currentRosterStatus(false, { id: 'loan', name: 'Empréstimo' })).toBe('Para empréstimo')
     expect(currentRosterStatus(false, { id: 'custom', name: 'Para venda' })).toBe('Para venda')
-    expect(currentRosterStatus(true, { id: 'principal', name: 'Principal' })).toBe('Fora do clube')
+    expect(currentRosterStatus(false, null, 'loaned_out')).toBe('Emprestado para fora')
+    expect(currentRosterStatus(false, null, 'loaned_in')).toBe('Emprestado para dentro')
+    expect(currentRosterStatus(true, { id: 'principal', name: 'Principal' }, 'other_club')).toBe('Fora do clube')
   })
 
   it('chooses the tactical planning group from existing placement, factual roster or team level', () => {
@@ -36,6 +38,7 @@ describe('countryFlagEmoji', () => {
     expect(countryFlagEmoji('Uruguay')).toBe('🇺🇾')
     expect(countryFlagEmoji('Argentina')).toBe('🇦🇷')
     expect(countryFlagEmoji('Colombia')).toBe('🇨🇴')
+    expect(countryFlagEmoji('BRA')).toBe('🇧🇷')
     expect(countryFlagEmoji('Brasil / Itália')).toBe('🇧🇷')
   })
 

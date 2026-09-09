@@ -1,5 +1,11 @@
 export const PLANNING_PITCH_LIST_CAPACITY = 3
 
+export function planningPitchVisibleSlotCount(playerCount: number, expanded: boolean, capacity = PLANNING_PITCH_LIST_CAPACITY) {
+  const safeCapacity = Math.max(1, Math.floor(capacity))
+  const safePlayers = Math.max(0, Math.floor(playerCount))
+  return expanded ? Math.max(safeCapacity, safePlayers + 1) : safeCapacity
+}
+
 const CENTRAL_TRIPLE_NODE_SIDE: Record<string, 'Left' | 'Center' | 'Right'> = {
   dcl: 'Left', dc: 'Center', dcr: 'Right',
   dml: 'Left', dmc: 'Center', dmr: 'Right',

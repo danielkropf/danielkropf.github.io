@@ -264,3 +264,11 @@
 
 .dt-card{box-sizing:border-box;padding:var(--dt-card-padding)}
 .overall-score{box-sizing:border-box;max-width:100%;margin-block:0;align-self:center}
+
+/* Roster movement/status semantics. Keep these colors shared by names and badges. */
+:root{
+  --dt-roster-for-loan:var(--dt-warning);
+  --dt-roster-for-sale:var(--dt-danger);
+  --dt-roster-loaned-out:#a78bfa;
+  --dt-roster-loaned-in:var(--dt-info);
+}

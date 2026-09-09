@@ -589,3 +589,21 @@
     max-width:none!important;
   }
 }
+
+/* v0.32.5 — unified roster-player context menu. */
+.roster-player-context-menu{min-width:238px!important}
+.roster-player-context-menu .context-menu-branch{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.roster-player-context-menu .context-menu-branch b{color:var(--dt-text-3);font-size:1rem;line-height:1}
+.roster-player-context-submenu{z-index:7001!important;min-width:220px!important;max-height:min(360px,calc(100vh - 16px));overflow:auto}
+.roster-player-context-submenu button.is-active{background:color-mix(in srgb,var(--dt-lime) 8%,var(--dt-surface-3));color:var(--dt-lime)}
+.context-menu-empty{display:block;padding:9px 10px;color:var(--dt-text-3);font-size:var(--dt-type-caption)}
+
+/* v0.32.5 — planning player metadata + shared roster status colors. */
+.planning-player-meta{display:block;margin-top:1px;color:var(--dt-text-3);font-size:.49rem;font-weight:650;line-height:1.05;white-space:nowrap}
+.planning-country-flag{font-size:.72rem;line-height:1}
+.planning-set-player-card.is-for-loan .planning-set-player-name,.transfer-player-card.is-for-loan .player-name{color:var(--dt-roster-for-loan)!important}
+.planning-set-player-card.is-for-sale .planning-set-player-name,.transfer-player-card.is-for-sale .player-name{color:var(--dt-roster-for-sale)!important}
+.planning-set-player-card.is-loaned-out .planning-set-player-name,.transfer-player-card.is-loaned-out .player-name{color:var(--dt-roster-loaned-out)!important}
+.planning-set-player-card.is-loaned-in .planning-set-player-name,.transfer-player-card.is-loaned-in .player-name{color:var(--dt-roster-loaned-in)!important}
+.import-update-overlay{z-index:8700!important}.import-update-modal{width:min(1120px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:18px;border:1px solid var(--dt-border-strong);border-radius:var(--dt-radius-card);background:var(--dt-surface-1);box-shadow:var(--dt-shadow-overlay)}
+.fm-file-picker.is-update-not-required{opacity:.42}.fm-file-picker.is-update-not-required .default-folder{pointer-events:none}

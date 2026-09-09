@@ -17,16 +17,18 @@ import { isPlanningFamiliar, isPlanningOutOfPosition, planningFamiliarity, plann
 import { loadCurrentPlayers, loadReferenceDataset } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
 import { PlayerPeek } from '../components/PlayerPeek'
+import { RosterPlayerContextMenu } from '../components/RosterPlayerContextMenu'
 import { usePotential } from '../features/potential/PotentialContext'
 import { effectiveRoleSortScore } from '../lib/score-sort'
-import { countryFlagEmoji } from '../lib/current-roster'
+import { countryFlagEmoji, currentRosterStatus, type CurrentRosterMembershipKind, type PlanningTeamLevel } from '../lib/current-roster'
+import { effectivePlanningSquadGroupId, isMarketPlanningGroup, movePlayerToPlanningSquad, reconcilePlanningSquadGroups } from '../lib/planning-squads'
 import { loadModelConfig, patchModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
 import { describeDbError } from '../lib/db-error'
 import { resolvePlanningInsertionBefore } from '../lib/planning-layout'
 import { functionProjectionKey } from '../lib/projection-player'
 import { PITCH_NODES, positionGroup } from '../lib/tactics'
 import { derivePlanningAssignmentIndex } from '../lib/planningDistribution'
-import { PLANNING_PITCH_LIST_CAPACITY, planningPitchPositionLabel, planningPitchSetHeader } from '../lib/planning-pitch-list'
+import { PLANNING_PITCH_LIST_CAPACITY, planningPitchPositionLabel, planningPitchSetHeader, planningPitchVisibleSlotCount } from '../lib/planning-pitch-list'
 import { planningSpatialLayout, type PlanningPitchLine, type PlanningSpatialPlacement } from '../lib/planning-spatial-layout'
 import { resolvePlanningSetExpansion, type PlanningSetExpansion, type PlanningSetRect } from '../lib/planning-set-expansion'
 import { loadPlanningMemberships } from '../lib/longitudinal-service'
@@ -226,6 +228,8 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const [pickerWidths, setPickerWidths] = useState<Record<string, number>>(initialPickerLayout.widths)
   const [pickerSort, setPickerSort] = useState<{ key: string; direction: 1 | -1 }>({ key: 'score', direction: -1 })
   const [pickerQuickFilter, setPickerQuickFilter] = useState<PickerQuickFilterId>('all')
+  const [pickerShowPotential, setPickerShowPotential] = useState(true)
+  const [pickerShowOtherSquads, setPickerShowOtherSquads] = useState(false)
   const [pickerColumnMenu, setPickerColumnMenu] = useState<{ x: number; y: number; index: number } | null>(null)
   const [pickerActiveViewId, setPickerActiveViewId] = useState<string | null>('selection')
   const [pickerCustomViews, setPickerCustomViews] = useState<StoredDataTableView<PickerColumn>[]>(() => readStoredDataTableViews<PickerColumn>(PICKER_VIEWS_KEY))
@@ -244,7 +248,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   useEffect(() => {
     let alive = true
     loaded.current = false
-    setUndoPlanning(null); setMemberships([]); setMembershipDiagnostic(''); setExpandedSets(new Set()); setFocusedSetId(null); setPlayerDropPreview(null); setPickerSetId(null)
+    setUndoPlanning(null); setMemberships([]); setMembershipDiagnostic(''); setExpandedSets(new Set()); setFocusedSetId(null); setPlayerDropPreview(null); setPickerSetId(null); setPickerShowPotential(true); setPickerShowOtherSquads(false)
     setManagerSetDragging(null); setManagerSetPreview(undefined); setManagerGroupDragging(null); setManagerGroupPreview(undefined)
     if (!supabase || !selected) return () => { alive = false }
     setLoading(true); saveStatus('Carregando…')
@@ -320,9 +324,26 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     return [player.id, classifyPlanningMembership(resolveCurrentSnapshotMembership(membershipsByPlayer.get(player.id) ?? [], snapshot?.id), selectedClubId)]
   })), [players, latestByPlayer, membershipsByPlayer, selectedClubId])
   const membershipFact = (playerId: string) => membershipFacts.get(playerId) ?? classifyPlanningMembership(undefined, selectedClubId)
+  const factualSquadForPlayer = (playerId: string) => {
+    const fact = membershipFact(playerId)
+    if (fact.kind === 'loaned_out' || fact.kind === 'other_club') return null
+    return fact.membership?.squad_name?.trim() || latestByPlayer.get(playerId)?.squad?.trim() || null
+  }
+  const teamLevelForPlayer = (playerId: string): PlanningTeamLevel => (membershipFact(playerId).membership?.team_level as PlanningTeamLevel | undefined) ?? null
+  const squadGroupForPlayer = (playerId: string) => effectivePlanningSquadGroupId(planning, playerId, factualSquadForPlayer(playerId), teamLevelForPlayer(playerId))
+  const marketGroupForPlayer = (playerId: string) => planning.groups.find(group => isMarketPlanningGroup(group) && Object.values(planning.slotAssignments[group.id] ?? {}).some(ids => ids.includes(playerId))) ?? null
+  const rosterStatusForPlayer = (playerId: string) => { const fact = membershipFact(playerId); return currentRosterStatus(fact.kind === 'other_club', marketGroupForPlayer(playerId), fact.kind as CurrentRosterMembershipKind) }
   const planningIndex = useMemo(() => derivePlanningClubIndex(config.planning_by_club ?? {}), [config.planning_by_club])
   const plannedClubName = (playerId: string) => { const clubId = planningIndex.clubByPlayer[playerId]; return planningClubs.find(item => item.club_id === clubId)?.club.name ?? null }
   const plannedClubConflict = (playerId: string) => planningIndex.conflicts[playerId]?.map(clubId => planningClubs.find(item => item.club_id === clubId)?.club.name ?? clubId) ?? []
+
+  useEffect(() => {
+    if (!loaded.current || !selectedClubId) return
+    const names = players.map(player => factualSquadForPlayer(player.id)).filter((name): name is string => Boolean(name))
+    const next = reconcilePlanningSquadGroups(planning, names, new Map(players.map(player => [player.id, factualSquadForPlayer(player.id)]))) as Planning
+    if (next === planning) return
+    setConfig(current => ({ ...current, ...patchClubPlanning(current, selectedClubId, primaryClubId, next) }))
+  }, [selectedClubId, planning, players, membershipFacts, primaryClubId])
 
   const currentGroupIndex = Math.max(0, planning.groups.findIndex(group => group.id === selectedGroup))
   const currentGroup = planning.groups[currentGroupIndex]
@@ -422,14 +443,23 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     const group = planning.groups.find(item => item.id === id); const allocated = Object.values(planning.slotAssignments[id] ?? {}).flat().filter(Boolean).length
     if (!confirm(allocated > 0 ? `Excluir “${group?.name ?? 'este elenco'}” e remover ${allocated} alocação${allocated === 1 ? '' : 'ões'}? Os jogadores voltarão para a lista disponível.` : `Excluir o elenco “${group?.name ?? 'selecionado'}”?`)) return
     if (selectedGroup === id) setSelectedGroup(planning.groups.find(item => item.id !== id)?.id ?? '')
-    update(value => ({ ...value, groups: value.groups.filter(groupItem => groupItem.id !== id), slotAssignments: Object.fromEntries(Object.entries(value.slotAssignments).filter(([groupId]) => groupId !== id)), setLayouts: Object.fromEntries(Object.entries(value.setLayouts ?? {}).map(([tacticId, groups]) => [tacticId, Object.fromEntries(Object.entries(groups).filter(([groupId]) => groupId !== id))])) }))
+    update(value => ({ ...value, groups: value.groups.filter(groupItem => groupItem.id !== id), slotAssignments: Object.fromEntries(Object.entries(value.slotAssignments).filter(([groupId]) => groupId !== id)), squadAssignments: Object.fromEntries(Object.entries(value.squadAssignments ?? {}).filter(([, groupId]) => groupId !== id)), setLayouts: Object.fromEntries(Object.entries(value.setLayouts ?? {}).map(([tacticId, groups]) => [tacticId, Object.fromEntries(Object.entries(groups).filter(([groupId]) => groupId !== id))])) }))
   }
   function removePlayer(id: string) { update(value => removePlayerFromPlanning(value, id) as Planning) }
-  function clearPlanning() { if (!confirm('Remover todas as alocações de todos os elencos deste planejamento?')) return; if (!confirm('Confirme novamente: limpar TODOS os elencos?')) return; update(value => ({ ...value, slotAssignments: {} })) }
+  function clearPlanning() { if (!confirm('Remover todas as alocações de todos os elencos deste planejamento?')) return; if (!confirm('Confirme novamente: limpar TODOS os elencos?')) return; update(value => ({ ...value, slotAssignments: {}, squadAssignments: {} })) }
   function clearCurrentGroup() { if (currentGroup && confirm(`Remover todas as alocações de “${currentGroup.name}”?`)) update(value => ({ ...value, slotAssignments: { ...value.slotAssignments, [currentGroup.id]: {} } })) }
   function placePlayer(groupId: string, setId: string, playerId: string, beforePlayerId?: string | null) {
-    if (!selectedClubId) { update(value => movePlayerToSet(value, groupId, setId, playerId, beforePlayerId) as Planning); return }
-    const target = movePlayerToSet(planning, groupId, setId, playerId, beforePlayerId) as Planning
+    const currentSquad = squadGroupForPlayer(playerId)
+    let target = movePlayerToSet(planning, groupId, setId, playerId, beforePlayerId) as Planning
+    if (isMarketPlanningGroup(planning.groups.find(group => group.id === groupId))) { if (currentSquad) target = movePlayerToPlanningSquad(target, playerId, currentSquad) as Planning }
+    else target = movePlayerToPlanningSquad(target, playerId, groupId) as Planning
+    if (!selectedClubId) { update(() => target); return }
+    setUndoPlanning({ planning: config.planning, planning_by_club: config.planning_by_club })
+    setConfig(current => { const planningByClub = movePlayerAcrossClubPlans(current.planning_by_club ?? {}, selectedClubId, playerId, target); return { ...current, planning_by_club: planningByClub, ...(selectedClubId === primaryClubId ? { planning: planningByClub[selectedClubId] } : {}) } })
+  }
+  function movePlayerToSquad(playerId: string, groupId: string) {
+    const target = movePlayerToPlanningSquad(planning, playerId, groupId) as Planning
+    if (!selectedClubId) { update(() => target); return }
     setUndoPlanning({ planning: config.planning, planning_by_club: config.planning_by_club })
     setConfig(current => { const planningByClub = movePlayerAcrossClubPlans(current.planning_by_club ?? {}, selectedClubId, playerId, target); return { ...current, planning_by_club: planningByClub, ...(selectedClubId === primaryClubId ? { planning: planningByClub[selectedClubId] } : {}) } })
   }
@@ -451,8 +481,9 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   }
   async function persistPatch(patch: Record<string, unknown>) { if (!selected) return; saveStatus('Salvando…'); try { const result = await patchModelConfig(selected.id, '2.9.0', patch); saveStatus('✓ Salvo', modelDiagnostic(result)) } catch (error) { saveStatus('⚠ Não foi possível salvar', describeDbError(error).full) } }
   async function retrySave() { if (!selected) return; try { const result = await retryModelConfigPatch(selected.id, saveStatus); if (!result) await persistPatch({ planning: config.planning ?? defaults(), planning_by_club: config.planning_by_club ?? {}, selected_tactic_id: config.selected_tactic_id ?? null, selected_tactic_id_by_club: config.selected_tactic_id_by_club ?? {} }) } catch { /* shared layer owns status */ } }
-  function openPlayerMenu(event: ReactMouseEvent, playerId: string) { event.preventDefault(); event.stopPropagation(); setMenu({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - 238)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 140)), playerId }) }
-  function moveMenuPlayer(groupId: 'loan' | 'sale') { if (!menu) return; placePlayer(groupId, 'market', menu.playerId); setSelectedGroup(groupId); setFocusedSetId(null); setPickerSetId(null); setMenu(null) }
+  function openPlayerMenu(event: ReactMouseEvent, playerId: string) { event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, playerId }) }
+  function moveMenuPlayer(groupId: 'loan' | 'sale') { if (!menu) return; placePlayer(groupId, 'market', menu.playerId); setFocusedSetId(null); setPickerSetId(null); setMenu(null) }
+  function moveMenuPlayerToSquad(groupId: string) { if (!menu) return; movePlayerToSquad(menu.playerId, groupId); setMenu(null) }
 
   const pickerSet = currentSets.find(set => set.id === pickerSetId) ?? null
   const pickerPairs = pickerSet ? setPairs(pickerSet) : []
@@ -462,6 +493,8 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     const targetIds = new Set(planning.slotAssignments[currentGroup.id]?.[pickerSet.id] ?? [])
     return players.flatMap(player => {
       const snapshot = latestByPlayer.get(player.id)
+      const playerSquadGroupId = squadGroupForPlayer(player.id)
+      if (!pickerShowOtherSquads && playerSquadGroupId !== currentGroup.id) return []
       // Current roster selectors are checkpoint-exact: identities without an
       // observation on the authoritative current date belong to History, not to
       // a current player list.
@@ -475,10 +508,10 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
         player, snapshot, compatible, alreadyInTarget: targetIds.has(player.id), score: rating.value, rank: rating.rank, rankPopulation: rating.rankPopulation,
         fact: membershipFact(player.id), planLabel: currentSet ? displaySetLabel(currentSet) : plannedClubName(player.id) ?? 'Não alocado',
         projectionKey,
-        sortScore: effectiveRoleSortScore({ showPotential: potential.showPotential, snapshot, currentScore: rating.value, scoreKey: projectionKey, loadedModel: potential.ceilingModel }),
+        sortScore: effectiveRoleSortScore({ showPotential: potential.showPotential && pickerShowPotential, snapshot, currentScore: rating.value, scoreKey: projectionKey, loadedModel: potential.ceilingModel }),
       }]
     })
-  }, [pickerSet, currentGroup, planning, currentSets, players, latestByPlayer, playerScores, referenceRatings, membershipFacts, planningIndex, planningClubs, potential.showPotential, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
+  }, [pickerSet, currentGroup, planning, currentSets, players, latestByPlayer, playerScores, referenceRatings, membershipFacts, planningIndex, planningClubs, potential.showPotential, pickerShowPotential, pickerShowOtherSquads, potential.ceilingModel, potential.ceilingModel?.manifest.potentialModelVersion])
   const pickerQuickMatches = (row: PickerRow, id: PickerQuickFilterId) => id === 'all' || id === row.fact.kind || (id === 'eligible' && row.compatible) || (id === 'unallocated' && row.planLabel === 'Não alocado')
   function pickerPlainValue(row: PickerRow, column: PickerColumn): unknown {
     if (column.kind === 'attribute') return row.snapshot?.player_attributes.find(item => item.attribute_key === column.attributeKey)?.value ?? null
@@ -541,7 +574,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     if (column.key === 'snapshot') return row.snapshot?.snapshot_date ?? '—'
     if (column.key === 'fact') return <span className={`membership-badge is-${row.fact.kind}`}>{row.fact.label}</span>
     if (column.key === 'plan') return row.alreadyInTarget ? <span className="planning-picker-current">Neste conjunto</span> : row.planLabel
-    return row.snapshot ? <ScoreWithProjection playerId={row.player.id} currentScore={row.score} currentRank={row.rank} rankPopulation={row.rankPopulation} snapshot={row.snapshot} scoreType="function" scoreKey={row.projectionKey} variant="compact" currentTitle="Nota atual nesta função" /> : '—'
+    return row.snapshot ? <ScoreWithProjection playerId={row.player.id} currentScore={row.score} currentRank={row.rank} rankPopulation={row.rankPopulation} snapshot={row.snapshot} scoreType="function" scoreKey={row.projectionKey} variant="compact" currentTitle="Nota atual nesta função" showPotential={potential.showPotential && pickerShowPotential} /> : '—'
   }
   const pickerQuickFilters = useMemo<DataTableQuickFilter[]>(() => ([
     ['all', 'Todos'], ['current', 'No clube'], ['loaned_in', 'Recebidos'], ['loaned_out', 'Emprestados'], ['other_club', 'Outro clube'], ['unknown', 'Incerto'], ['eligible', 'Aptos'], ['unallocated', 'Não alocados'],
@@ -601,7 +634,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
     <section className="planning-depth-layout planning-flex-layout planning-full-pitch-layout">
       <div className={`planning-flex-board ${expandedSets.size ? 'has-expanded' : ''} ${isTransferGroup ? 'is-transfer' : ''}`}>
         {isTransferGroup && currentGroup ? <TransferGroupPanel group={currentGroup} playerIds={planning.slotAssignments[currentGroup.id]?.market ?? []} players={players} latest={latest} fact={membershipFact} plannedClub={plannedClubName} dragging={Boolean(activePlayer)} drop={() => { if (activePlayer) placePlayer(currentGroup.id, 'market', activePlayer.id); stopPlayerDrag() }} startDrag={id => setDragging({ type: 'player', id })} dragEnd={stopPlayerDrag} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} remove={removePlayer} />
-          : tactic && currentGroup ? <div className={`planning-set-list is-spatial-ready ${expandedSets.size ? 'has-expanded' : ''}`}>{currentSets.map(set => <PlanningSetRow key={set.id} set={set} spatial={spatialPlacements.get(set.id)} displayLabel={displaySetLabel(set)} headerLabel={setHeaderLabel(set)} pairs={setPairs(set)} assignedIds={planning.slotAssignments[currentGroup.id]?.[set.id] ?? []} players={players} latest={latest} expanded={expandedSets.has(set.id)} focused={focusedSetId === set.id} coverages={showCoverages ? coveragePlayers(set) : []} showCoverages={showCoverages} showScores={showScores} generalScore={generalScore} scoreDetails={tacticScoreDetails} primaryLabel={primaryLabel} activePlayer={activePlayer} playerDropPreview={playerDropPreview} score={player => setScore(player, set)} familiarity={player => setFamiliarity(player, set)} fact={membershipFact} plannedClub={plannedClubName} plannedConflict={plannedClubConflict} toggle={() => toggleSet(set.id)} focus={() => setFocusedSetId(current => current === set.id ? null : set.id)} addPlayer={() => { setPickerSearch(''); setPickerSetId(set.id) }} startPlayerDrag={(id, event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); setDragging({ type: 'player', id }); setPlayerDropPreview(null) }} stopPlayerDrag={stopPlayerDrag} previewPlayer={beforePlayerId => setPlayerDropPreview({ setId: set.id, beforePlayerId })} dropPlayer={beforePlayerId => { if (activePlayer) placePlayer(currentGroup.id, set.id, activePlayer.id, beforePlayerId); stopPlayerDrag() }} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} moveVisualGrid={cell => moveSetVisualPosition(set.id, cell)} />)}</div>
+          : tactic && currentGroup ? <div className={`planning-set-list is-spatial-ready ${expandedSets.size ? 'has-expanded' : ''}`}>{currentSets.map(set => <PlanningSetRow key={set.id} set={set} spatial={spatialPlacements.get(set.id)} displayLabel={displaySetLabel(set)} headerLabel={setHeaderLabel(set)} pairs={setPairs(set)} assignedIds={planning.slotAssignments[currentGroup.id]?.[set.id] ?? []} players={players} latest={latest} expanded={expandedSets.has(set.id)} focused={focusedSetId === set.id} coverages={showCoverages ? coveragePlayers(set) : []} showCoverages={showCoverages} showScores={showScores} generalScore={generalScore} scoreDetails={tacticScoreDetails} primaryLabel={primaryLabel} activePlayer={activePlayer} playerDropPreview={playerDropPreview} score={player => setScore(player, set)} familiarity={player => setFamiliarity(player, set)} fact={membershipFact} plannedClub={plannedClubName} plannedConflict={plannedClubConflict} rosterStatus={rosterStatusForPlayer} toggle={() => toggleSet(set.id)} focus={() => setFocusedSetId(current => current === set.id ? null : set.id)} addPlayer={() => { setPickerSearch(''); setPickerShowPotential(true); setPickerShowOtherSquads(false); setPickerSetId(set.id) }} startPlayerDrag={(id, event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); setDragging({ type: 'player', id }); setPlayerDropPreview(null) }} stopPlayerDrag={stopPlayerDrag} previewPlayer={beforePlayerId => setPlayerDropPreview({ setId: set.id, beforePlayerId })} dropPlayer={beforePlayerId => { if (activePlayer) placePlayer(currentGroup.id, set.id, activePlayer.id, beforePlayerId); stopPlayerDrag() }} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} moveVisualGrid={cell => moveSetVisualPosition(set.id, cell)} />)}</div>
           : <div className="empty planning-no-tactic"><h2>Nenhuma tática disponível</h2><p>Crie uma tática para organizar o elenco por posição e função.</p><button onClick={() => navigate('/tactics')}>Criar primeira tática</button></div>}
       </div>
     </section>
@@ -610,6 +643,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       <section className="planning-add-player-modal" onClick={event => event.stopPropagation()}>
         <header><div><h2>Adicionar jogador</h2><p>{setHeaderLabel(pickerSet)}</p></div><button className="close" onClick={() => setPickerSetId(null)}>×</button></header>
         <div className="planning-add-player-search"><input autoFocus placeholder="Buscar jogador" value={pickerSearch} onChange={event => setPickerSearch(event.target.value)} /><span>{pickerRows.length} jogadores</span></div>
+        <div className="planning-picker-local-options"><label className={!potential.showPotential ? 'is-disabled' : ''}><input type="checkbox" checked={potential.showPotential && pickerShowPotential} disabled={!potential.showPotential} onChange={event => setPickerShowPotential(event.target.checked)} /><span>Mostrar potencial</span></label><label><input type="checkbox" checked={pickerShowOtherSquads} onChange={event => setPickerShowOtherSquads(event.target.checked)} /><span>Mostrar outros elencos</span></label></div>
         <DataTableChrome views={pickerViewOptions} quickFilters={pickerQuickFilters} onCreateView={() => setPickerSaveViewOpen(true)} />
         {membershipDiagnostic && <div className="planning-membership-warning">Contexto factual parcial; campos não confirmados permanecem como incertos e a escolha manual continua disponível.</div>}
         <div className="planning-add-player-table"><DataTable<PickerRow, PickerColumn>
@@ -644,7 +678,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
 
     {manageSetsOpen && tactic && currentGroup && !isTransferGroup && <div className="settings-overlay" onClick={() => setManageSetsOpen(false)}><section className="squad-manager planning-set-manager" onClick={event => event.stopPropagation()}><header><div><h2>Organizar posições</h2><p>Organização visual de {currentGroup.name}; arraste os conjuntos pela grade 5×5. A sexta linha permanece reservada ao goleiro.</p></div><button className="close" onClick={() => setManageSetsOpen(false)}>×</button></header><div className="planning-set-manager-list">{currentSets.map((set, index) => { const effectiveLabel = displaySetLabel(set); const previewBefore = managerSetPreview === set.id && managerSetDragging !== set.id; const nextSet = currentSets[index + 1]; const canGroupNext = Boolean(nextSet && canGroupAdjacentPlanningSets(set, nextSet, slotDescriptors)); return <Fragment key={set.id}>{previewBefore && <ManagerDropPlaceholder label="Mover posição para cá" />}<div className={`planning-squad-manager-row ${set.slotIds.length > 1 ? 'is-grouped-manager-row' : ''} ${managerSetDragging === set.id ? 'is-manager-dragging' : ''}`} onDragOver={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setManagerSetPreview(event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null) }} onDrop={event => { if (!managerSetDragging) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); reorderSet(managerSetDragging, event.clientY < rect.top + rect.height / 2 ? set.id : currentSets[index + 1]?.id ?? null); setManagerSetDragging(null); setManagerSetPreview(undefined) }}><button className="manager-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', set.id); setManagerSetDragging(set.id); setManagerSetPreview(set.id) }} onDragEnd={() => { setManagerSetDragging(null); setManagerSetPreview(undefined) }}>⠿</button>{set.slotIds.length > 1 ? <><button className="split-set-button" onClick={() => splitSet(set.id)}>−</button><div className="grouped-set-fields"><label>Nome geral<input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /></label>{set.slotIds.map((slotId, slotIndex) => <label key={slotId}>Posição {slotIndex + 1}<input value={planningSlotDisplayLabel(set, slotId, slotDescriptors)} onChange={event => renameSetSlot(set.id, slotId, event.target.value)} /></label>)}</div></> : <><span className="set-manager-order">{index + 1}</span><input value={effectiveLabel} onChange={event => renameSet(set.id, event.target.value)} /><small>1 posição</small></>}</div>{canGroupNext && <button className="adjacent-group-button" type="button" onClick={() => groupSet(set.id, nextSet.id)}>+</button>}</Fragment> })}{managerSetDragging && managerSetPreview === null && <ManagerDropPlaceholder label="Mover posição para o final" />}</div><footer className="planning-set-manager-footer"><div><button className="ghost" onClick={restoreSetVisualPositions}>Restaurar posições do campo</button><button className="ghost" onClick={restoreSets}>Restaurar ordem e grupos da tática</button></div><button onClick={() => setManageSetsOpen(false)}>Concluir</button></footer></section></div>}
 
-    {menu && <div className="planning-context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onClick={event => event.stopPropagation()}><button role="menuitem" onClick={() => moveMenuPlayer('loan')}>Adicionar a Empréstimo</button><button role="menuitem" onClick={() => moveMenuPlayer('sale')}>Adicionar a Venda</button><button role="menuitem" className="is-danger" onClick={() => { removePlayer(menu.playerId); setMenu(null) }}>Remover do planejamento</button></div>}
+    {menu && <RosterPlayerContextMenu x={menu.x} y={menu.y} squads={planning.groups.filter(group => !isMarketPlanningGroup(group))} activeSquadId={squadGroupForPlayer(menu.playerId)} onMoveSquad={moveMenuPlayerToSquad} onLoan={() => moveMenuPlayer('loan')} onSale={() => moveMenuPlayer('sale')} onRemove={() => { removePlayer(menu.playerId); setMenu(null) }} onClose={() => setMenu(null)} />}
   </div>
 }
 
@@ -653,8 +687,8 @@ function insertionBeforePlayer(container: HTMLElement, clientX: number, clientY:
   return resolvePlanningInsertionBefore(cards, clientX, clientY, currentBeforeId)
 }
 
-function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, showScores, generalScore, scoreDetails, primaryLabel, activePlayer, playerDropPreview, score, familiarity, fact, plannedClub, plannedConflict, toggle, focus, addPlayer, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, open, context, moveVisualGrid }: {
-  set: PlanningSetLayout; spatial: PlanningGridPlacement | undefined; displayLabel: string; headerLabel: string; pairs: Pair[]; assignedIds: string[]; players: Player[]; latest: (player: Player) => Snapshot | undefined; expanded: boolean; focused: boolean; coverages: Player[]; showCoverages: boolean; showScores: boolean; generalScore: (player: Player) => number | null; scoreDetails: (player: Player) => PlanningScoreDetail[]; primaryLabel: (playerId: string) => string; activePlayer?: Player; playerDropPreview: PlayerDropPreview | null; score: (player: Player) => { pair: Pair | null; value: number | null; rank: number | null; rankPopulation: number[] }; familiarity: (player: Player) => Familiarity; fact: (playerId: string) => PlanningMembershipFact; plannedClub: (playerId: string) => string | null; plannedConflict: (playerId: string) => string[]; toggle: () => void; focus: () => void; addPlayer: () => void; startPlayerDrag: (id: string, event: DragEvent<HTMLElement>) => void; stopPlayerDrag: () => void; previewPlayer: (beforePlayerId: string | null) => void; dropPlayer: (beforePlayerId?: string | null) => void; open: (id: string) => void; context: (event: ReactMouseEvent, playerId: string) => void; moveVisualGrid: (cell: PlanningVisualGridCell) => void
+function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assignedIds, players, latest, expanded, focused, coverages, showCoverages, showScores, generalScore, scoreDetails, primaryLabel, activePlayer, playerDropPreview, score, familiarity, fact, plannedClub, plannedConflict, rosterStatus, toggle, focus, addPlayer, startPlayerDrag, stopPlayerDrag, previewPlayer, dropPlayer, open, context, moveVisualGrid }: {
+  set: PlanningSetLayout; spatial: PlanningGridPlacement | undefined; displayLabel: string; headerLabel: string; pairs: Pair[]; assignedIds: string[]; players: Player[]; latest: (player: Player) => Snapshot | undefined; expanded: boolean; focused: boolean; coverages: Player[]; showCoverages: boolean; showScores: boolean; generalScore: (player: Player) => number | null; scoreDetails: (player: Player) => PlanningScoreDetail[]; primaryLabel: (playerId: string) => string; activePlayer?: Player; playerDropPreview: PlayerDropPreview | null; score: (player: Player) => { pair: Pair | null; value: number | null; rank: number | null; rankPopulation: number[] }; familiarity: (player: Player) => Familiarity; fact: (playerId: string) => PlanningMembershipFact; plannedClub: (playerId: string) => string | null; plannedConflict: (playerId: string) => string[]; rosterStatus: (playerId: string) => string; toggle: () => void; focus: () => void; addPlayer: () => void; startPlayerDrag: (id: string, event: DragEvent<HTMLElement>) => void; stopPlayerDrag: () => void; previewPlayer: (beforePlayerId: string | null) => void; dropPlayer: (beforePlayerId?: string | null) => void; open: (id: string) => void; context: (event: ReactMouseEvent, playerId: string) => void; moveVisualGrid: (cell: PlanningVisualGridCell) => void
 }) {
   const capacity = PLANNING_PITCH_LIST_CAPACITY
   const members = assignedIds.map(id => players.find(player => player.id === id)).filter((player): player is Player => Boolean(player))
@@ -662,7 +696,7 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
   const options = [...members.map(player => ({ player, coverage: false as const })), ...coverageOptions.map(player => ({ player, coverage: true as const }))]
   const visible = expanded ? options : options.slice(0, capacity)
   const hidden = Math.max(0, options.length - visible.length)
-  const rowItems: Array<{ player: Player; coverage: boolean } | null> = expanded ? visible : Array.from({ length: capacity }, (_, index) => visible[index] ?? null)
+  const rowItems: Array<{ player: Player; coverage: boolean } | null> = Array.from({ length: planningPitchVisibleSlotCount(visible.length, expanded, capacity) }, (_, index) => visible[index] ?? null)
   const grouped = set.slotIds.length > 1
   const articleRef = useRef<HTMLElement | null>(null)
   const compactRectRef = useRef<PlanningSetRect | null>(null)
@@ -713,12 +747,12 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
       {rowItems.map((option, index) => {
         if (!option) return <EmptyPlayerRow key={`empty-${index}`} showScores={showScores} />
         const player = option.player; const snapshot = latest(player); const rating = score(player); const beforeId = player.id; const playerFamiliarity = familiarity(player); const projectionPairs = rating.pair ? [rating.pair] : pairs; const projectionKey = snapshot ? functionProjectionKey(projectionPairs.flatMap(pair => [{ phase: 'IP', position: pair.ip.position, roleCode: pair.ip.roleCode }, { phase: 'OOP', position: pair.oop.position, roleCode: pair.oop.roleCode }])) : ''
-        return <Fragment key={`${option.coverage ? 'coverage' : 'primary'}-${player.id}`}>{preview === beforeId && activePlayer?.id !== player.id && <PlayerDropPlaceholder />}<BoardPlayerRow player={player} snapshot={snapshot} score={rating.value} generalScore={showScores ? generalScore(player) : null} scoreDetails={showScores ? scoreDetails(player).filter(detail => detail.id !== rating.pair?.ip.playerId) : []} showScores={showScores} rank={rating.rank} rankPopulation={rating.rankPopulation} coverage={option.coverage} source={option.coverage ? primaryLabel(player.id) : null} familiarity={playerFamiliarity} fact={fact(player.id)} plannedClub={plannedClub(player.id)} plannedConflict={plannedConflict(player.id)} projectionKey={projectionKey} familiarityTooltip={snapshot ? planningFamiliarityTooltip(snapshot, pairs) : 'Sem observação no checkpoint atual.'} dragging={activePlayer?.id === player.id} drag={event => startPlayerDrag(player.id, event)} dragEnd={stopPlayerDrag} open={() => open(player.id)} context={event => context(event, player.id)} /></Fragment>
+        return <Fragment key={`${option.coverage ? 'coverage' : 'primary'}-${player.id}`}>{preview === beforeId && activePlayer?.id !== player.id && <PlayerDropPlaceholder />}<BoardPlayerRow player={player} snapshot={snapshot} score={rating.value} generalScore={showScores ? generalScore(player) : null} scoreDetails={showScores ? scoreDetails(player).filter(detail => detail.id !== rating.pair?.ip.playerId) : []} showScores={showScores} rank={rating.rank} rankPopulation={rating.rankPopulation} coverage={option.coverage} source={option.coverage ? primaryLabel(player.id) : null} familiarity={playerFamiliarity} fact={fact(player.id)} plannedClub={plannedClub(player.id)} plannedConflict={plannedConflict(player.id)} status={rosterStatus(player.id)} projectionKey={projectionKey} familiarityTooltip={snapshot ? planningFamiliarityTooltip(snapshot, pairs) : 'Sem observação no checkpoint atual.'} dragging={activePlayer?.id === player.id} drag={event => startPlayerDrag(player.id, event)} dragEnd={stopPlayerDrag} open={() => open(player.id)} context={event => context(event, player.id)} /></Fragment>
       })}
       {preview === null && activePlayer && <PlayerDropPlaceholder />}
     </div>
     {!expanded && hidden > 0 && <button className="planning-set-expand" onClick={event => { event.stopPropagation(); toggleExpansion() }}>+{hidden}</button>}
-    {expanded && options.length > capacity && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggleExpansion() }}>−</button>}
+    {expanded && <button className="planning-set-collapse" onClick={event => { event.stopPropagation(); toggleExpansion() }}>−</button>}
   </article>
 }
 
@@ -744,16 +778,16 @@ function EmptyPlayerRow({ showScores }: { showScores: boolean }) {
 
 function PlayerDropPlaceholder() { return <div className="planning-pitch-player-drop-placeholder" aria-hidden="true"><span>destino</span></div> }
 
-function BoardPlayerRow({ player, snapshot, score, generalScore, scoreDetails, showScores, rank, rankPopulation, coverage, source, familiarity, fact, plannedClub, plannedConflict, projectionKey, familiarityTooltip, dragging, drag, dragEnd, open, context }: { player: Player; snapshot: Snapshot | undefined; score: number | null; generalScore: number | null; scoreDetails: PlanningScoreDetail[]; showScores: boolean; rank: number | null; rankPopulation: number[]; coverage: boolean; source: string | null; familiarity: Familiarity; fact: PlanningMembershipFact; plannedClub: string | null; plannedConflict: string[]; projectionKey: string; familiarityTooltip: string; dragging: boolean; drag: (event: DragEvent<HTMLElement>) => void; dragEnd: () => void; open: () => void; context: (event: ReactMouseEvent) => void }) {
+function BoardPlayerRow({ player, snapshot, score, generalScore, scoreDetails, showScores, rank, rankPopulation, coverage, source, familiarity, fact, plannedClub, plannedConflict, status, projectionKey, familiarityTooltip, dragging, drag, dragEnd, open, context }: { player: Player; snapshot: Snapshot | undefined; score: number | null; generalScore: number | null; scoreDetails: PlanningScoreDetail[]; showScores: boolean; rank: number | null; rankPopulation: number[]; coverage: boolean; source: string | null; familiarity: Familiarity; fact: PlanningMembershipFact; plannedClub: string | null; plannedConflict: string[]; status: string; projectionKey: string; familiarityTooltip: string; dragging: boolean; drag: (event: DragEvent<HTMLElement>) => void; dragEnd: () => void; open: () => void; context: (event: ReactMouseEvent) => void }) {
   const out = snapshot ? isPlanningOutOfPosition(familiarity) : false
   const scoreContent = showScores ? <PlanningScorePeek playerName={player.current_name} generalScore={generalScore} details={scoreDetails} className="planning-pitch-score-trigger">
     {snapshot ? <ScoreWithProjection playerId={player.id} currentScore={score} currentRank={rank} rankPopulation={rankPopulation} snapshot={snapshot} scoreType="function" scoreKey={projectionKey} variant="compact" opacityState={coverage ? 'coverage' : 'normal'} currentTitle={coverage ? 'Nota atual nesta função — cobertura' : 'Nota atual nesta função'} projectionTitle="Melhor RoleScore plausível nesta função em um cenário positivo de desenvolvimento." /> : <span className="planning-pitch-score-unavailable">—</span>}
   </PlanningScorePeek> : null
-  return <article data-planning-player-id={player.id} className={`planning-pitch-depth-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''}`} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
+  return <article data-planning-player-id={player.id} className={`planning-pitch-depth-row ${coverage ? 'is-coverage' : ''} ${out ? 'is-out-of-position' : ''} ${!snapshot ? 'is-current-unknown' : ''} ${!showScores ? 'is-score-hidden' : ''} ${dragging ? 'is-player-dragging' : ''} ${statusPlayerClass(status)}`} draggable onDragStart={event => { event.stopPropagation(); drag(event) }} onDragEnd={dragEnd} onContextMenu={context}>
     <PlanningPitchRowCells
       showScores={showScores}
       peek={snapshot ? <PlayerPeek player={player} snapshot={snapshot} /> : null}
-      identity={<button type="button" className="planning-pitch-player-name" onClick={event => { event.stopPropagation(); open() }}><span>{player.current_name}</span></button>}
+      identity={<button type="button" className={`planning-pitch-player-name ${statusPlayerClass(status)}`} onClick={event => { event.stopPropagation(); open() }}><span>{player.current_name}</span><small className="planning-player-meta">{snapshot?.age ?? '—'} anos{countryFlagEmoji(player.nationality) ? <> · <span className="planning-country-flag" aria-label={player.nationality ?? undefined}>{countryFlagEmoji(player.nationality)}</span></> : ''}</small></button>}
       score={scoreContent}
     />
   </article>
@@ -766,7 +800,8 @@ function PlanningScorePeek({ playerName, generalScore, details, children, classN
 }
 function TransferGroupPanel({ group, playerIds, players, latest, fact, plannedClub, dragging, drop, startDrag, dragEnd, open, context, remove }: { group: Group; playerIds: string[]; players: Player[]; latest: (player: Player) => Snapshot | undefined; fact: (playerId: string) => PlanningMembershipFact; plannedClub: (playerId: string) => string | null; dragging: boolean; drop: () => void; startDrag: (id: string) => void; dragEnd: () => void; open: (id: string) => void; context: (event: ReactMouseEvent, playerId: string) => void; remove: (id: string) => void }) {
   const members = playerIds.map(id => players.find(player => player.id === id)).filter((player): player is Player => Boolean(player))
-  return <section className={`transfer-group-panel planning-free-group ${dragging ? 'is-receiving' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); drop() }}><div className="transfer-group-summary"><span>Área livre de mercado</span><strong>{members.length} jogador{members.length === 1 ? '' : 'es'}</strong></div><div className="transfer-player-grid">{members.map(player => { const snapshot = latest(player); const current = fact(player.id); return <article className={`transfer-player-card ${!snapshot ? 'is-current-unknown' : ''}`} draggable onDragStart={() => startDrag(player.id)} onDragEnd={dragEnd} onContextMenu={event => context(event, player.id)} key={player.id}>{snapshot && <PlayerPeek player={player} snapshot={snapshot} />}<div className="transfer-player-info"><button className="player-name" onClick={() => open(player.id)}>{player.current_name}</button><span>{snapshot ? snapshot.positions.join(', ') || 'Sem posição' : 'Sem observação no checkpoint atual'}</span><small>{snapshot ? `${snapshot.age ?? '—'} anos · Atual: ${current.label} · Plano: ${plannedClub(player.id) ?? '—'}` : `Situação atual desconhecida · Plano: ${plannedClub(player.id) ?? group.name}`}</small></div><button className="transfer-remove" onClick={() => remove(player.id)}>×</button></article> })}</div></section>
+  return <section className={`transfer-group-panel planning-free-group ${dragging ? 'is-receiving' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); drop() }}><div className="transfer-group-summary"><span>Área livre de mercado</span><strong>{members.length} jogador{members.length === 1 ? '' : 'es'}</strong></div><div className="transfer-player-grid">{members.map(player => { const snapshot = latest(player); const current = fact(player.id); const status = group.id === 'loan' ? 'Para empréstimo' : group.id === 'sale' ? 'Para venda' : current.kind === 'loaned_out' ? 'Emprestado para fora' : current.kind === 'loaned_in' ? 'Emprestado para dentro' : 'Nos planos'; const flag = countryFlagEmoji(player.nationality); return <article className={`transfer-player-card ${!snapshot ? 'is-current-unknown' : ''} ${statusPlayerClass(status)}`} draggable onDragStart={() => startDrag(player.id)} onDragEnd={dragEnd} onContextMenu={event => context(event, player.id)} key={player.id}>{snapshot && <PlayerPeek player={player} snapshot={snapshot} />}<div className="transfer-player-info"><button className={`player-name ${statusPlayerClass(status)}`} onClick={() => open(player.id)}>{player.current_name}</button><span>{snapshot ? snapshot.positions.join(', ') || 'Sem posição' : 'Sem observação no checkpoint atual'}</span><small>{snapshot ? <>{snapshot.age ?? '—'} anos{flag ? <> · <span className="planning-country-flag" aria-label={player.nationality ?? undefined}>{flag}</span></> : null} · Atual: {current.label} · Plano: {plannedClub(player.id) ?? '—'}</> : `Situação atual desconhecida · Plano: ${plannedClub(player.id) ?? group.name}`}</small></div><button className="transfer-remove" onClick={() => remove(player.id)}>×</button></article> })}</div></section>
 }
 function ManagerDropPlaceholder({ label }: { label: string }) { return <div className="manager-drop-placeholder" aria-hidden="true">{label}</div> }
+function statusPlayerClass(status: string) { return status === 'Para empréstimo' ? 'is-for-loan' : status === 'Para venda' ? 'is-for-sale' : status === 'Emprestado para fora' ? 'is-loaned-out' : status === 'Emprestado para dentro' ? 'is-loaned-in' : '' }
 function planningLine(position: string): PlanningPitchLine { const value = position.toUpperCase().replaceAll(' ', ''); if (value.startsWith('GK')) return 'gk'; if (value.startsWith('ST')) return 'st'; if (value.startsWith('AM')) return 'am'; if (value.startsWith('M')) return 'm'; if (value.startsWith('DM') || value.startsWith('WB')) return 'dm'; return 'd' }

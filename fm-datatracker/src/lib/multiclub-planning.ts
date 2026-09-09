@@ -15,6 +15,7 @@ export type ClubScopedPlanningConfig<TPlanning> = {
 
 export type AssignableClubPlanning = {
   slotAssignments: Record<string, Record<string, string[]>>
+  squadAssignments?: Record<string, string>
 }
 
 export type PlanningClubIndex = {
@@ -136,12 +137,15 @@ export function sanitizeClubTacticSelections<TPlanning>(
 }
 
 function withoutPlayer<TPlanning extends AssignableClubPlanning>(planning: TPlanning, playerId: string): TPlanning {
+  const squadAssignments = { ...(planning.squadAssignments ?? {}) }
+  delete squadAssignments[playerId]
   return {
     ...planning,
     slotAssignments: Object.fromEntries(Object.entries(planning.slotAssignments).map(([groupId, rows]) => [
       groupId,
       Object.fromEntries(Object.entries(rows).map(([setId, ids]) => [setId, ids.filter(id => id !== playerId)])),
     ])),
+    squadAssignments,
   }
 }
 
@@ -150,7 +154,11 @@ export function derivePlanningClubIndex<TPlanning extends AssignableClubPlanning
 ): PlanningClubIndex {
   const candidates = new Map<string, Set<string>>()
   for (const [clubId, planning] of Object.entries(planningByClub)) {
-    for (const playerId of Object.values(planning.slotAssignments).flatMap(rows => Object.values(rows).flat())) {
+    const playerIds = new Set([
+      ...Object.values(planning.slotAssignments).flatMap(rows => Object.values(rows).flat()),
+      ...Object.keys(planning.squadAssignments ?? {}),
+    ])
+    for (const playerId of playerIds) {
       if (!playerId) continue
       const clubs = candidates.get(playerId) ?? new Set<string>()
       clubs.add(clubId)

@@ -16,15 +16,23 @@ const errorText = (error: DbErrorLike) => {
 const unique = (values: Array<string | null | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))]
 const chunks = <T,>(values: T[], size = 200) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size))
 
-export async function stampLatestImportVersion(saveId: string, appVersion: string): Promise<void> {
+export async function stampImportVersion(saveId: string, importId: string, appVersion: string, extra: Record<string, unknown> = {}): Promise<void> {
   if (!supabase) throw new Error('Banco Mestre não configurado.')
-  const { data, error } = await supabase.from('imports').select('id,source_schema').eq('save_id', saveId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  const { data, error } = await supabase.from('imports').select('id,source_schema').eq('id', importId).eq('save_id', saveId).maybeSingle()
   if (error) throw new Error(errorText(error))
-  if (!data) return
+  if (!data) throw new Error('Importação não encontrada ou sem permissão para atualização.')
   const row = data as ImportMetaRow
   const current = row.source_schema && typeof row.source_schema === 'object' && !Array.isArray(row.source_schema) ? row.source_schema : {}
-  const { error: updateError } = await supabase.from('imports').update({ source_schema: { ...current, app_version: appVersion } }).eq('id', row.id).eq('save_id', saveId)
+  const { error: updateError } = await supabase.from('imports').update({ source_schema: { ...current, ...extra, app_version: appVersion } }).eq('id', row.id).eq('save_id', saveId)
   if (updateError) throw new Error(errorText(updateError))
+}
+
+export async function stampLatestImportVersion(saveId: string, appVersion: string): Promise<void> {
+  if (!supabase) throw new Error('Banco Mestre não configurado.')
+  const { data, error } = await supabase.from('imports').select('id').eq('save_id', saveId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (error) throw new Error(errorText(error))
+  if (!data) return
+  await stampImportVersion(saveId, String(data.id), appVersion)
 }
 
 async function captureAffectedPlayers(importId: string): Promise<string[]> {

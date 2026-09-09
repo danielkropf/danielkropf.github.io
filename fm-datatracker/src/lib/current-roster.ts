@@ -1,4 +1,5 @@
-export type CurrentRosterStatus = 'Nos planos' | 'Para empréstimo' | 'Para venda' | 'Fora do clube'
+export type CurrentRosterStatus = 'Nos planos' | 'Para empréstimo' | 'Para venda' | 'Emprestado para fora' | 'Emprestado para dentro' | 'Fora do clube'
+export type CurrentRosterMembershipKind = 'current' | 'loaned_in' | 'loaned_out' | 'other_club' | 'unknown' | null
 export type PlanningTeamLevel = 'first_team' | 'reserve' | 'academy' | 'other' | 'unknown' | null
 
 type PlanningGroupLike = { id: string; name: string }
@@ -46,11 +47,13 @@ export function currentRosterLabel({ externalClub, factualSquadName, snapshotSqu
   return null
 }
 
-export function currentRosterStatus(externalClub: boolean, planningGroup: PlanningGroupLike | string | null | undefined): CurrentRosterStatus {
-  if (externalClub) return 'Fora do clube'
+export function currentRosterStatus(externalClub: boolean, planningGroup: PlanningGroupLike | string | null | undefined, membershipKind: CurrentRosterMembershipKind = null): CurrentRosterStatus {
   const kind = marketKind(planningGroup)
   if (kind === 'loan') return 'Para empréstimo'
   if (kind === 'sale') return 'Para venda'
+  if (membershipKind === 'loaned_out') return 'Emprestado para fora'
+  if (membershipKind === 'loaned_in') return 'Emprestado para dentro'
+  if (externalClub || membershipKind === 'other_club') return 'Fora do clube'
   return 'Nos planos'
 }
 
@@ -95,6 +98,8 @@ function countryMap() {
     wales: 'GB', gales: 'GB', 'irlanda do norte': 'GB', 'northern ireland': 'GB', 'south korea': 'KR', 'coreia do sul': 'KR',
   }
   for (const [name, code] of Object.entries(aliases)) map.set(normalize(name), code)
+  const alpha3: Record<string, string> = { BRA: 'BR', ARG: 'AR', URU: 'UY', COL: 'CO', CHI: 'CL', ECU: 'EC', PAR: 'PY', PER: 'PE', BOL: 'BO', VEN: 'VE', MEX: 'MX', USA: 'US', CAN: 'CA', ENG: 'GB', SCO: 'GB', WAL: 'GB', NIR: 'GB', ESP: 'ES', POR: 'PT', FRA: 'FR', GER: 'DE', ITA: 'IT', NED: 'NL', BEL: 'BE', CRO: 'HR', SRB: 'RS', POL: 'PL', DEN: 'DK', SWE: 'SE', NOR: 'NO', FIN: 'FI', IRL: 'IE', AUT: 'AT', SUI: 'CH', CZE: 'CZ', SVK: 'SK', SVN: 'SI', GRE: 'GR', TUR: 'TR', ROU: 'RO', BUL: 'BG', HUN: 'HU', UKR: 'UA', RUS: 'RU', JPN: 'JP', KOR: 'KR', CHN: 'CN', AUS: 'AU', NZL: 'NZ', MAR: 'MA', ALG: 'DZ', TUN: 'TN', EGY: 'EG', SEN: 'SN', NGA: 'NG', GHA: 'GH', CIV: 'CI', CMR: 'CM', RSA: 'ZA' }
+  for (const [code3, code2] of Object.entries(alpha3)) map.set(normalize(code3), code2)
   countryCodeByName = map
   return map
 }

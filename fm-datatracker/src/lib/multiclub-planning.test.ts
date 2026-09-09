@@ -83,9 +83,11 @@ describe('multiclub planning config', () => {
     expect(index.clubByPlayer).toEqual({ 'player-a': 'club-a', 'player-b': 'club-b' })
     expect(index.conflicts.shared).toEqual(['club-a', 'club-b'])
 
-    const target = { slotAssignments: { base: { slot: ['player-b', 'player-a'] } } }
-    const moved = movePlayerAcrossClubPlans({ 'club-a': a, 'club-b': b }, 'club-b', 'player-a', target)
+    const target = { slotAssignments: { base: { slot: ['player-b', 'player-a'] } }, squadAssignments: { 'player-a': 'base' } }
+    const sourceWithSquad = { ...a, squadAssignments: { 'player-a': 'principal' } }
+    const moved = movePlayerAcrossClubPlans({ 'club-a': sourceWithSquad, 'club-b': b }, 'club-b', 'player-a', target)
     expect(moved['club-a'].slotAssignments).toEqual({ principal: { slot: ['shared'] } })
+    expect('squadAssignments' in moved['club-a'] ? moved['club-a'].squadAssignments : undefined).toEqual({})
     expect(moved['club-b']).toBe(target)
     expect(derivePlanningClubIndex(moved).clubByPlayer['player-a']).toBe('club-b')
   })

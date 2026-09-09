@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { PLANNING_PITCH_LIST_CAPACITY, planningPitchPositionLabel, planningPitchSetHeader } from './planning-pitch-list'
+import { PLANNING_PITCH_LIST_CAPACITY, planningPitchPositionLabel, planningPitchSetHeader, planningPitchVisibleSlotCount } from './planning-pitch-list'
 
 describe('planning pitch list presentation contract', () => {
   it('reserves exactly three compact player rows', () => {
     expect(PLANNING_PITCH_LIST_CAPACITY).toBe(3)
+  })
+
+  it('keeps one empty placeholder while a set is expanded, including after a removal', () => {
+    expect(planningPitchVisibleSlotCount(4, true)).toBe(5)
+    expect(planningPitchVisibleSlotCount(3, true)).toBe(4)
+    expect(planningPitchVisibleSlotCount(2, true)).toBe(3)
+    expect(planningPitchVisibleSlotCount(0, true)).toBe(3)
+    expect(planningPitchVisibleSlotCount(4, false)).toBe(3)
   })
 
   it('formats the set header in two lines with abbreviated IP/OOP roles', () => {

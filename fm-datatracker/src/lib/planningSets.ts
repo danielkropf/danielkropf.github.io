@@ -16,6 +16,8 @@ export type PlanningSetLayouts = Record<string, Record<string, PlanningSetLayout
 export type FlexiblePlanning = {
   groups: PlanningGroup[]
   slotAssignments: Record<string, Record<string, string[]>>
+  /** Manual planned-squad overrides. When absent, factual squad membership remains the default. */
+  squadAssignments?: Record<string, string>
   setLayouts?: PlanningSetLayouts
 }
 
@@ -369,12 +371,15 @@ export function movePlayerToSet(planning: FlexiblePlanning, groupId: string, set
 }
 
 export function removePlayerFromPlanning(planning: FlexiblePlanning, playerId: string): FlexiblePlanning {
+  const squadAssignments = { ...(planning.squadAssignments ?? {}) }
+  delete squadAssignments[playerId]
   return {
     ...planning,
     slotAssignments: Object.fromEntries(Object.entries(planning.slotAssignments).map(([groupId, rows]) => [
       groupId,
       Object.fromEntries(Object.entries(rows).map(([setId, ids]) => [setId, ids.filter(id => id !== playerId)])),
     ])),
+    squadAssignments,
   }
 }
 

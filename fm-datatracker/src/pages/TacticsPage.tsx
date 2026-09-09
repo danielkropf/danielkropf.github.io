@@ -24,13 +24,15 @@ import { PositionSelector, canonicalPosition } from '../components/PositionSelec
 import { ATTRIBUTE_CATALOG, type AttributeCategory } from '../lib/attributes'
 import type { PlayerRow } from '../types/domain'
 import { DATA_TABLE_PRESETS } from '../components/data-table/presets'
-import { patchClubTacticId, primaryPlanningClubId, sanitizeClubTacticSelections } from '../lib/multiclub-planning'
+import { patchClubPlanning, patchClubTacticId, primaryPlanningClubId, resolveClubPlanning, sanitizeClubTacticSelections } from '../lib/multiclub-planning'
+import { RosterPlayerContextMenu } from '../components/RosterPlayerContextMenu'
+import { effectivePlanningSquadGroupId, isMarketPlanningGroup, movePlayerToPlanningSquad, reconcilePlanningSquadGroups } from '../lib/planning-squads'
+import { movePlayerToSet, type FlexiblePlanning } from '../lib/planningSets'
 
 type Role = { id: string; name: string; weights: Record<string, number> }
 type Assignment = { playerId: string; nodeId: string; position: string; roleId: string; roleCode: string; roleName: string }
 type Tactic = { id: string; name: string; roles: Role[]; assignments?: Assignment[]; ipAssignments: Assignment[]; oopAssignments: Assignment[]; lineup: Record<string, string | null> }
-type Planning = { groups: Array<{ id: string; name: string }>; assignments?: Record<string, string>; slotAssignments?: Record<string, Record<string, string[]>> }
-type Config = { role_weight_overrides: Record<string, Record<string, number>>; tactics: Tactic[]; selected_tactic_id: string | null; selected_tactic_id_by_club?: Record<string, string | null>; selected_role_id: string | null; planning?: Planning }
+type Config = { role_weight_overrides: Record<string, Record<string, number>>; tactics: Tactic[]; selected_tactic_id: string | null; selected_tactic_id_by_club?: Record<string, string | null>; selected_role_id: string | null; planning?: FlexiblePlanning; planning_by_club?: Record<string, FlexiblePlanning> }
 type Snapshot = PlayerRow['player_snapshots'][number]
 type Candidate = { id: string; name: string; positions: string[]; age: number | null; attributes: Array<{ key: string; value: number }>; player: PlayerRow; latest: Snapshot | undefined }
 type PlayerDataKey = 'status' | 'name' | 'age' | 'nationality' | 'team' | 'position' | 'height' | 'weight' | 'foot' | 'contract' | 'snapshot' | 'relativeScore'
@@ -52,6 +54,7 @@ const FORMATIONS: Record<string, string[]> = {
 }
 const DEFAULT_NODE_IDS = FORMATIONS['4-3-3']
 const fresh = (): Config => ({ role_weight_overrides: {}, tactics: [], selected_tactic_id: null, selected_role_id: null })
+const freshPlanning = (): FlexiblePlanning => ({ groups: [{ id: 'principal', name: 'Principal' }, { id: 'loan', name: 'Empréstimo' }, { id: 'sale', name: 'Venda' }], slotAssignments: { loan: { market: [] }, sale: { market: [] } }, setLayouts: {} })
 
 const TACTICS_TABLE_STORAGE_KEY = 'fm-datatracker:tactics-player-table-v2'
 const PLAYER_DATA_LABELS: Record<PlayerDataKey, string> = {
@@ -214,6 +217,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
   const [pickerSort, setPickerSort] = useState<{ key: PickerSortKey; direction: 1 | -1 }>({ key: 'positionScore', direction: -1 })
   const [draggingCard, setDraggingCard] = useState<{ phase: TacticPhase; playerId: string } | null>(null)
   const [rolePicker, setRolePicker] = useState<RolePicker | null>(null)
+  const [playerMenu, setPlayerMenu] = useState<{ x: number; y: number; playerId: string } | null>(null)
   const cardWasDragged = useRef(false)
   const loaded = useRef(false)
   const loadGuard = useRef(createLatestSaveRequestGuard())
@@ -319,6 +323,42 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
     window.addEventListener('blur', close)
     return () => { window.removeEventListener('click', close); window.removeEventListener('blur', close) }
   }, [])
+
+  const planning = reconcilePlanningSquadGroups(
+    resolveClubPlanning(config, primaryClubId, primaryClubId, freshPlanning),
+    candidates.map(candidate => candidate.latest?.squad),
+    new Map(candidates.map(candidate => [candidate.id, candidate.latest?.squad])),
+  )
+  const planningSquads = planning.groups.filter(group => !isMarketPlanningGroup(group))
+
+  function persistPlanning(nextPlanning: FlexiblePlanning) {
+    if (!selected || !primaryClubId) return
+    const patch = patchClubPlanning(config, primaryClubId, primaryClubId, nextPlanning)
+    setConfig(current => ({ ...current, ...patch }))
+    scheduleModelConfigPatch(selected.id, '2.9.0', patch, saveStatus)
+  }
+
+  function openPlayerMenu(event: MouseEvent<HTMLElement>, playerId: string) {
+    event.preventDefault()
+    event.stopPropagation()
+    setPlayerMenu({ x: event.clientX, y: event.clientY, playerId })
+  }
+
+  function moveMenuPlayerToSquad(groupId: string) {
+    if (!playerMenu) return
+    persistPlanning(movePlayerToPlanningSquad(planning, playerMenu.playerId, groupId))
+    setPlayerMenu(null)
+  }
+
+  function moveMenuPlayerToMarket(groupId: 'loan' | 'sale') {
+    if (!playerMenu) return
+    const candidate = candidates.find(item => item.id === playerMenu.playerId)
+    const currentSquad = effectivePlanningSquadGroupId(planning, playerMenu.playerId, candidate?.latest?.squad)
+    let next = movePlayerToSet(planning, groupId, 'market', playerMenu.playerId)
+    if (currentSquad) next = movePlayerToPlanningSquad(next, playerMenu.playerId, currentSquad)
+    persistPlanning(next)
+    setPlayerMenu(null)
+  }
 
   const tactic = config.tactics.find(item => item.id === config.selected_tactic_id)
   const assignments = tactic ? (phase === 'IP' ? tactic.ipAssignments : tactic.oopAssignments) : []
@@ -471,8 +511,8 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
   const playerColumns = playerTableLayout.columns
 
   function candidateStatus(candidate: Candidate) {
-    const groupId = Object.entries(config.planning?.slotAssignments ?? {}).find(([, rows]) => Object.values(rows).some(ids => ids.includes(candidate.id)))?.[0]
-    return config.planning?.groups.find(group => group.id === groupId)?.name ?? 'Não selecionado'
+    const groupId = Object.entries(planning.slotAssignments).find(([, rows]) => Object.values(rows).some(ids => ids.includes(candidate.id)))?.[0]
+    return planning.groups.find(group => group.id === groupId)?.name ?? 'Não selecionado'
   }
 
   function scoreForRoleColumn(candidate: Candidate, column: PlayerTableColumn) {
@@ -660,6 +700,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
 
     return <div
       className={`tactic-player-slot ${candidate ? 'is-filled' : 'is-empty'}`}
+      onContextMenu={candidate ? event => openPlayerMenu(event, candidate.id) : undefined}
       onClick={activatePicker}
       onKeyDown={event => {
         if ((event.target as HTMLElement).closest('button')) return
@@ -842,6 +883,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
             columns={playerColumns}
             rowKey={row => row.candidate.id}
             renderCell={renderPlayerTableCell}
+            onRowContextMenu={(event, row) => openPlayerMenu(event, row.candidate.id)}
             getColumnWidth={column => playerTableLayout.widths[column.id] ?? defaultPlayerColumnWidth(column)}
             getColumnMinWidth={column => scoreColumnMinWidth(column)}
             getColumnMaxWidth={() => 640}
@@ -873,6 +915,20 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
       </aside>
     </div>
 
+    {playerMenu && (() => {
+      const candidate = candidates.find(item => item.id === playerMenu.playerId)
+      return <RosterPlayerContextMenu
+        x={playerMenu.x}
+        y={playerMenu.y}
+        squads={planningSquads}
+        activeSquadId={effectivePlanningSquadGroupId(planning, playerMenu.playerId, candidate?.latest?.squad)}
+        onMoveSquad={moveMenuPlayerToSquad}
+        onLoan={() => moveMenuPlayerToMarket('loan')}
+        onSale={() => moveMenuPlayerToMarket('sale')}
+        onClose={() => setPlayerMenu(null)}
+      />
+    })()}
+
     {rolePicker && createPortal(<><button className="role-card-dropdown-dismiss" aria-label="Fechar seletor de função" onClick={() => setRolePicker(null)} /><div className={`role-card-dropdown line-${lineClass(rolePicker.position)}`} style={{ top: rolePicker.top, left: rolePicker.left, width: rolePicker.width }} role="listbox" aria-label={`Funções para ${rolePicker.position}`}>{rolesFor(rolePicker.position, rolePicker.phase).map(([code, label]) => <button type="button" className={code === rolePicker.roleCode ? 'active' : ''} onClick={() => { changeAssignmentRole(rolePicker.playerId, rolePicker.phase, code); setRolePicker(null) }} role="option" aria-selected={code === rolePicker.roleCode} key={code}><b>{code}</b><span>{label}</span></button>)}</div></>, document.body)}
 
     {createOpen && <div className="settings-overlay" onClick={() => setCreateOpen(false)}><section className="tactic-modal" onClick={event => event.stopPropagation()}><header><div><span className="eyebrow">NOVA ESTRUTURA</span><h2>Criar tática</h2></div><button className="close" onClick={() => setCreateOpen(false)}>×</button></header><label>Nome da tática<input autoFocus value={name} onChange={event => setName(event.target.value)} placeholder="Ex.: 4-3-3 Posicional" /></label><div className="formation-grid"><label>Formação In Possession<select value={ipFormation} onChange={event => setIpFormation(event.target.value)}>{Object.keys(FORMATIONS).map(formation => <option key={formation}>{formation}</option>)}</select></label><label>Formação Out of Possession<select value={oopFormation} onChange={event => setOopFormation(event.target.value)}>{Object.keys(FORMATIONS).map(formation => <option key={formation}>{formation}</option>)}</select></label></div><footer><button className="ghost" onClick={() => setCreateOpen(false)}>Cancelar</button><button onClick={create} disabled={!name.trim()}>Criar tática</button></footer></section></div>}
@@ -882,6 +938,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
       columns={PICKER_COLUMNS}
       rowKey={row => row.candidate.id}
       renderCell={renderPickerCell}
+      onRowContextMenu={(event, row) => openPlayerMenu(event, row.candidate.id)}
       getColumnWidth={column => PICKER_COLUMN_WIDTHS[column.id]}
       sort={pickerSort}
       onSort={key => changePickerSort(key as PickerSortKey)}

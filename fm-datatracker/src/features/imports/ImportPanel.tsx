@@ -7,6 +7,7 @@ import { uploadDiagnosticSample } from '../../lib/diagnostic-upload'
 import { loadModelConfig, patchModelConfig } from '../../lib/model-config'
 import { buildImportedFmTactic, mergeImportedFmTactic, type FmTacticImportPlan } from '../../lib/fm26-tactic-import'
 import { supabase } from '../../lib/supabase'
+import { stampImportVersion } from '../../lib/import-management'
 import type { ImportPreview, ImportType } from '../../types/domain'
 import { useSaves } from '../saves/SaveContext'
 
@@ -36,6 +37,8 @@ type DataComparison = {
 }
 type ImportFlash = { saveId: string; message: string; createdAt: number }
 type FmReadMarker = { fileName: string; startedAt: number; runtimeId: string }
+export type ImportUpdateTarget = { id: string; original_filename: string; file_type: ImportType; snapshot_date: string; file_hash: string; source_schema?: Record<string, unknown> | null }
+type ImportPanelProps = { onImported?: () => void; updateTarget?: ImportUpdateTarget | null; onCancelUpdate?: () => void }
 
 const TACTIC_MODEL_VERSION = '2.9.0'
 const IMPORT_FLASH_KEY = 'fm-datatracker:import-success-v1'
@@ -174,7 +177,7 @@ function tagRows(rows: PreparedRow[], source: string, validation: 'validated' | 
   return rows.map(row => ({ ...row, normalized_data: { ...row.normalized_data, import_source: source, fm_validation: validation } }))
 }
 
-export function ImportPanel({ onImported }: { onImported?: () => void }) {
+export function ImportPanel({ onImported, updateTarget = null, onCancelUpdate }: ImportPanelProps) {
   const { selected } = useSaves()
   const csvInput = useRef<HTMLInputElement>(null)
   const fmInput = useRef<HTMLInputElement>(null)
@@ -182,8 +185,8 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const [fmFile, setFmFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [nameColumn, setNameColumn] = useState('')
-  const [snapshotDate, setSnapshotDate] = useState('')
-  const [type, setType] = useState<ImportType>('squad')
+  const [snapshotDate, setSnapshotDate] = useState(updateTarget?.snapshot_date ?? '')
+  const [type, setType] = useState<ImportType>(updateTarget?.file_type ?? 'squad')
   const [fmRead, setFmRead] = useState<OfflineRead | null>(null)
   const [csvStatus, setCsvStatus] = useState('Aguardando arquivo CSV.')
   const [fmStatus, setFmStatus] = useState('Aguardando arquivo .fm.')
@@ -195,6 +198,15 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const [shareForDiagnostics, setShareForDiagnostics] = useState(false)
   const [sendingDiagnostics, setSendingDiagnostics] = useState(false)
   const [comparisonModal, setComparisonModal] = useState<'differences' | 'unavailable' | null>(null)
+  const updateNeedsCsv = Boolean(updateTarget?.original_filename.toLowerCase().includes('.csv'))
+  const updateNeedsFm = Boolean(updateTarget?.original_filename.toLowerCase().includes('.fm'))
+
+  useEffect(() => {
+    if (!updateTarget) return
+    setSnapshotDate(updateTarget.snapshot_date)
+    setType(updateTarget.file_type)
+    setMessage('')
+  }, [updateTarget?.id])
 
   useEffect(() => {
     const flash = sessionJson<ImportFlash>(IMPORT_FLASH_KEY)
@@ -252,7 +264,8 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
   const fmIdentityRequired = importMode === 'fm-beta' || importMode === 'validated'
   const resolvedHumanClubCount = comparableNumber(fmRead?.diagnostics?.resolved_human_club_count) ?? 0
   const fmIdentitySafe = !fmIdentityRequired || resolvedHumanClubCount > 0
-  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid && fmIdentitySafe)
+  const updateFilesReady = !updateTarget || ((!updateNeedsCsv || Boolean(csvFile)) && (!updateNeedsFm || Boolean(fmFile)))
+  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid && fmIdentitySafe && updateFilesReady)
 
   function clearSuccessForNewInput() {
     clearImportFlash()
@@ -261,7 +274,7 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
 
   function resetTransientImportState() {
     setCsvFile(null); setFmFile(null); setPreview(null); setFmRead(null)
-    setNameColumn(''); setSnapshotDate(''); setType('squad')
+    setNameColumn(''); setSnapshotDate(updateTarget?.snapshot_date ?? ''); setType(updateTarget?.file_type ?? 'squad')
     setCsvStatus('Aguardando arquivo CSV.'); setFmStatus('Aguardando arquivo .fm.')
     setLoadingCsv(false); setLoadingFm(false); setShareForDiagnostics(false); setComparisonModal(null)
     if (csvInput.current) csvInput.current.value = ''
@@ -274,8 +287,8 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
     try {
       const next = await parseCsvFile(file)
       const detected = detectNameColumn(next.headers)
-      setPreview(next); setNameColumn(detected); setType(next.fileType === 'unknown' ? 'squad' : next.fileType)
-      if (!fmFile && !snapshotDate) setSnapshotDate('')
+      setPreview(next); setNameColumn(detected); if (!updateTarget) setType(next.fileType === 'unknown' ? 'squad' : next.fileType)
+      if (!updateTarget && !fmFile && !snapshotDate) setSnapshotDate('')
       setCsvStatus(`${next.rowCount} linhas e ${next.headers.length} dados detectados.`)
     } catch (error) { setCsvStatus(`Não foi possível ler o CSV: ${errorMessage(error)}`) }
     finally { setLoadingCsv(false) }
@@ -331,12 +344,16 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
 
   async function chooseFm(file: File | undefined) {
     if (!file) return
-    clearSuccessForNewInput(); setFmFile(file); setFmRead(null); setType('squad'); setLoadingFm(true); setFmStatus('Lendo o save localmente em segundo plano…')
+    clearSuccessForNewInput(); setFmFile(file); setFmRead(null); if (!updateTarget) setType('squad'); setLoadingFm(true); setFmStatus('Lendo o save localmente em segundo plano…')
     if (typeof window !== 'undefined') sessionStorage.setItem(FM_READ_MARKER_KEY, JSON.stringify({ fileName: file.name, startedAt: Date.now(), runtimeId: IMPORT_PANEL_RUNTIME_ID } satisfies FmReadMarker))
     try {
       const read = await readFmInWorker(file)
       setFmRead(read)
-      if (read.snapshot_date_precision === 'day' && read.snapshot_date) setSnapshotDate(read.snapshot_date)
+      if (updateTarget) {
+        if (read.snapshot_date_precision === 'day' && read.snapshot_date && read.snapshot_date !== updateTarget.snapshot_date) throw new Error(`O arquivo selecionado está na data ${read.snapshot_date}, mas esta importação pertence a ${updateTarget.snapshot_date}.`)
+        if (read.snapshot_date_precision === 'year' && read.snapshot_date && !updateTarget.snapshot_date.startsWith(`${read.snapshot_date.slice(0, 4)}-`)) throw new Error(`O arquivo selecionado pertence ao ano ${read.snapshot_date.slice(0, 4)}, mas esta importação pertence a ${updateTarget.snapshot_date}.`)
+        setSnapshotDate(updateTarget.snapshot_date)
+      } else if (read.snapshot_date_precision === 'day' && read.snapshot_date) setSnapshotDate(read.snapshot_date)
       else if (read.snapshot_date_precision === 'year' && read.snapshot_date) {
         const year = read.snapshot_date.slice(0, 4)
         setSnapshotDate(current => current.startsWith(`${year}-`) ? current : '')
@@ -412,6 +429,10 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
 
       const files = [csvFile, fmFile].filter((file): file is File => Boolean(file))
       const importFileHash = await filesHash(files)
+      if (updateTarget && importFileHash !== updateTarget.file_hash) throw new Error('O conteúdo selecionado não corresponde ao arquivo original desta importação. A atualização foi bloqueada para evitar misturar saves ou snapshots.')
+      if (updateTarget && snapshotDate !== updateTarget.snapshot_date) throw new Error(`A data deve permanecer ${updateTarget.snapshot_date} para atualizar esta importação.`)
+      if (updateTarget && effectiveType !== updateTarget.file_type) throw new Error(`O tipo detectado (${effectiveType}) não corresponde ao tipo original (${updateTarget.file_type}).`)
+      if (updateTarget && !updateNeedsFm) throw new Error('Esta importação não contém arquivo .fm. Como snapshots históricos são imutáveis, a atualização automática segura nesta versão está disponível apenas para imports que incluem o .fm original.')
       const fmFileHash = fmFile ? await filesHash([fmFile]) : null
       const tacticPlan: FmTacticImportPlan | null = fmFile && fmRead && fmFileHash
         ? comparison && !comparison.valid
@@ -427,10 +448,25 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
         p_rows: importRows, p_warnings: warnings,
       })
       if (error) throw error
-      const result = data as { duplicate?: boolean } | null
+      const result = data as { duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
       const tacticOutcome = await persistTacticPlan(tacticPlan)
       const tacticSuffix = tacticOutcome.note ? ` ${tacticOutcome.note}` : ''
       if (result?.duplicate) {
+        if (updateTarget) {
+          if (result.import_id !== updateTarget.id) throw new Error('O hash corresponde a outra importação deste save. A atualização foi bloqueada.')
+          const previousVersion = typeof updateTarget.source_schema?.app_version === 'string' ? updateTarget.source_schema.app_version : null
+          await stampImportVersion(selected.id, updateTarget.id, __APP_VERSION__, {
+            reprocessed_at: new Date().toISOString(),
+            reprocessed_from_version: previousVersion,
+            reprocessed_reader: 'e-mc-01b-duplicate-enrichment',
+          })
+          const sync = result.membership_sync
+          const updatedMessage = `Importação atualizada com segurança para v${__APP_VERSION__}: mesmo arquivo, mesmo save e mesma data confirmados.${sync?.status === 'synced' ? ` ${sync.synced_rows ?? 0} vínculo(s) factual(is) sincronizado(s); ${sync.idempotent_rows ?? 0} já estavam atualizados.` : ''}${tacticSuffix}`
+          writeImportFlash(selected.id, updatedMessage)
+          setMessage(updatedMessage)
+          onImported?.()
+          return
+        }
         const duplicateMessage = `Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.${tacticSuffix}`
         setMessage(duplicateMessage)
         if (tacticOutcome.changed) {
@@ -439,6 +475,7 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
         }
         return
       }
+      if (updateTarget) throw new Error('O arquivo não foi reconhecido como a mesma importação existente. Nenhuma atualização foi aplicada.')
       const successMessage = `${importMode === 'validated' ? 'Importação concluída: CSV e .fm foram validados juntos.' : 'Importação concluída.'} Save: ${selected.name}. Snapshot: ${snapshotDate}.${tacticSuffix}`
       writeImportFlash(selected.id, successMessage)
       setMessage(successMessage)
@@ -458,13 +495,13 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
     <div className="title-row"><div><span className="eyebrow">IMPORTAÇÃO SEGURA</span><h1>Novo Snapshot</h1><p>Envie CSV, arquivo <code>.fm</code> ou os dois para validar a leitura do save.</p></div></div>
     <div className="preview fm-import-preview">
       <div className="import-file-pickers">
-        <div className="fm-file-picker"><button type="button" className="fm-file-button" onClick={() => void openFile('csv')}><span>CSV (estável)</span><strong>{csvFile?.name ?? 'Escolher CSV'}</strong><small>{loadingCsv ? 'Leitura em andamento…' : csvStatus}</small></button><input ref={csvInput} type="file" accept=".csv,text/csv" onChange={event => void chooseCsv(event.target.files?.[0])} /><div className="default-folder"><span>Pasta padrão: <b>{directoryNames.csv ?? 'não definida'}</b></span><button type="button" className="ghost" onClick={() => void chooseFolder('csv')} disabled={!supportsPersistentFilePicker()}>Definir pasta</button></div></div>
-        <div className="fm-file-picker"><button type="button" className="fm-file-button fm-file-button-beta" onClick={() => void openFile('fm')}><span>Save .fm (beta)</span><strong>{fmFile?.name ?? 'Escolher .fm'}</strong><small>{loadingFm ? 'Leitura em andamento…' : fmStatus}</small></button><input ref={fmInput} type="file" accept=".fm,application/octet-stream" onChange={event => void chooseFm(event.target.files?.[0])} /><div className="default-folder"><span>Pasta padrão: <b>{directoryNames.fm ?? 'não definida'}</b></span><button type="button" className="ghost" onClick={() => void chooseFolder('fm')} disabled={!supportsPersistentFilePicker()}>Definir pasta</button></div></div>
+        <div className={`fm-file-picker ${updateTarget && !updateNeedsCsv ? 'is-update-not-required' : ''}`}><button type="button" className="fm-file-button" disabled={Boolean(updateTarget && !updateNeedsCsv)} onClick={() => void openFile('csv')}><span>CSV (estável)</span><strong>{csvFile?.name ?? 'Escolher CSV'}</strong><small>{loadingCsv ? 'Leitura em andamento…' : csvStatus}</small></button><input ref={csvInput} type="file" accept=".csv,text/csv" onChange={event => void chooseCsv(event.target.files?.[0])} /><div className="default-folder"><span>Pasta padrão: <b>{directoryNames.csv ?? 'não definida'}</b></span><button type="button" className="ghost" onClick={() => void chooseFolder('csv')} disabled={!supportsPersistentFilePicker()}>Definir pasta</button></div></div>
+        <div className={`fm-file-picker ${updateTarget && !updateNeedsFm ? 'is-update-not-required' : ''}`}><button type="button" className="fm-file-button fm-file-button-beta" disabled={Boolean(updateTarget && !updateNeedsFm)} onClick={() => void openFile('fm')}><span>Save .fm (beta)</span><strong>{fmFile?.name ?? 'Escolher .fm'}</strong><small>{loadingFm ? 'Leitura em andamento…' : fmStatus}</small></button><input ref={fmInput} type="file" accept=".fm,application/octet-stream" onChange={event => void chooseFm(event.target.files?.[0])} /><div className="default-folder"><span>Pasta padrão: <b>{directoryNames.fm ?? 'não definida'}</b></span><button type="button" className="ghost" onClick={() => void chooseFolder('fm')} disabled={!supportsPersistentFilePicker()}>Definir pasta</button></div></div>
       </div>
       {fmFile && !csvFile && <p className="warning">Leitura <code>.fm</code> em construção e testes: ela pode trazer jogadores ou campos incorretos e valores vazios. Revise os dados antes de usar o snapshot.</p>}
       {csvFile && !fmFile && <p className="notice">O CSV continua sendo o caminho estável. Alguns dados e recursos que dependem da leitura do save não ficam disponíveis sem o arquivo <code>.fm</code>.</p>}
       <div className="stats import-overview"><div><span>Save</span><strong>{selected?.name ?? 'Nenhum save ativo'}</strong></div><div><span>Snapshot</span><strong>{snapshotDate || (confirmedFmYear ? `Ano ${confirmedFmYear} confirmado · falta dia/mês` : suggestedSnapshotYear ? `Ano sugerido: ${suggestedSnapshotYear}` : 'Informe a data')}</strong></div><div><span>Dados detectados</span><strong>{detectedSummary}</strong></div><div><span>Leitura .fm</span><strong>{fmSummary}</strong></div></div>
-      <div className="import-fields"><label>{exactFmDate ? 'Data atual do save .fm' : confirmedFmYear ? `Data do snapshot (ano ${confirmedFmYear} confirmado)` : 'Data do snapshot'}<input type="date" value={snapshotDate} onChange={event => setSnapshotDate(event.target.value)} placeholder="AAAA-MM-DD" disabled={Boolean(exactFmDate)} /></label><label>Fonte dos dados<input value={sourceLabel} disabled /></label><label>Tipo<select value={type} onChange={event => setType(event.target.value as ImportType)} disabled={Boolean(fmFile)}><option value="squad">Elenco</option><option value="intake">Intake</option><option value="stats">Estatísticas</option></select></label><label>Coluna com o nome<select value={nameColumn} onChange={event => setNameColumn(event.target.value)} disabled={!preview}>{preview ? preview.headers.map(header => <option key={header} value={header}>{header}</option>) : <option>Carregue um CSV</option>}</select></label></div>
+      <div className="import-fields"><label>{exactFmDate ? 'Data atual do save .fm' : confirmedFmYear ? `Data do snapshot (ano ${confirmedFmYear} confirmado)` : 'Data do snapshot'}<input type="date" value={snapshotDate} onChange={event => setSnapshotDate(event.target.value)} placeholder="AAAA-MM-DD" disabled={Boolean(updateTarget || exactFmDate)} /></label><label>Fonte dos dados<input value={sourceLabel} disabled /></label><label>Tipo<select value={type} onChange={event => setType(event.target.value as ImportType)} disabled={Boolean(updateTarget || fmFile)}><option value="squad">Elenco</option><option value="intake">Intake</option><option value="stats">Estatísticas</option></select></label><label>Coluna com o nome<select value={nameColumn} onChange={event => setNameColumn(event.target.value)} disabled={!preview}>{preview ? preview.headers.map(header => <option key={header} value={header}>{header}</option>) : <option>Carregue um CSV</option>}</select></label></div>
       {(csvFile || fmFile) && !snapshotDateValid && <p className="warning">{confirmedFmYear ? `O leitor confirmou apenas o ano ${confirmedFmYear}. Informe dia e mês reais para liberar a importação.` : suggestedSnapshotYear ? `O CSV sugere o ano ${suggestedSnapshotYear}, mas a data completa precisa ser confirmada manualmente.` : 'Informe uma data completa e válida para o snapshot.'}</p>}
       {preview && csvRows.length === 0 && <p className="warning">Nenhum jogador com nome foi encontrado. Escolha uma coluna de nome válida.</p>}
       <details className="import-debug"><summary>Dados detectados <small>{preview ? `${preview.headers.length} dados · abrir para conferir o mapeamento` : 'a leitura do CSV exibirá os dados aqui'}</small></summary>{preview && <div className="chips">{preview.headers.map(header => <span key={header} className={preview.ignoredColumns.includes(header) ? 'chip muted' : 'chip'}>{header}</span>)}</div>}</details>
@@ -473,7 +510,7 @@ export function ImportPanel({ onImported }: { onImported?: () => void }) {
       <div className={`fm-comparison ${comparison ? (comparison.valid ? 'valid' : 'invalid') : ''}`}><strong>Validação CSV × .fm</strong>{comparison ? <><span>{comparison.matched}/{comparison.csvTotal} jogadores associados · {comparison.matchingFields}/{comparison.checkedFields} dados coincidem ({Math.round(comparison.dataCoverage * 100)}%).</span><small>{comparison.valid ? `Validação aprovada. O CSV define os ${comparison.csvTotal} jogadores persistidos; ${comparison.fmOnly} jogador(es) extra(s) do .fm ficam fora deste import. ${comparison.unavailableFields.length} campos ainda não têm equivalência confirmada e não entraram no cálculo.` : `Validação recusada: ${comparison.csvOnly} jogador(es) do CSV sem associação, ${comparison.ambiguous} associação(ões) ambígua(s) e ${comparison.divergentFields} divergência(s) objetiva(s). Por segurança, serão usados apenas dados CSV.`}</small><div className="comparison-actions">{comparison.differences.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('differences')}>Ver {comparison.divergentFields} divergência(s)</button>}{comparison.unavailableFields.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('unavailable')}>Ver campos ainda não comparáveis</button>}</div>{comparison.missingValues > 0 && <small>{comparison.missingValues} comparação(ões) foram ignoradas porque o valor estava vazio em pelo menos um dos arquivos.</small>}</> : <span>Envie os dois arquivos para validar identidade, posições, atributos, nascimento e nacionalidade.</span>}</div>
       {comparison && !comparison.valid && <div className="diagnostic-consent"><label><input type="checkbox" checked={shareForDiagnostics} onChange={event => setShareForDiagnostics(event.target.checked)} /> Autorizo o envio privado destes dois arquivos para diagnóstico e melhoria do leitor.</label><button className="ghost" disabled={!shareForDiagnostics || sendingDiagnostics} onClick={() => void uploadDiagnostics()}>{sendingDiagnostics ? 'Enviando…' : 'Enviar arquivos para diagnóstico'}</button></div>}
       {message && <p className={message.startsWith('Falha') || message.startsWith('Não foi') ? 'warning' : 'notice'} role="status">{message}</p>}
-      <div className="import-actions"><button className="primary" disabled={!canConfirm} onClick={() => void confirm()}>{saving ? 'Importando…' : isReading ? 'Aguardando leitura…' : importMode === 'csv-fallback' ? 'Importar CSV sem dados do .fm' : 'Confirmar importação'}</button></div>
+      <div className="import-actions"><button className="primary" disabled={!canConfirm} onClick={() => void confirm()}>{saving ? (updateTarget ? 'Atualizando…' : 'Importando…') : isReading ? 'Aguardando leitura…' : updateTarget ? 'Atualizar esta importação' : importMode === 'csv-fallback' ? 'Importar CSV sem dados do .fm' : 'Confirmar importação'}</button></div>
       {comparisonModal && comparison && <div className="settings-overlay import-comparison-overlay" role="presentation" onMouseDown={() => setComparisonModal(null)}><section className="import-comparison-modal" role="dialog" aria-modal="true" aria-label="Detalhes da validação" onMouseDown={event => event.stopPropagation()}><header><div><span className="eyebrow">VALIDAÇÃO CSV × .FM</span><h2>{comparisonModal === 'differences' ? 'Divergências encontradas' : 'Campos ainda não comparáveis'}</h2></div><button className="ghost" type="button" onClick={() => setComparisonModal(null)} aria-label="Fechar">×</button></header><div className="import-comparison-modal-body">{comparisonModal === 'differences' ? <><p>Mostrando as primeiras {comparison.differences.length} de {comparison.divergentFields} divergências objetivas.</p><ul>{comparison.differences.map((difference, index) => <li key={`${difference.player}-${difference.field}-${index}`}><b>{difference.player}</b><span>{difference.field}</span><code>CSV: {difference.csv}</code><code>.fm: {difference.fm}</code></li>)}</ul></> : <><p>Estes campos ainda não têm uma equivalência segura: alguns não foram mapeados pelo leitor <code>.fm</code>; outros existem nas duas fontes, mas usam escalas ou formatos diferentes. Eles não entram no cálculo da validação.</p><ul className="field-list">{comparison.unavailableFields.map(field => <li key={field}>{field}</li>)}</ul></>}</div></section></div>}
     </div>
   </section>

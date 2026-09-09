@@ -10,6 +10,8 @@ function compactStatus(status: string) {
   if (lower === 'nos planos') return 'NP'
   if (lower === 'para empréstimo') return 'EM'
   if (lower === 'para venda') return 'VD'
+  if (lower === 'emprestado para fora') return 'EF'
+  if (lower === 'emprestado para dentro') return 'ED'
   if (lower === 'fora do clube') return 'FC'
   const group = normalized.match(/^grupo\s+(\d+)/i)
   if (group) return `G${group[1]}`
@@ -24,6 +26,8 @@ function statusExplanation(status: string) {
   if (lower === 'nos planos') return 'Nos planos — jogador não está marcado para empréstimo ou venda.'
   if (lower === 'para empréstimo') return 'Para empréstimo — jogador está marcado para ser emprestado.'
   if (lower === 'para venda') return 'Para venda — jogador está marcado para venda.'
+  if (lower === 'emprestado para fora') return 'Emprestado para fora — pertence ao clube selecionado e está emprestado a outro clube.'
+  if (lower === 'emprestado para dentro') return 'Emprestado para dentro — está no clube selecionado por empréstimo.'
   if (lower === 'fora do clube') return 'Fora do clube — o vínculo factual atual aponta outro clube no checkpoint corrente.'
   return `${normalized} — destino atual do jogador no Planejamento.`
 }
@@ -51,7 +55,7 @@ export function PlanningStatusBadge({ status }: { status: string }) {
 
   return <>
     <span
-      className={`planning-status-badge ${normalized.toLocaleLowerCase('pt-BR') === 'não selecionado' ? 'is-unselected' : 'is-selected'}`}
+      className={`planning-status-badge status-${compactStatus(normalized).toLocaleLowerCase('pt-BR')} ${normalized.toLocaleLowerCase('pt-BR') === 'não selecionado' ? 'is-unselected' : 'is-selected'}`}
       tabIndex={0}
       aria-label={explanation}
       onMouseEnter={hover}

@@ -28,6 +28,11 @@ function AppShellContent() {
   const elencoCloseTimerRef = useRef<number | null>(null)
   useEffect(() => { if (selected) preloadSave(selected.id) }, [selected?.id])
   useEffect(() => {
+    const suppressNativeContextMenu = (event: MouseEvent) => event.preventDefault()
+    window.addEventListener('contextmenu', suppressNativeContextMenu, true)
+    return () => window.removeEventListener('contextmenu', suppressNativeContextMenu, true)
+  }, [])
+  useEffect(() => {
     const flush = () => { void flushAllModelConfigPatches() }
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
     window.addEventListener('pagehide', flush)

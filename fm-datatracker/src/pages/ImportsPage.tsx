@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { invalidateSaveData } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
-import { ImportPanel } from '../features/imports/ImportPanel'
+import { ImportPanel, type ImportUpdateTarget } from '../features/imports/ImportPanel'
 import { canonicalFieldKey, displayFmPositions, normalizedDate, normalizedFoot, normalizedText, positionsMatch } from '../lib/fm-comparison'
 import { deleteFmImportSafe, stampLatestImportVersion } from '../lib/import-management'
 import { importVersionState, normalizeAppVersion } from '../lib/import-version'
@@ -10,7 +10,7 @@ import { createLatestSaveRequestGuard } from '../lib/latest-save-request'
 import type { ImportRecord } from '../types/domain'
 
 type ImportsPageProps = { mode?: 'import' | 'history' }
-type VersionedImportRecord = ImportRecord & { source_schema?: Record<string, unknown> | null }
+type VersionedImportRecord = ImportRecord & ImportUpdateTarget
 
 type RawSnapshot = {
   id: string
@@ -124,6 +124,7 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
   const [rawRows, setRawRows] = useState<RawSnapshot[]>([])
   const [loadingRaw, setLoadingRaw] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [updateItem, setUpdateItem] = useState<VersionedImportRecord | null>(null)
   const historyRequestGuard = useRef(createLatestSaveRequestGuard())
   const rawRequestGuard = useRef(createLatestSaveRequestGuard())
   const selectedIdRef = useRef<string | null>(selected?.id ?? null)
@@ -157,6 +158,7 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
     setRawItem(null)
     setRawRows([])
     setLoadingRaw(false)
+    setUpdateItem(null)
   }, [selected?.id])
 
   async function remove(item: VersionedImportRecord) {
@@ -217,13 +219,23 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
     }
   }
 
+  async function updatedImport() {
+    if (!selected) return
+    const saveId = selected.id
+    invalidateSaveData(saveId)
+    setUpdateItem(null)
+    await load(saveId)
+    if (selectedIdRef.current === saveId) setMessage('Importação atualizada para a versão atual do DataTracker.')
+  }
+
   if (mode === 'history') return <section className="settings-import-history">
     <span className="eyebrow">GERENCIAMENTO</span><h2>Importações anteriores</h2>
     <p>Consulte os arquivos já confirmados neste save. Para adicionar uma nova fotografia, use <strong>Novo import</strong> no menu lateral.</p>
-    {compatibilityWarnings > 0 && <p className="warning">{compatibilityWarnings} {compatibilityWarnings === 1 ? 'import foi feito em uma versão anterior ou não possui versão registrada' : 'imports foram feitos em versões anteriores ou não possuem versão registrada'}. Eles continuam válidos, mas podem não conter dados que só passaram a ser extraídos em versões mais novas. Reimporte o snapshot quando precisar desses campos.</p>}
-    <div className="table-wrap"><table><thead><tr><th>Data</th><th>Arquivo</th><th>Fonte</th><th>Versão</th><th>Linhas</th><th>Status</th><th aria-label="Ações" /></tr></thead><tbody>{items.map(item => <tr key={item.id} className="import-history-row" onClick={() => void openRaw(item)} tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRaw(item) } }}><td>{item.snapshot_date}</td><td>{item.original_filename}</td><td>{sourceLabel(item.original_filename)}</td><td><ImportVersion item={item} /></td><td>{item.row_count}</td><td><span className="status">{item.status}</span></td><td><button className="ghost import-delete" disabled={deletingId !== null} onClick={event => { event.stopPropagation(); void remove(item) }} title={`Excluir ${item.original_filename}`} aria-label={`Excluir ${item.original_filename}`}>{deletingId === item.id ? '…' : '🗑'}</button></td></tr>)}</tbody></table></div>
+    {compatibilityWarnings > 0 && <p className="warning">{compatibilityWarnings} {compatibilityWarnings === 1 ? 'import foi feito em uma versão anterior ou não possui versão registrada' : 'imports foram feitos em versões anteriores ou não possuem versão registrada'}. Eles continuam válidos, mas podem não conter dados que só passaram a ser extraídos em versões mais novas. Use Atualizar para reler com segurança imports que contenham o arquivo .fm original; snapshots CSV históricos permanecem imutáveis.</p>}
+    <div className="table-wrap"><table><thead><tr><th>Data</th><th>Arquivo</th><th>Fonte</th><th>Versão</th><th>Linhas</th><th>Status</th><th aria-label="Ações" /></tr></thead><tbody>{items.map(item => <tr key={item.id} className="import-history-row" onClick={() => void openRaw(item)} tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRaw(item) } }}><td>{item.snapshot_date}</td><td>{item.original_filename}</td><td>{sourceLabel(item.original_filename)}</td><td><ImportVersion item={item} /></td><td>{item.row_count}</td><td><span className="status">{item.status}</span></td><td><div className="import-history-actions"><button className="ghost import-update" disabled={deletingId !== null} onClick={event => { event.stopPropagation(); setMessage(''); setUpdateItem(item) }} title={`Atualizar ${item.original_filename} usando o leitor atual`} aria-label={`Atualizar ${item.original_filename}`}>↻</button><button className="ghost import-delete" disabled={deletingId !== null} onClick={event => { event.stopPropagation(); void remove(item) }} title={`Excluir ${item.original_filename}`} aria-label={`Excluir ${item.original_filename}`}>{deletingId === item.id ? '…' : '🗑'}</button></div></td></tr>)}</tbody></table></div>
     {message && <p className={message.startsWith('Não foi') ? 'warning' : 'notice'}>{message}</p>}
     {!items.length && <p>Nenhum import confirmado.</p>}
+    {updateItem && <div className="settings-overlay import-update-overlay" role="presentation" onMouseDown={() => setUpdateItem(null)}><div className="import-update-modal" role="dialog" aria-modal="true" aria-label={`Atualizar ${updateItem.original_filename}`} onMouseDown={event => event.stopPropagation()}><ImportPanel updateTarget={updateItem} onImported={() => void updatedImport()} onCancelUpdate={() => setUpdateItem(null)} /></div></div>}
     {rawItem && <RawImportInspector item={rawItem} rows={rawRows} onClose={closeRaw} />}
     {rawItem && loadingRaw && <div className="settings-overlay raw-import-overlay"><div className="raw-import-loading">Carregando dados brutos…</div></div>}
   </section>
