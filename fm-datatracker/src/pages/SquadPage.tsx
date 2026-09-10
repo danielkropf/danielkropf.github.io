@@ -1,3 +1,4 @@
+import { playerNameStatusClass as statusPlayerClass } from '../lib/player-name-status'
 import { hasPlayerMarketFlag, togglePlayerMarketFlag } from '../lib/planningSets'
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -113,7 +114,6 @@ function rosterMembershipKind(player: RichPlayer, primaryClubId: string | null):
   if (currentClubId === primaryClubId) return 'current'
   return 'unknown'
 }
-function statusPlayerClass(status: string) { return status === 'Para empréstimo' ? 'is-for-loan' : status === 'Para venda' ? 'is-for-sale' : status === 'Emprestado para fora' ? 'is-loaned-out' : status === 'Emprestado para dentro' ? 'is-loaned-in' : '' }
 function clearPlayerTacticalSets(planning: Planning, playerId: string): Planning {
   return { ...planning, slotAssignments: Object.fromEntries(Object.entries(planning.slotAssignments).map(([groupId, sets]) => [groupId, groupId === 'loan' || groupId === 'sale' ? sets : Object.fromEntries(Object.entries(sets).map(([setId, ids]) => [setId, ids.filter(id => id !== playerId)]))])) }
 }

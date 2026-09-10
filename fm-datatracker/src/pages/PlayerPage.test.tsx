@@ -13,9 +13,12 @@ const mocks = vi.hoisted(() => ({
   }>,
   snapshotRead: undefined as Promise<{ data: any; error: unknown }> | undefined,
   loadEvolutionContext: vi.fn(),
+  loadModelConfig: vi.fn(),
   loadCurrentPlayers: vi.fn(),
   loadReferenceDataset: vi.fn(),
 }))
+
+vi.mock('../lib/model-config', () => ({ loadModelConfig: (...args: unknown[]) => mocks.loadModelConfig(...args) }))
 
 vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected, currentCheckpoint: mocks.currentCheckpoint }) }))
 vi.mock('../lib/longitudinal-service', () => ({
@@ -56,6 +59,7 @@ vi.mock('../lib/supabase', () => ({
 
 beforeEach(() => {
   mocks.currentCheckpoint = undefined
+  mocks.loadModelConfig.mockReset().mockResolvedValue({})
   mocks.loadEvolutionContext.mockReset()
   mocks.loadEvolutionContext.mockResolvedValue({ memberships: [], seasons: [], diagnostic: null })
   mocks.loadCurrentPlayers.mockReset().mockResolvedValue([])
@@ -249,4 +253,17 @@ describe('PlayerPage focused profile', () => {
     expect(screen.getByRole('heading', { name: 'Qualidade nesta data' })).not.toBeNull()
     expect(screen.getByText(/Você está vendo/)).not.toBeNull()
   })
+})
+
+it('uses the roster sale color on the profile while retaining both market flags', async () => {
+  mocks.selected = { id: 'save-a', name: 'A' }
+  mocks.currentCheckpoint = { saveId: 'save-a', status: 'ready', date: '2030-07-01' }
+  const current = snapshot('s1', '2030-07-01')
+  mocks.loadModelConfig.mockResolvedValue({ planning: { groups: [{ id: 'sale', name: 'Venda' }, { id: 'loan', name: 'Empréstimo' }], slotAssignments: { sale: { market: ['player-1'] }, loan: { market: ['player-1'] } } } })
+  mocks.loadCurrentPlayers.mockResolvedValue([player('player-1', 'Jogador A', [current])])
+  mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [current]), error: null }) })
+  render(view())
+  const name = await screen.findByRole('heading', { name: 'Jogador A' })
+  expect(name.classList.contains('is-for-sale')).toBe(true)
+  expect(name.title).toBe('Para venda e empréstimo')
 })

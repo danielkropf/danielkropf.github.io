@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 export type DataTableSort = { key: string; direction: 1 | -1 }
@@ -35,7 +35,8 @@ type DataTableProps<Row, Column extends DataTableColumnLike> = {
   sort?: DataTableSort
   onSort?: (key: string) => void
   selectedRowKey?: string | null
-  onSelectRow?: (row: Row) => void
+  selectedRowKeys?: ReadonlySet<string>
+  onSelectRow?: (row: Row, event: MouseEvent<HTMLTableRowElement> | ReactKeyboardEvent<HTMLTableRowElement>) => void
   onRowContextMenu?: (event: MouseEvent<HTMLTableRowElement>, row: Row) => void
   capabilities?: DataTableCapabilities
   className?: string
@@ -77,6 +78,7 @@ export function DataTable<Row, Column extends DataTableColumnLike>({
   sort,
   onSort,
   selectedRowKey = null,
+  selectedRowKeys,
   onSelectRow,
   onRowContextMenu,
   capabilities,
@@ -331,7 +333,7 @@ export function DataTable<Row, Column extends DataTableColumnLike>({
           {rows.map(row => {
             const key = rowKey(row)
             const disabled = Boolean(isRowDisabled?.(row))
-            const selected = enabled.selection && selectedRowKey === key
+            const selected = enabled.selection && (selectedRowKeys ? selectedRowKeys.has(key) : selectedRowKey === key)
             const clickable = enabled.selection && Boolean(onSelectRow) && !disabled
             return (
               <tr
@@ -339,7 +341,9 @@ export function DataTable<Row, Column extends DataTableColumnLike>({
                 className={`${clickable ? 'dt-table-clickable ' : ''}${selected ? 'dt-table-selected ' : ''}${disabled ? 'dt-table-row-disabled ' : ''}${getRowClassName?.(row) ?? ''}`.trim()}
                 aria-selected={enabled.selection ? selected : undefined}
                 aria-disabled={disabled || undefined}
-                onClick={clickable ? () => onSelectRow?.(row) : undefined}
+                onClick={clickable ? event => onSelectRow?.(row, event) : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onKeyDown={clickable ? event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); onSelectRow?.(row, event) } } : undefined}
                 onContextMenu={onRowContextMenu ? (event: MouseEvent<HTMLTableRowElement>) => onRowContextMenu(event, row) : undefined}
               >
                 {columns.map((column, index) => {

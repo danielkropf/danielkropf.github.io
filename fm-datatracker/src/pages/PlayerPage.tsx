@@ -1,3 +1,7 @@
+import { playerNameStatusClass } from '../lib/player-name-status'
+import { loadModelConfig } from '../lib/model-config'
+import { primaryPlanningClubId, resolveClubPlanning } from '../lib/multiclub-planning'
+import { hasPlayerMarketFlag, type FlexiblePlanning } from '../lib/planningSets'
 import '../player-profile.css'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -49,7 +53,7 @@ type Player = {
 }
 type LoadState =
   | { status: 'loading' }
-  | { status: 'data'; player: Player; stats: PlayerStat[]; reference: ReferenceDataset | null; evolutionContext: PlayerEvolutionContextData; saveEvents: PlayerSaveEventData }
+  | { status: 'data'; player: Player; stats: PlayerStat[]; reference: ReferenceDataset | null; evolutionContext: PlayerEvolutionContextData; saveEvents: PlayerSaveEventData; planning: FlexiblePlanning }
   | { status: 'not-found' }
   | { status: 'error'; message: string }
 
@@ -94,7 +98,7 @@ export function PlayerPage() {
     const client = supabase
 
     void (async () => {
-      const [identityResult, historySnapshots, stats, reference, evolutionContext, saveEvents, currentPortrait] = await Promise.all([
+      const [identityResult, historySnapshots, stats, reference, evolutionContext, saveEvents, currentPortrait, model] = await Promise.all([
         client.from('players')
           .select('id,fm_player_id,current_name,nationality,date_of_birth,first_seen_date,last_seen_date,is_active')
           .eq('id', id).eq('save_id', selected.id).maybeSingle(),
@@ -104,6 +108,7 @@ export function PlayerPage() {
         loadPlayerEvolutionContext(selected.id, id),
         loadPlayerSaveEvents(selected.id, id),
         checkpointDate ? loadCurrentPlayers(selected.id) : Promise.resolve([]),
+        loadModelConfig(selected.id).catch(() => ({})),
       ])
       if (!active) return
       const playerResult = { ...identityResult, data: identityResult.data ? { ...identityResult.data, player_snapshots: historySnapshots } : null }
@@ -117,7 +122,11 @@ export function PlayerPage() {
         snapshots = [...snapshots.filter(snapshot => snapshot.snapshot_date !== checkpointDate), exactCurrent].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date))
       }
       const player: Player = { ...playerResult.data, player_snapshots: snapshots }
-      setState({ status: 'data', player, stats, reference, evolutionContext, saveEvents })
+      const primaryClub = primaryPlanningClubId(selected.structure?.trackedClubs ?? [])
+      const config = model as { planning?: FlexiblePlanning; planning_by_club?: Record<string, FlexiblePlanning> }
+      const empty = () => ({ groups: [], slotAssignments: {} })
+      const planning = primaryClub ? resolveClubPlanning(config, primaryClub, primaryClub, empty) : config.planning ?? empty()
+      setState({ status: 'data', player, stats, reference, evolutionContext, saveEvents, planning })
       setIndex(checkpointDate ? snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) : -1)
     })().catch(cause => { if (active) setState({ status: 'error', message: cause instanceof Error ? cause.message : 'Falha inesperada ao carregar a ficha do jogador.' }) })
 
@@ -160,11 +169,17 @@ export function PlayerPage() {
   if (state.status === 'error') return <div className="screen-page player-page"><p className="warning">Não foi possível carregar a ficha do jogador: {state.message}</p></div>
   if (!player) return null
 
+  const planning = state.status === 'data' ? state.planning : { groups: [], slotAssignments: {} }
+  const sale = !isHistoricalView && Boolean(current) && hasPlayerMarketFlag(planning, player.id, 'sale')
+  const loan = !isHistoricalView && Boolean(current) && hasPlayerMarketFlag(planning, player.id, 'loan')
+  const membership = membershipResolution.membership
+  const primaryClub = primaryPlanningClubId(selected?.structure?.trackedClubs ?? [])
+  const nameStatus = sale ? (loan ? 'Para venda e empréstimo' : 'Para venda') : loan ? 'Para empréstimo' : membership?.is_loan === true && primaryClub ? membership.current_club_id === primaryClub && membership.owner_club_id && membership.owner_club_id !== primaryClub ? 'Emprestado para dentro' : membership.owner_club_id === primaryClub && membership.current_club_id && membership.current_club_id !== primaryClub ? 'Emprestado para fora' : '' : ''
   const sections = [['summary', 'Resumo'], ['attributes', 'Atributos'], ['evolution', 'Evolução'], ['performance', 'Desempenho'], ['career', 'Carreira']] as const
   const currentStats = current ? stats.filter(stat => stat.snapshot_date === current.snapshot_date) : []
   return <div className="screen-page player-page player-profile">
     <header className="profile-header">
-      <div className="profile-identity"><button className="back-button" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/squad')}>← Voltar</button><div><span className="eyebrow">FICHA DO JOGADOR</span><h1>{player.current_name}</h1><p>{[current?.age != null ? `${current.age} anos` : null, player.nationality, current?.positions?.join(', ')].filter(Boolean).join(' · ') || 'Informações pessoais indisponíveis'}</p></div></div>
+      <div className="profile-identity"><button className="back-button" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/squad')}>← Voltar</button><div><span className="eyebrow">FICHA DO JOGADOR</span><h1 className={playerNameStatusClass(nameStatus)} title={nameStatus || undefined}>{player.current_name}</h1><p>{[current?.age != null ? `${current.age} anos` : null, player.nationality, current?.positions?.join(', ')].filter(Boolean).join(' · ') || 'Informações pessoais indisponíveis'}</p></div></div>
       <label className="profile-date">Dados de<select aria-label="Data da observação" value={index} onChange={event => { const next = Number(event.target.value); setIndex(next < 0 ? snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) : next) }}><option value={-1}>Atual · {formatCheckpointDate(checkpointDate) ?? 'sem data'}</option>{snapshots.map((snapshot, i) => <option key={snapshot.id} value={i}>{formatCheckpointDate(snapshot.snapshot_date) ?? snapshot.snapshot_date}{snapshot.snapshot_date === checkpointDate ? ' · atual' : ''}</option>)}</select></label>
     </header>
     {isHistoricalView && <p className="notice profile-history-notice">Você está vendo {formatCheckpointDate(current?.snapshot_date ?? null) ?? current?.snapshot_date}. A data atual do save continua {formatCheckpointDate(checkpointDate) ?? 'indisponível'}.</p>}

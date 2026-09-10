@@ -268,7 +268,7 @@
 /* Roster movement/status semantics. Keep these colors shared by names and badges. */
 :root{
   --dt-roster-for-loan:var(--dt-warning);
-  --dt-roster-for-sale:var(--dt-danger);
+  --dt-roster-for-sale:#e88787;
   --dt-roster-loaned-out:#a78bfa;
   --dt-roster-loaned-in:var(--dt-info);
 }

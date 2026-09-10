@@ -409,3 +409,23 @@ body.dt-table-resizing .dt-table-resizer:after{opacity:1!important}
 .planning-status-badge.status-ed{border-color:color-mix(in srgb,var(--dt-roster-loaned-in) 55%,var(--dt-border-strong));background:color-mix(in srgb,var(--dt-roster-loaned-in) 10%,var(--dt-surface-2));color:var(--dt-roster-loaned-in)}
 .dt-country-with-flag{display:inline-flex;align-items:center;gap:6px;min-width:0}.dt-country-with-flag>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .import-history-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px}.import-history-actions .import-update{color:var(--dt-lime)}
+
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-for-loan,
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-for-loan>span,
+.tactics-workspace-planning .planning-picker-player>.is-for-loan,
+.player-profile .profile-identity h1.is-for-loan{color:var(--dt-roster-for-loan)!important}
+
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-for-sale,
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-for-sale>span,
+.tactics-workspace-planning .planning-picker-player>.is-for-sale,
+.player-profile .profile-identity h1.is-for-sale{color:var(--dt-roster-for-sale)!important}
+
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-loaned-out,
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-loaned-out>span,
+.tactics-workspace-planning .planning-picker-player>.is-loaned-out,
+.player-profile .profile-identity h1.is-loaned-out{color:var(--dt-roster-loaned-out)!important}
+
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-loaned-in,
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name.is-loaned-in>span,
+.tactics-workspace-planning .planning-picker-player>.is-loaned-in,
+.player-profile .profile-identity h1.is-loaned-in{color:var(--dt-roster-loaned-in)!important}

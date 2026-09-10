@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlanningPage } from './PlanningPage'
 
@@ -281,7 +281,8 @@ describe('PlanningPage 3C', () => {
     await openPicker()
     expect(view.container.querySelector('.planning-full-pitch-layout')).not.toBeNull()
     expect(screen.queryByRole('separator', { name: 'Ajustar largura do campo e da tabela' })).toBeNull()
-    fireEvent.click(await screen.findByText('Jogador Teste'))
+    fireEvent.click((await screen.findByText('Jogador Teste')).closest('tr')!)
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar (1)' }))
     await waitFor(() => expect(screen.queryByPlaceholderText('Buscar jogador')).toBeNull())
     expect(view.container.querySelector('article[data-planning-player-id="player"]')).not.toBeNull()
     expect(mocks.schedule.mock.calls.some(call => JSON.stringify(call[2]).includes('"player"'))).toBe(true)
@@ -370,7 +371,8 @@ describe('PlanningPage 3C', () => {
 
     await openPicker(1)
     expect(screen.getByTestId('projection-key').textContent).toBe('IP:M(C):AP|OOP:DM(C):DM')
-    fireEvent.click(screen.getByText('Jogador Teste'))
+    fireEvent.click(screen.getByText('Jogador Teste').closest('tr')!)
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar (1)' }))
     fireEvent.contextMenu(screen.getByText('Jogador Teste').closest('article')!)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Adicionar para venda' }))
     // Market intent coexists with the player's squad; navigate to the market group.
@@ -451,5 +453,41 @@ describe('PlanningPage 3C', () => {
     await waitFor(() => expect(mocks.loadMemberships).toHaveBeenCalledTimes(2))
     await openPicker()
     expect(screen.queryByText(/Contexto factual parcial/)).toBeNull()
+  })
+})
+
+function ProfileReturnTest() { const navigate = useNavigate(); return <button onClick={() => navigate(-1)}>Voltar à seleção</button> }
+it('returns from the profile to the picker with the selected row and search intact', async () => {
+  render(<MemoryRouter initialEntries={['/tactics?mode=planning']}><Routes><Route path="/tactics" element={<PlanningPage />} /><Route path="/players/:id" element={<ProfileReturnTest />} /></Routes></MemoryRouter>)
+  await openPicker()
+  fireEvent.change(screen.getByPlaceholderText('Buscar jogador'), { target: { value: 'Teste' } })
+  fireEvent.click(screen.getByText('Jogador Teste').closest('tr')!)
+  expect(screen.getByRole('button', { name: 'Confirmar (1)' })).not.toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Jogador Teste' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Voltar à seleção' }))
+  const confirm = await screen.findByRole('button', { name: 'Confirmar (1)' })
+  expect((screen.getByPlaceholderText('Buscar jogador') as HTMLInputElement).value).toBe('Teste')
+  expect(screen.getByText('Jogador Teste').closest('tr')?.getAttribute('aria-selected')).toBe('true')
+  fireEvent.contextMenu(screen.getByText('Jogador Teste').closest('tr')!)
+  expect(screen.getByRole('menuitem', { name: 'Adicionar para venda' })).not.toBeNull()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  // Escape closes the modal too; the selection was not committed by navigation.
+  expect(confirm).not.toBeNull()
+})
+
+it('selects multiple rows with Ctrl and adds only after confirmation', async () => {
+  mocks.loadPlayers.mockResolvedValue(['A', 'B', 'C'].map((name,i) => ({ id: `p${i}`, current_name: name, nationality: 'BRA', player_snapshots: [{ ...snapshot, id: `snap${i}` }] })))
+  render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+  await openPicker()
+  fireEvent.click(screen.getByRole('button', { name: 'A' }).closest('tr')!)
+  fireEvent.click(screen.getByRole('button', { name: 'C' }).closest('tr')!, { ctrlKey: true })
+  expect(screen.getByRole('button', { name: 'Confirmar (2)' })).not.toBeNull()
+  expect(screen.getByRole('button', { name: 'B' }).closest('tr')?.getAttribute('aria-selected')).toBe('false')
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar (2)' }))
+  expect(screen.queryByText('Adicionar jogador')).toBeNull()
+  await waitFor(() => {
+    const patch = mocks.schedule.mock.calls.at(-1)?.[2]
+    const assigned = Object.values(patch.planning_by_club['club-a'].slotAssignments).flatMap((sets:any) => Object.values(sets).flat())
+    expect(assigned).toEqual(['p0','p2'])
   })
 })

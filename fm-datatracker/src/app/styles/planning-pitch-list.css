@@ -609,3 +609,20 @@
 .tactics-workspace-planning .planning-picker-local-options>label.is-disabled{opacity:.55;cursor:not-allowed}
 .tactics-workspace-planning .planning-picker-local-options input:disabled{cursor:not-allowed}
 .tactics-workspace-planning .planning-membership-warning{padding:6px 20px;font-size:12px}
+
+/* Local picker preferences share the view-selector row. */
+.tactics-workspace-planning .planning-add-player-modal .dt-table-menu-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.tactics-workspace-planning .planning-add-player-modal .dt-table-menu-extra{margin-left:auto;min-width:0}
+.tactics-workspace-planning .planning-add-player-modal .planning-picker-local-options{padding:0!important;justify-content:flex-end;gap:8px 16px}
+.tactics-workspace-planning .planning-picker-row-same-squad:not(.planning-picker-row-incompatible){opacity:.72!important}
+.tactics-workspace-planning .planning-picker-row-other-squad:not(.planning-picker-row-incompatible){opacity:.88!important}
+.tactics-workspace-planning .planning-picker-row-same-squad:hover:not(.planning-picker-row-incompatible),
+.tactics-workspace-planning .planning-picker-row-other-squad:hover:not(.planning-picker-row-incompatible){opacity:1!important}
+
+.tactics-workspace-planning .planning-picker-profile-link{background:transparent!important;border:0!important;padding:0!important;min-height:0!important;text-align:left;font:inherit;font-weight:700;color:var(--dt-text-1);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tactics-workspace-planning .planning-picker-profile-link:hover{text-decoration:underline}
+.tactics-workspace-planning .planning-add-player-modal>footer{gap:16px}
+.tactics-workspace-planning .planning-add-player-modal>footer>button{flex:0 0 auto}
+.tactics-workspace-planning .planning-add-player-table .dt-table-selected{opacity:1!important}
+.tactics-workspace-planning .planning-add-player-table .dt-table-clickable{user-select:none}
+.roster-player-context-menu,.roster-player-context-submenu{z-index:10000!important}
