@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlanningPage } from './PlanningPage'
@@ -490,4 +490,43 @@ it('selects multiple rows with Ctrl and adds only after confirmation', async () 
     const assigned = Object.values(patch.planning_by_club['club-a'].slotAssignments).flatMap((sets:any) => Object.values(sets).flat())
     expect(assigned).toEqual(['p0','p2'])
   })
+})
+
+it('shows the best tactic position, assigns from the drawer and returns removed players without clearing market flags', async () => {
+  const config = await mocks.loadConfig()
+  config.planning.slotAssignments = { sale: { market: ['player'] }, loan: { market: ['player'] } }
+  mocks.loadConfig.mockResolvedValue(config)
+  render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+  await ready()
+  fireEvent.click(await screen.findByRole('button', { name: 'Sem conjunto · 1' }))
+  const row = within(screen.getByRole('listbox', { name: 'Jogadores disponíveis' })).getByRole('option', { selected: false })
+  expect(row.textContent).toContain('M (C)')
+  expect(row.querySelector('[data-current-score="13"]')?.textContent).toContain('AP')
+  fireEvent.click(row)
+  const destination = screen.getByLabelText('Conjunto de destino') as HTMLSelectElement
+  fireEvent.change(destination, { target: { value: destination.options[1].value } })
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar selecionados' }))
+  await screen.findByRole('button', { name: 'Sem conjunto · 0' })
+  fireEvent.contextMenu(screen.getByText('Jogador Teste'))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Retirar do conjunto' }))
+  await screen.findByRole('button', { name: 'Sem conjunto · 1' })
+  await waitFor(() => {
+    const saved = mocks.schedule.mock.calls.at(-1)?.[2].planning_by_club['club-a']
+    expect(saved.slotAssignments.sale.market).toEqual(['player'])
+    expect(saved.slotAssignments.loan.market).toEqual(['player'])
+    expect(saved.squadAssignments.player).toBe('principal')
+  })
+})
+
+it('restores the drawer and its search and selection after returning from a player profile', async () => {
+  render(<MemoryRouter initialEntries={['/tactics?mode=planning']}><Routes><Route path="/tactics" element={<PlanningPage />} /><Route path="/players/:id" element={<ProfileReturnTest />} /></Routes></MemoryRouter>)
+  await ready()
+  fireEvent.click(await screen.findByRole('button', { name: 'Sem conjunto · 1' }))
+  fireEvent.change(screen.getByLabelText('Buscar nos jogadores sem conjunto'), { target: { value: 'Teste' } })
+  fireEvent.click(within(screen.getByRole('listbox', { name: 'Jogadores disponíveis' })).getByRole('option', { selected: false }))
+  fireEvent.click(screen.getByRole('button', { name: 'Jogador Teste' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Voltar à seleção' }))
+  await screen.findByRole('complementary', { name: 'Jogadores sem conjunto' })
+  expect((screen.getByLabelText('Buscar nos jogadores sem conjunto') as HTMLInputElement).value).toBe('Teste')
+  expect(within(screen.getByRole('listbox', { name: 'Jogadores disponíveis' })).getByRole('option', { selected: true }).textContent).toContain('Jogador Teste')
 })

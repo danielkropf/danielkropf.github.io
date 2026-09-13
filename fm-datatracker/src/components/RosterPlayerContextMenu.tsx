@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 type SquadOption = { id: string; name: string }
 
-export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, markedForLoan = false, markedForSale = false, onMoveSquad, onLoan, onSale, onRemove, onClose }: {
+export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, markedForLoan = false, markedForSale = false, onMoveSquad, onLoan, onSale, onRemoveSet, onRemove, onClose }: {
   x: number
   y: number
   squads: SquadOption[]
@@ -12,6 +12,7 @@ export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, markedFor
   onMoveSquad: (groupId: string) => void
   onLoan: () => void
   onSale: () => void
+  onRemoveSet?: () => void
   onRemove?: () => void
   onClose: () => void
 }) {
@@ -19,7 +20,7 @@ export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, markedFor
   const mainWidth = 238
   const subWidth = 220
   const mainLeft = Math.max(8, Math.min(x, window.innerWidth - mainWidth - 8))
-  const mainTop = Math.max(8, Math.min(y, window.innerHeight - Math.min(220, 42 * (3 + Number(Boolean(onRemove)))) - 8))
+  const mainTop = Math.max(8, Math.min(y, window.innerHeight - Math.min(220, 42 * (3 + Number(Boolean(onRemove)) + Number(Boolean(onRemoveSet)))) - 8))
   const submenuLeft = useMemo(() => mainLeft + mainWidth + subWidth + 12 <= window.innerWidth ? mainLeft + mainWidth + 4 : Math.max(8, mainLeft - subWidth - 4), [mainLeft])
   const submenuTop = Math.max(8, Math.min(mainTop, window.innerHeight - Math.min(360, squads.length * 38 + 12) - 8))
 
@@ -36,6 +37,7 @@ export function RosterPlayerContextMenu({ x, y, squads, activeSquadId, markedFor
       <button role="menuitem" className="context-menu-branch" aria-haspopup="menu" aria-expanded={squadOpen} onPointerEnter={() => setSquadOpen(true)} onFocus={() => setSquadOpen(true)} onClick={() => setSquadOpen(open => !open)}><span>Mover para elenco</span><b aria-hidden="true">›</b></button>
       <button role="menuitem" onPointerEnter={() => setSquadOpen(false)} onClick={onLoan}>{markedForLoan ? 'Remover de empréstimo' : 'Adicionar para empréstimo'}</button>
       <button role="menuitem" onPointerEnter={() => setSquadOpen(false)} onClick={onSale}>{markedForSale ? 'Remover de venda' : 'Adicionar para venda'}</button>
+      {onRemoveSet && <button role="menuitem" onPointerEnter={() => setSquadOpen(false)} onClick={onRemoveSet}>Retirar do conjunto</button>}
       {onRemove && <button role="menuitem" className="is-danger" onPointerEnter={() => setSquadOpen(false)} onClick={onRemove}>Remover do planejamento</button>}
     </div>
     {squadOpen && <div className="planning-context-menu roster-player-context-submenu" role="menu" aria-label="Mover para elenco" style={{ left: submenuLeft, top: submenuTop }} onClick={event => event.stopPropagation()} onPointerLeave={() => setSquadOpen(false)}>

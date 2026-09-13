@@ -1,3 +1,4 @@
+import type { UnassignedDrawerState } from './planning-unassigned'
 import { movePlayerToSet, type FlexiblePlanning } from './planningSets'
 import { movePlayerToPlanningSquad } from './planning-squads'
 
@@ -18,7 +19,7 @@ export function placePickerPlayers(planning: FlexiblePlanning, groupId: string, 
   return [...new Set(playerIds)].reduce((next,id) => movePlayerToPlanningSquad(movePlayerToSet(next,groupId,setId,id),id,groupId), planning)
 }
 // Transient navigation state, keyed by save and SPA history entry; not persisted to disk.
-export type PickerReturnState = { clubId: string | null; groupId: string; setId: string; search: string; selected: string[]; anchor: string | null; quickFilter: string; sort: { key: string; direction: 1 | -1 }; scrollTop: number; scrollLeft: number }
+export type PickerReturnState = { drawer?: UnassignedDrawerState; clubId: string | null; groupId: string; setId: string; search: string; selected: string[]; anchor: string | null; quickFilter: string; sort: { key: string; direction: 1 | -1 }; scrollTop: number; scrollLeft: number }
 const returns = new Map<string, PickerReturnState>()
 export function rememberPickerReturn(key: string, state: PickerReturnState) { returns.clear(); returns.set(key,state) }
 export function readPickerReturn(key: string) { return returns.get(key) ?? null }
