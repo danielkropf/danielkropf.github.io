@@ -1,3 +1,4 @@
+import { loadSaveRead, peekSaveRead, invalidateSaveReads, rememberSaveRead } from './save-read-cache'
 import { assertPrivateSession, onPrivateSessionChange, privateSessionGeneration } from './private-session'
 import { paginatedQuery } from './paginated-query'
 import { supabase } from './supabase'
@@ -106,7 +107,10 @@ async function loadCurrentIdentities(saveId: string): Promise<IdentityRow[]> {
   return (result.data ?? []) as unknown as IdentityRow[]
 }
 
-export async function loadPlayerSnapshots(saveId: string, playerId?: string, checkpointDate?: string): Promise<SnapshotQueryRow[]> {
+export function loadPlayerSnapshots(saveId: string, playerId?: string, checkpointDate?: string): Promise<SnapshotQueryRow[]> {
+  return loadSaveRead(saveId, ['snapshots', playerId ?? null, checkpointDate ?? null], () => readPlayerSnapshots(saveId, playerId, checkpointDate))
+}
+async function readPlayerSnapshots(saveId: string, playerId?: string, checkpointDate?: string): Promise<SnapshotQueryRow[]> {
   if (!supabase) return []
   const result = await paginatedQuery(() => {
     let query = supabase!.from('player_snapshots')
@@ -116,6 +120,7 @@ export async function loadPlayerSnapshots(saveId: string, playerId?: string, che
     if (checkpointDate) query = query.eq('snapshot_date', checkpointDate)
     return query
   })
+  if (result.error) throw result.error
   return result.data as unknown as SnapshotQueryRow[]
 }
 function loadExactSnapshots(saveId: string, checkpointDate: string) { return loadPlayerSnapshots(saveId, undefined, checkpointDate) }
@@ -228,6 +233,10 @@ export async function loadCurrentPlayers(saveId: string, options?: CurrentPlayer
   assertPrivateSession(generation)
   const key = portraitKey(saveId, checkpointDate)
 
+  if (options?.summary && currentPlayers.has(key)) {
+    const full = await currentPlayers.get(key)!
+    return full.filter(player => player.player_snapshots.length > 0)
+  }
   if (options?.summary) {
     const cached = currentPlayerSummaries.get(key)
     if (cached) return cached
@@ -255,20 +264,27 @@ export async function loadCurrentPlayers(saveId: string, options?: CurrentPlayer
 
   const cached = currentPlayers.get(key)
   if (cached) return cached
-  const request = (async () => {
+  let request!: Promise<RichPlayer[]>
+  request = (async () => {
     const [identities, snapshots] = await Promise.all([
       loadCurrentIdentities(saveId),
       checkpointDate ? loadExactSnapshots(saveId, checkpointDate) : Promise.resolve([] as SnapshotQueryRow[]),
     ])
-    return resolvePortrait(saveId, identities, snapshots, checkpointDate)
+    const portrait = await resolvePortrait(saveId, identities, snapshots, checkpointDate)
+    assertPrivateSession(generation)
+    if (currentPlayers.get(key) === request) rememberSaveRead(saveId, ['current-portrait'], portrait)
+    return portrait
   })().catch(error => { if (currentPlayers.get(key) === request) currentPlayers.delete(key); throw error })
   currentPlayers.set(key, request)
   return request
 }
 
+export function peekCurrentPlayers(saveId: string) { return peekSaveRead<RichPlayer[]>(saveId, ['current-portrait']) }
+
 export function preloadSave(saveId: string) { void loadCurrentPlayers(saveId).catch(() => undefined) }
 
 export function invalidateSaveData(saveId: string) {
+  invalidateSaveReads(saveId)
   players.delete(saveId)
   checkpoints.delete(saveId)
   clearPortraitKeys(saveId)
@@ -280,6 +296,7 @@ export function loadReferenceDataset() {
 }
 
 export function clearAllSaveData() {
+  invalidateSaveReads()
   players.clear(); checkpoints.clear(); currentPlayers.clear(); currentPlayerSummaries.clear()
 }
 

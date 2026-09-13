@@ -1,5 +1,6 @@
+import { loadSaveRead, peekSaveRead, rememberSaveRead } from '../lib/save-read-cache'
 import { playerNameStatusClass } from '../lib/player-name-status'
-import { loadModelConfig } from '../lib/model-config'
+import { loadModelConfig, peekModelConfig } from '../lib/model-config'
 import { primaryPlanningClubId, resolveClubPlanning } from '../lib/multiclub-planning'
 import { hasPlayerMarketFlag, type FlexiblePlanning } from '../lib/planningSets'
 import '../player-profile.css'
@@ -81,24 +82,38 @@ export function PlayerPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { selected, currentCheckpoint } = useSaves()
-  const [state, setState] = useState<LoadState>({ status: 'loading' })
-  const [index, setIndex] = useState(-1)
+  const checkpointDate = selected && currentCheckpoint?.saveId === selected.id && currentCheckpoint.status === 'ready' ? currentCheckpoint.date : null
+  const readyKey = ['player-ready', id, checkpointDate]
+  function warmProfile(): Extract<LoadState, { status: 'data' }> | undefined {
+    if (!selected || !id) return undefined
+    const cached = peekSaveRead<Extract<LoadState, { status: 'data' }>>(selected.id, readyKey)
+    const model = peekModelConfig(selected.id) as { planning?: FlexiblePlanning; planning_by_club?: Record<string, FlexiblePlanning> } | null
+    if (!cached || !model) return undefined
+    const primary = primaryPlanningClubId(selected.structure?.trackedClubs ?? [])
+    const empty = () => ({ groups: [], slotAssignments: {} })
+    return { ...cached, planning: primary ? resolveClubPlanning(model, primary, primary, empty) : model.planning ?? empty() }
+  }
+  const [state, setState] = useState<LoadState>(() => warmProfile() ?? { status: 'loading' })
+  const [index, setIndex] = useState(() => checkpointDate ? warmProfile()?.player.player_snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) ?? -1 : -1)
   const [section, setSection] = useState('summary')
   const [compareMode, setCompareMode] = useState('previous')
-  const checkpointDate = selected && currentCheckpoint?.saveId === selected.id && currentCheckpoint.status === 'ready' ? currentCheckpoint.date : null
+
 
   useEffect(() => {
     let active = true
-    setIndex(-1)
+    const warm = warmProfile()
+    setIndex(checkpointDate ? warm?.player.player_snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) ?? -1 : -1)
     setSection('summary')
-    setState({ status: 'loading' })
+    setState(warm ?? { status: 'loading' })
 
     if (!supabase) { setState({ status: 'error', message: 'Banco Mestre não configurado.' }); return () => { active = false } }
     if (!id || !selected) { setState({ status: 'not-found' }); return () => { active = false } }
     const client = supabase
 
     void (async () => {
-      const [identityResult, historySnapshots, stats, reference, evolutionContext, saveEvents, currentPortrait, model] = await Promise.all([
+      const [bundle, model] = await Promise.all([
+        loadSaveRead(selected.id, ['player-bundle', id, checkpointDate], async () => {
+          const results = await Promise.all([
         client.from('players')
           .select('id,fm_player_id,current_name,nationality,date_of_birth,first_seen_date,last_seen_date,is_active')
           .eq('id', id).eq('save_id', selected.id).maybeSingle(),
@@ -108,8 +123,13 @@ export function PlayerPage() {
         loadPlayerEvolutionContext(selected.id, id),
         loadPlayerSaveEvents(selected.id, id),
         checkpointDate ? loadCurrentPlayers(selected.id) : Promise.resolve([]),
+          ])
+          if (results[0].error) throw new Error(results[0].error.message)
+          return results
+        }, result => Boolean(result[0].data) && !result[4].diagnostic && !result[5].diagnostic && result[3] !== null),
         loadModelConfig(selected.id).catch(() => ({})),
       ])
+      const [identityResult, historySnapshots, stats, reference, evolutionContext, saveEvents, currentPortrait] = bundle
       if (!active) return
       const playerResult = { ...identityResult, data: identityResult.data ? { ...identityResult.data, player_snapshots: historySnapshots } : null }
       if (playerResult.error) { setState({ status: 'error', message: playerResult.error.message }); return }
@@ -126,7 +146,9 @@ export function PlayerPage() {
       const config = model as { planning?: FlexiblePlanning; planning_by_club?: Record<string, FlexiblePlanning> }
       const empty = () => ({ groups: [], slotAssignments: {} })
       const planning = primaryClub ? resolveClubPlanning(config, primaryClub, primaryClub, empty) : config.planning ?? empty()
-      setState({ status: 'data', player, stats, reference, evolutionContext, saveEvents, planning })
+      const next: Extract<LoadState, { status: 'data' }> = { status: 'data', player, stats, reference, evolutionContext, saveEvents, planning }
+      if (!evolutionContext.diagnostic && !saveEvents.diagnostic && reference) rememberSaveRead(selected.id, readyKey, next)
+      setState(next)
       setIndex(checkpointDate ? snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) : -1)
     })().catch(cause => { if (active) setState({ status: 'error', message: cause instanceof Error ? cause.message : 'Falha inesperada ao carregar a ficha do jogador.' }) })
 

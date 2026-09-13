@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { invalidateSaveReads } from '../lib/save-read-cache'
 import { PlayerPage } from './PlayerPage'
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   loadReferenceDataset: vi.fn(),
 }))
 
-vi.mock('../lib/model-config', () => ({ loadModelConfig: (...args: unknown[]) => mocks.loadModelConfig(...args) }))
+vi.mock('../lib/model-config', () => ({ peekModelConfig: () => ({}), loadModelConfig: (...args: unknown[]) => mocks.loadModelConfig(...args) }))
 
 vi.mock('../features/saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected, currentCheckpoint: mocks.currentCheckpoint }) }))
 vi.mock('../lib/longitudinal-service', () => ({
@@ -58,6 +59,7 @@ vi.mock('../lib/supabase', () => ({
 }))
 
 beforeEach(() => {
+  invalidateSaveReads()
   mocks.currentCheckpoint = undefined
   mocks.loadModelConfig.mockReset().mockResolvedValue({})
   mocks.loadEvolutionContext.mockReset()
@@ -266,4 +268,22 @@ it('uses the roster sale color on the profile while retaining both market flags'
   const name = await screen.findByRole('heading', { name: 'Jogador A' })
   expect(name.classList.contains('is-for-sale')).toBe(true)
   expect(name.title).toBe('Para venda e empréstimo')
+})
+
+it('reopens a loaded profile immediately without repeating identity or history requests', async () => {
+  mocks.selected = { id: 'save-a', name: 'A' }
+  mocks.currentCheckpoint = { saveId: 'save-a', status: 'ready', date: '2030-07-01' }
+  mocks.loadReferenceDataset.mockResolvedValue({ players: [], attributes: [], markets: [] })
+  const current = snapshot('s1', '2030-07-01')
+  mocks.loadCurrentPlayers.mockResolvedValue([player('player-1', 'Jogador A', [current])])
+  mocks.queries.push({ filters: [], result: Promise.resolve({ data: player('player-1', 'Jogador A', [current]), error: null }) })
+  const first = render(view())
+  await screen.findByRole('heading', { name: 'Jogador A' })
+  first.unmount()
+  render(view())
+  expect(screen.getByRole('heading', { name: 'Jogador A' })).not.toBeNull()
+  expect(screen.queryByText('Carregando ficha do jogador…')).toBeNull()
+  await waitFor(() => expect(mocks.loadModelConfig).toHaveBeenCalledTimes(2))
+  expect(mocks.loadEvolutionContext).toHaveBeenCalledTimes(1)
+  expect(mocks.loadCurrentPlayers).toHaveBeenCalledTimes(1)
 })

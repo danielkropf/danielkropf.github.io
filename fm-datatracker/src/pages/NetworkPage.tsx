@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSaves } from '../features/saves/SaveContext'
-import { loadCurrentPlayers, type RichPlayer } from '../lib/dataCache'
-import { loadModelConfig } from '../lib/model-config'
+import { peekCurrentPlayers, loadCurrentPlayers, type RichPlayer } from '../lib/dataCache'
+import { peekModelConfig, loadModelConfig } from '../lib/model-config'
 import { deriveNetworkBalance, globalPlannedClubIndex, type NetworkConfig } from '../lib/network-planning'
 
 type Player = RichPlayer
 
 export function NetworkPage() {
   const { selected } = useSaves()
-  const [players, setPlayers] = useState<Player[]>([])
-  const [config, setConfig] = useState<NetworkConfig>({})
-  const [loading, setLoading] = useState(true)
+  const [players, setPlayers] = useState<Player[]>(() => selected ? peekCurrentPlayers(selected.id) ?? [] : [])
+  const [config, setConfig] = useState<NetworkConfig>(() => selected ? peekModelConfig(selected.id) as NetworkConfig ?? {} : {})
+  const [loading, setLoading] = useState(() => !selected || !peekCurrentPlayers(selected.id))
   const [error, setError] = useState('')
   const [currentFilter, setCurrentFilter] = useState('all')
   const [ownerFilter, setOwnerFilter] = useState('all')
@@ -22,7 +22,7 @@ export function NetworkPage() {
   useEffect(() => {
     let active = true
     if (!selected) return () => { active = false }
-    setLoading(true); setError('')
+    setLoading(!peekCurrentPlayers(selected.id)); setError('')
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)])
       .then(([rows, model]) => { if (active) { setPlayers(rows); setConfig(model as NetworkConfig) } })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Falha ao carregar a rede.') })

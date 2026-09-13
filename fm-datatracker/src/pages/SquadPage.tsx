@@ -19,13 +19,13 @@ import { ATTRIBUTE_CATALOG, type AttributeCategory } from '../lib/attributes'
 import { generalReferencePercentile, generalReferenceScoresByFamily, normalizeCountry, referenceLevel, type ReferenceDataset, type ReferenceLevel } from '../lib/reference'
 import { PITCH_NODES, positionGroup, rolesFor, type TacticPhase } from '../lib/tactics'
 import { canPlayPosition } from '../lib/positions'
-import { loadCurrentPlayers, loadReferenceDataset, type RichPlayer } from '../lib/dataCache'
+import { peekCurrentPlayers, loadCurrentPlayers, loadReferenceDataset, type RichPlayer } from '../lib/dataCache'
 import { useSaves } from '../features/saves/SaveContext'
 import { PlayerPeek } from '../components/PlayerPeek'
 import { PlanningStatusBadge } from '../components/PlanningStatusBadge'
 import { RosterPlayerContextMenu } from '../components/RosterPlayerContextMenu'
 import type { PlayerRow } from '../types/domain'
-import { loadModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
+import { peekModelConfig, loadModelConfig, retryModelConfigPatch, scheduleModelConfigPatch } from '../lib/model-config'
 import { describeDbError } from '../lib/db-error'
 import { movePlayerAcrossClubPlans, patchClubPlanning, primaryPlanningClubId, resolveClubPlanning, resolveClubTacticId } from '../lib/multiclub-planning'
 import { layoutsFor, movePlayerToSet, planningSetDisplayLabel, type FlexiblePlanning, type PlanningSetLayout, type TacticSlotDescriptor } from '../lib/planningSets'
@@ -130,8 +130,8 @@ export function SquadPage() {
   const { selected } = useSaves()
   const navigate = useNavigate()
   const potential = usePotential()
-  const [players, setPlayers] = useState<RichPlayer[]>([])
-  const [model, setModel] = useState<ModelConfig>({})
+  const [players, setPlayers] = useState<RichPlayer[]>(() => selected ? peekCurrentPlayers(selected.id) ?? [] : [])
+  const [model, setModel] = useState<ModelConfig>(() => selected ? peekModelConfig(selected.id) as ModelConfig ?? {} : {})
   const [loading, setLoading] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [search, setSearch] = useState('')
@@ -167,7 +167,7 @@ export function SquadPage() {
   useEffect(() => {
     let active = true
     if (!supabase || !selected) { setPlayers([]); setModel({}); return () => { active = false } }
-    setLoading(true)
+    setLoading(!peekCurrentPlayers(selected.id))
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)]).then(([cached, modelConfig]) => {
       if (!active) return
       startTransition(() => { setPlayers(cached as RichPlayer[]); setModel(modelConfig as ModelConfig); setLoading(false); setSaveStatus('✓ Salvo'); setSaveDetail('') })

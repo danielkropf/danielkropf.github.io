@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { loadCurrentPlayers, type CurrentPlayerSummary } from '../lib/dataCache'
+import { peekCurrentPlayers, loadCurrentPlayers, type CurrentPlayerSummary } from '../lib/dataCache'
 import { formatCheckpointDate } from '../lib/current-checkpoint'
-import { loadModelConfig } from '../lib/model-config'
+import { peekModelConfig, loadModelConfig } from '../lib/model-config'
 import { derivePlanningDistribution, type PlanningDistributionSource } from '../lib/planningDistribution'
 import { SquadDistribution } from '../components/SquadDistribution'
 import { useSaves } from '../features/saves/SaveContext'
@@ -15,9 +15,9 @@ type ModelConfig = {
 
 export function Dashboard() {
   const { selected, currentCheckpoint } = useSaves()
-  const [players, setPlayers] = useState<CurrentPlayerSummary[]>([])
-  const [model, setModel] = useState<ModelConfig>({})
-  const [loading, setLoading] = useState(true)
+  const [players, setPlayers] = useState<CurrentPlayerSummary[]>(() => selected ? (peekCurrentPlayers(selected.id) ?? []).filter(player => player.player_snapshots.length) : [])
+  const [model, setModel] = useState<ModelConfig>(() => selected ? peekModelConfig(selected.id) as ModelConfig ?? {} : {})
+  const [loading, setLoading] = useState(() => !selected || !peekCurrentPlayers(selected.id))
 
   useEffect(() => {
     let active = true
@@ -28,7 +28,7 @@ export function Dashboard() {
       return () => { active = false }
     }
 
-    setLoading(true)
+    setLoading(!peekCurrentPlayers(selected.id))
     void Promise.all([
       loadCurrentPlayers(selected.id, { summary: true }),
       loadModelConfig(selected.id),
