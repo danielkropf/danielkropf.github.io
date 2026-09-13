@@ -5,7 +5,7 @@ import { playerNameStatusClass as statusPlayerClass } from '../lib/player-name-s
 import { pickerAllocationState, readPickerPreferences, writePickerPreferences } from '../lib/planning-picker-preferences'
 import { hasPlayerMarketFlag, togglePlayerMarketFlag } from '../lib/planningSets'
 import { safeStorage } from '../lib/safe-storage'
-import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -194,7 +194,7 @@ function planningRoleReferenceRatings(scopeKey: string, reference: ReferenceData
   return ratings
 }
 function normalizePlanning(raw: (Planning & { assignments?: Record<string, string> }) | undefined): Planning {
-  const base: Planning = raw ? { ...defaults(), groups: raw.groups ?? defaults().groups, slotAssignments: raw.slotAssignments ?? {}, setLayouts: raw.setLayouts ?? {} } : defaults()
+  const base: Planning = raw ? { ...defaults(), ...raw, groups: raw.groups ?? defaults().groups, slotAssignments: raw.slotAssignments ?? {}, setLayouts: raw.setLayouts ?? {} } : defaults()
   return { ...base, groups: [...base.groups, ...transferGroups.filter(required => !base.groups.some(group => group.id === required.id))] }
 }
 function modelDiagnostic(result: { diagnostic?: string | null }) { return result.diagnostic ?? '' }
@@ -312,14 +312,14 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       const latest = modelConfig as Config
       const tactics = latest.tactics ?? []
       const tacticSelection = sanitizeClubTacticSelections({ ...latest, selected_tactic_id_by_club: promoteLegacyPrimaryTacticId(latest, primaryClubId) }, tactics.map(item => item.id))
-      setConfig(previous => ({ ...previous, tactics, role_weight_overrides: latest.role_weight_overrides ?? previous.role_weight_overrides, ...tacticSelection }))
+      setConfig(previous => ({ ...previous, planning: normalizePlanning(latest.planning), planning_by_club: Object.fromEntries(Object.entries(promoteLegacyPrimaryPlanning(latest, primaryClubId)).map(([id, raw]) => [id, normalizePlanning(raw as Planning)])), tactics, role_weight_overrides: latest.role_weight_overrides ?? previous.role_weight_overrides, ...tacticSelection }))
       setExpandedSets(new Set()); setFocusedSetId(null)
     }).catch(error => { if (alive) console.error('Falha ao sincronizar a tática de referência do Planejamento.', describeDbError(error).full) })
     return () => { alive = false }
   }, [active, selected?.id, primaryClubId])
 
   useEffect(() => {
-    if (!loaded.current || !selected || !supabase) return
+    if (!active || !loaded.current || !selected || !supabase) return
     const patch: Record<string, unknown> = { planning_by_club: config.planning_by_club ?? {}, selected_tactic_id: config.selected_tactic_id ?? null, selected_tactic_id_by_club: config.selected_tactic_id_by_club ?? {} }
     if (config.planning !== undefined) patch.planning = config.planning
     scheduleModelConfigPatch(selected.id, '2.9.0', patch, saveStatus)
@@ -363,7 +363,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const plannedClubConflict = (playerId: string) => planningIndex.conflicts[playerId]?.map(clubId => planningClubs.find(item => item.club_id === clubId)?.club.name ?? clubId) ?? []
 
   useEffect(() => {
-    if (!loaded.current || !selectedClubId) return
+    if (!active || !loaded.current || !selectedClubId) return
     const names = players.map(player => factualSquadForPlayer(player.id)).filter((name): name is string => Boolean(name))
     const next = reconcilePlanningSquadGroups(planning, names, new Map(players.map(player => [player.id, factualSquadForPlayer(player.id)]))) as Planning
     if (next === planning) return
@@ -435,15 +435,24 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   const currentGroupPlayerIds = useMemo(() => new Set(Object.values(planning.slotAssignments[currentGroup?.id ?? ''] ?? {}).flat().filter(Boolean)), [planning.slotAssignments, currentGroup?.id])
   const unassignedItems = useMemo<UnassignedDrawerItem[]>(() => {
     if (!currentGroup || isTransferGroup) return []
-    const ids = new Set(unassignedSquadPlayerIds(players.map(player => ({ id: player.id, squadId: squadGroupForPlayer(player.id), observed: Boolean(latest(player)) })), currentGroup.id, planning.slotAssignments[currentGroup.id] ?? {}))
+    const ids = new Set(unassignedSquadPlayerIds(players.map(player => ({ id: player.id, squadId: squadGroupForPlayer(player.id), observed: Boolean(latest(player)), loanedOut: membershipFact(player.id).kind === 'loaned_out' })), currentGroup.id, planning.slotAssignments[currentGroup.id] ?? {}))
     return players.filter(player => ids.has(player.id)).map(player => {
       const snapshot = latest(player)!
       const candidates = pairs.map(pair => ({ slotId: pair.ip.playerId, position: pair.ip.position, familiar: isPlanningFamiliar(planningFamiliarity(snapshot,[pair])), score: pairRating(player,pair), pair }))
       const best = bestEligibleTacticPosition(candidates)
-      const key = best ? functionProjectionKey([{phase:'IP',position:best.pair.ip.position,roleCode:best.pair.ip.roleCode},{phase:'OOP',position:best.pair.oop.position,roleCode:best.pair.oop.roleCode}]) : ''
-      return { id: player.id, name: player.current_name, age: snapshot.age, positions: snapshot.positions, bestPosition: best?.position ?? null, bestRole: best ? `${best.pair.ip.position} · ${best.pair.ip.roleName} / ${best.pair.oop.position} · ${best.pair.oop.roleName}` : null, eligiblePositions: [...new Set(candidates.filter(c=>c.familiar).map(c=>c.position))], hasEligible: candidates.some(c=>c.familiar), value: best?.score ?? null, status: rosterStatusForPlayer(player.id), score: best ? <ScoreWithProjection playerId={player.id} currentScore={best.score} currentRank={pairPercentile(player,best.pair)} rankPopulation={referenceRatings.get(best.slotId) ?? []} snapshot={snapshot} scoreType="function" scoreKey={key} variant="compact" showPotential={potential.showPotential} /> : <span>—</span> }
+      const renderRating = (candidate: typeof best) => {
+        if (!candidate) return <span>—</span>
+        const scoreKey = functionProjectionKey([{phase:'IP',position:candidate.pair.ip.position,roleCode:candidate.pair.ip.roleCode},{phase:'OOP',position:candidate.pair.oop.position,roleCode:candidate.pair.oop.roleCode}])
+        return <ScoreWithProjection playerId={player.id} currentScore={candidate.score} currentRank={pairPercentile(player,candidate.pair)} rankPopulation={referenceRatings.get(candidate.slotId) ?? []} snapshot={snapshot} scoreType="function" scoreKey={scoreKey} variant="compact" showPotential={potential.showPotential} />
+      }
+      const setRatings = currentSets.map(set => {
+        const slots = candidates.filter(candidate => set.slotIds.includes(candidate.slotId))
+        const chosen = slots.some(candidate => candidate.familiar) ? bestEligibleTacticPosition(slots) : bestEligibleTacticPosition(slots.map(candidate => ({ ...candidate, familiar: true })))
+        return { id: set.id, label: displaySetLabel(set), eligible: slots.some(candidate => candidate.familiar), position: chosen?.position ?? null, score: renderRating(chosen) }
+      })
+      return { setRatings, id: player.id, name: player.current_name, age: snapshot.age, positions: snapshot.positions, bestPosition: best?.position ?? null, bestRole: best ? `${best.pair.ip.position} · ${best.pair.ip.roleName} / ${best.pair.oop.position} · ${best.pair.oop.roleName}` : null, eligiblePositions: [...new Set(candidates.filter(c=>c.familiar).map(c=>c.position))], hasEligible: candidates.some(c=>c.familiar), value: best?.score ?? null, status: rosterStatusForPlayer(player.id), score: renderRating(best) }
     }).sort((a,b)=>(b.value ?? -1)-(a.value ?? -1)||a.name.localeCompare(b.name,'pt-BR'))
-  }, [players, planning, currentGroup, isTransferGroup, pairs, playerScores, referenceRatings, membershipFacts, latestByPlayer, potential.showPotential])
+  }, [players, planning, currentGroup, isTransferGroup, pairs, playerScores, referenceRatings, membershipFacts, latestByPlayer, potential.showPotential, currentSets])
   function assignUnassigned(ids: string[], setId: string) {
     if (!currentGroup || !currentSets.some(set=>set.id===setId)) return
     const validIds = ids.filter(id=>unassignedItems.some(item=>item.id===id))
@@ -713,16 +722,17 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       <div className="squad-pagination planning-group-selector"><button onClick={() => changeGroup(-1)} disabled={planning.groups.length < 2}>‹</button><strong>{currentGroup?.name ?? 'Nenhum elenco'}</strong><span>{planning.groups.length ? `${currentGroupIndex + 1} de ${planning.groups.length}` : '0 de 0'}</span><button onClick={() => changeGroup(1)} disabled={planning.groups.length < 2}>›</button></div>
       <label className={`coverage-toggle ${isTransferGroup || !tactic ? 'is-disabled' : ''}`}><input type="checkbox" checked={showCoverages} disabled={isTransferGroup || !tactic} onChange={event => setShowCoverages(event.target.checked)} /><span>Mostrar coberturas</span></label>
       <label className={`coverage-toggle planning-score-toggle ${isTransferGroup || !tactic ? 'is-disabled' : ''}`}><input type="checkbox" checked={showScores} disabled={isTransferGroup || !tactic} onChange={event => setShowScores(event.target.checked)} /><span>Mostrar notas</span></label>
-      <div className="planning-flex-actions">{!isTransferGroup && <button type="button" className="ghost dt-control" aria-expanded={drawerOpen} onClick={()=>{setDrawerRestore(null);setDrawerOpen(open=>!open)}}>Sem conjunto · {unassignedItems.length}</button>}<button className="ghost undo-planning-button dt-control" onClick={undo} disabled={!undoPlanning} aria-label="Desfazer última alteração">↶</button><button className="ghost manage-sets-button dt-control" disabled={isTransferGroup || !tactic} onClick={() => setManageSetsOpen(true)}>Organizar posições</button><button className="ghost manage-squads-button dt-control" onClick={() => setManageSquadsOpen(true)}>Gerenciar elencos</button><button className="planning-clear-current dt-control" type="button" disabled={!currentGroupPlayerIds.size} onClick={clearCurrentGroup} aria-label={`Limpar ${currentGroup?.name ?? 'elenco'}`}>🗑</button></div>
+      <div className="planning-flex-actions"><button className="ghost undo-planning-button dt-control" onClick={undo} disabled={!undoPlanning} aria-label="Desfazer última alteração">↶</button><button className="ghost manage-sets-button dt-control" disabled={isTransferGroup || !tactic} onClick={() => setManageSetsOpen(true)}>Organizar posições</button><button className="ghost manage-squads-button dt-control" onClick={() => setManageSquadsOpen(true)}>Gerenciar elencos</button><button className="planning-clear-current dt-control" type="button" disabled={!currentGroupPlayerIds.size} onClick={clearCurrentGroup} aria-label={`Limpar ${currentGroup?.name ?? 'elenco'}`}>🗑</button></div>
     </section>
 
-    <section className={`planning-depth-layout planning-flex-layout planning-full-pitch-layout ${drawerOpen && !isTransferGroup ? 'has-unassigned-drawer' : ''}`}>
+    <section className={`planning-depth-layout planning-flex-layout planning-full-pitch-layout ${!isTransferGroup ? 'has-unassigned-rail' : ''} ${drawerOpen && !isTransferGroup ? 'has-unassigned-drawer' : ''}`}>
       <div className={`planning-flex-board ${expandedSets.size ? 'has-expanded' : ''} ${isTransferGroup ? 'is-transfer' : ''}`}>
         {isTransferGroup && currentGroup ? <TransferGroupPanel group={currentGroup} playerIds={planning.slotAssignments[currentGroup.id]?.market ?? []} players={players} latest={latest} fact={membershipFact} plannedClub={plannedClubName} dragging={Boolean(activePlayer)} drop={() => { if (activePlayer) placePlayer(currentGroup.id, 'market', activePlayer.id); stopPlayerDrag() }} startDrag={id => setDragging({ type: 'player', id })} dragEnd={stopPlayerDrag} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} remove={playerId => update(value => togglePlayerMarketFlag(value, playerId, currentGroup.id as 'loan' | 'sale') as Planning)} />
           : tactic && currentGroup ? <div className={`planning-set-list is-spatial-ready ${expandedSets.size ? 'has-expanded' : ''}`}>{currentSets.map(set => <PlanningSetRow key={set.id} set={set} spatial={spatialPlacements.get(set.id)} displayLabel={displaySetLabel(set)} headerLabel={setHeaderLabel(set)} pairs={setPairs(set)} assignedIds={planning.slotAssignments[currentGroup.id]?.[set.id] ?? []} players={players} latest={latest} expanded={expandedSets.has(set.id)} focused={focusedSetId === set.id} coverages={showCoverages ? coveragePlayers(set) : []} showCoverages={showCoverages} showScores={showScores} generalScore={generalScore} scoreDetails={tacticScoreDetails} primaryLabel={primaryLabel} activePlayer={activePlayer} playerDropPreview={playerDropPreview} score={player => setScore(player, set)} familiarity={player => setFamiliarity(player, set)} fact={membershipFact} plannedClub={plannedClubName} plannedConflict={plannedClubConflict} rosterStatus={rosterStatusForPlayer} toggle={() => toggleSet(set.id)} focus={() => setFocusedSetId(current => current === set.id ? null : set.id)} addPlayer={() => { setPickerSearch(''); setPickerSelected(new Set()); setPickerAnchor(null); setPickerSetId(set.id) }} startPlayerDrag={(id, event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); setDragging({ type: 'player', id }); setPlayerDropPreview(null) }} stopPlayerDrag={stopPlayerDrag} previewPlayer={beforePlayerId => setPlayerDropPreview({ setId: set.id, beforePlayerId })} dropPlayer={beforePlayerId => { if (activePlayer) placePlayer(currentGroup.id, set.id, activePlayer.id, beforePlayerId); stopPlayerDrag() }} open={id => navigate(`/players/${id}`)} context={openPlayerMenu} moveVisualGrid={cell => moveSetVisualPosition(set.id, cell)} />)}</div>
           : <div className="empty planning-no-tactic"><h2>Nenhuma tática disponível</h2><p>Crie uma tática para organizar o elenco por posição e função.</p><button onClick={() => navigate('/tactics')}>Criar primeira tática</button></div>}
       </div>
-      {drawerOpen && !isTransferGroup && currentGroup && <PlanningUnassignedDrawer key={`${selectedClubId}:${currentGroup.id}:${tactic?.id}`} items={unassignedItems} sets={currentSets.map(set=>({id:set.id,label:displaySetLabel(set)}))} initialState={drawerRestore?.groupId===currentGroup.id?drawerRestore.state:undefined} onClose={()=>{setDrawerOpen(false);setDrawerRestore(null)}} onProfile={openUnassignedProfile} onContext={openPlayerMenu} onDragStart={id=>setDragging({type:'player',id})} onDragEnd={stopPlayerDrag} onAssign={assignUnassigned} />}
+      {!isTransferGroup && <button className="planning-unassigned-rail" type="button" aria-label={`Sem conjunto · ${unassignedItems.length}`} title={drawerOpen ? 'Recolher sem conjunto' : `Sem conjunto · ${unassignedItems.length}`} aria-expanded={drawerOpen} onClick={() => { setDrawerRestore(null); setDrawerOpen(open => !open) }}><span aria-hidden="true">{drawerOpen ? '›' : '‹'}</span></button>}
+      {drawerOpen && !isTransferGroup && currentGroup && <PlanningUnassignedDrawer key={`${selectedClubId}:${currentGroup.id}:${tactic?.id}`} items={unassignedItems} sets={currentSets.map(set=>({id:set.id,label:displaySetLabel(set)}))} initialState={drawerRestore?.groupId===currentGroup.id?drawerRestore.state:undefined} onProfile={openUnassignedProfile} onContext={openPlayerMenu} onDragStart={id=>setDragging({type:'player',id})} onDragEnd={stopPlayerDrag} onAssign={assignUnassigned} />}
     </section>
 
     {pickerSet && currentGroup && <div className="settings-overlay planning-add-player-overlay" onClick={() => setPickerSetId(null)}>
@@ -786,7 +796,6 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
   const rowItems: Array<{ player: Player; coverage: boolean } | null> = Array.from({ length: planningPitchVisibleSlotCount(visible.length, expanded, capacity) }, (_, index) => visible[index] ?? null)
   const grouped = set.slotIds.length > 1
   const articleRef = useRef<HTMLElement | null>(null)
-  const compactRectRef = useRef<PlanningSetRect | null>(null)
   const [expansionLayout, setExpansionLayout] = useState<PlanningSetExpansion | null>(null)
   const [visualGridPreview, setVisualGridPreview] = useState<{ cell: PlanningVisualGridCell; occupantLabel: string | null } | null>(null)
   const visualGridPreviewRef = useRef<{ cell: PlanningVisualGridCell; occupantLabel: string | null } | null>(null)
@@ -796,19 +805,32 @@ function PlanningSetRow({ set, spatial, displayLabel, headerLabel, pairs, assign
   const activeFamiliarity = activePlayer ? familiarity(activePlayer) : 'unknown'
   const preview = playerDropPreview?.setId === set.id ? playerDropPreview.beforePlayerId : undefined
   function rectRelativeTo(rect: DOMRect, parentRect: DOMRect): PlanningSetRect { return { left: rect.left - parentRect.left, top: rect.top - parentRect.top, width: rect.width, height: rect.height } }
-  function measuredExpansion(compactOverride?: PlanningSetRect | null) {
-    const article = articleRef.current; const pitch = article?.parentElement; if (!article || !pitch) return null
-    const pitchRect = pitch.getBoundingClientRect(); const compact = compactOverride ?? rectRelativeTo(article.getBoundingClientRect(), pitchRect)
-    const obstacles = [...pitch.querySelectorAll<HTMLElement>('.planning-set-row')].filter(item => item !== article).map(item => rectRelativeTo(item.getBoundingClientRect(), pitchRect))
-    return resolvePlanningSetExpansion({ pitchWidth: pitchRect.width, pitchHeight: pitchRect.height, compact, obstacles, playerCount: options.length, cardWidth: Math.max(110, compact.width - 12), cardHeight: 30, gap: 3, verticalItemsPerRow: 1, verticalPadding: 26 })
+  function measuredExpansion() {
+    const article = articleRef.current; const pitch = article?.parentElement
+    if (!article || !pitch) return null
+    const pitchRect = pitch.getBoundingClientRect()
+    // Measure the current compact CSS geometry synchronously, before paint.
+    // Pixel rectangles from a previous pitch width cannot be reused on resize.
+    const wasExpanded = article.classList.contains('is-expanded')
+    article.classList.remove('is-expanded')
+    const compact = rectRelativeTo(article.getBoundingClientRect(), pitchRect)
+    if (wasExpanded) article.classList.add('is-expanded')
+    return resolvePlanningSetExpansion({ pitchWidth: pitchRect.width, pitchHeight: pitchRect.height, compact, obstacles: [], playerCount: planningPitchVisibleSlotCount(options.length, true, capacity), cardWidth: Math.max(110, compact.width - 12), cardHeight: 30, gap: 3, verticalItemsPerRow: 1, verticalPadding: 26 })
   }
   function toggleExpansion() {
-    if (expanded) { compactRectRef.current = null; setExpansionLayout(null); toggle(); return }
-    const article = articleRef.current; const pitch = article?.parentElement
-    if (article && pitch) { const compact = rectRelativeTo(article.getBoundingClientRect(), pitch.getBoundingClientRect()); compactRectRef.current = compact; setExpansionLayout(measuredExpansion(compact)) }
+    setExpansionLayout(expanded ? null : measuredExpansion())
     toggle()
   }
-  useEffect(() => { if (!expanded) { compactRectRef.current = null; setExpansionLayout(null); return }; const refresh = () => compactRectRef.current && setExpansionLayout(measuredExpansion(compactRectRef.current)); refresh(); window.addEventListener('resize', refresh); return () => window.removeEventListener('resize', refresh) }, [expanded, options.length])
+  useLayoutEffect(() => {
+    if (!expanded) { setExpansionLayout(null); return }
+    const refresh = () => setExpansionLayout(measuredExpansion())
+    refresh()
+    const pitch = articleRef.current?.parentElement
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(refresh)
+    if (pitch) observer?.observe(pitch)
+    window.addEventListener('resize', refresh)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', refresh) }
+  }, [expanded, options.length, spatial?.x, spatial?.y])
   function snappedVisualGridCell(clientX: number, clientY: number): PlanningVisualGridCell {
     const pitch = articleRef.current?.parentElement; if (!pitch) return { row: spatial?.gridRow ?? 3, column: spatial?.gridColumn ?? 3 }
     const rect = pitch.getBoundingClientRect(); const rawX = ((clientX - rect.left) / Math.max(1, rect.width)) * 100; const rawY = ((clientY - rect.top) / Math.max(1, rect.height)) * 100

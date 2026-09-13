@@ -627,17 +627,30 @@
 .tactics-workspace-planning .planning-add-player-table .dt-table-clickable{user-select:none}
 .roster-player-context-menu,.roster-player-context-submenu{z-index:10000!important}
 
-/* Unassigned squad drawer shares the workspace with the pitch. */
-.tactics-workspace-planning .planning-pitch-list-page .planning-full-pitch-layout.has-unassigned-drawer{display:grid!important;grid-template-columns:minmax(0,1fr) 320px!important;gap:12px!important}
-.planning-unassigned{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;border:1px solid var(--dt-border);border-radius:8px;background:var(--dt-surface-1)}
+/* Stable pitch geometry: changing transform modes must not animate pixel coordinates. */
+.tactics-workspace-planning .planning-pitch-list-page .planning-set-row{transition:background .12s ease,box-shadow .12s ease!important}
+.tactics-workspace-planning .planning-pitch-list-page .planning-full-pitch-layout.has-unassigned-rail{display:grid!important;grid-template-columns:minmax(0,1fr) 24px!important;gap:0!important}
+.tactics-workspace-planning .planning-pitch-list-page .planning-full-pitch-layout.has-unassigned-drawer{grid-template-columns:minmax(0,1fr) 24px 320px!important}
+.planning-unassigned-rail{display:flex;align-items:center;justify-content:center;align-self:stretch;width:24px;min-width:24px;height:100%;padding:0!important;border:1px solid var(--dt-border)!important;border-radius:0!important;background:var(--dt-surface-1)!important;color:var(--dt-text-2)!important;cursor:pointer}
+.planning-unassigned-rail:hover,.planning-unassigned-rail:focus-visible{background:var(--dt-surface-3)!important;color:var(--dt-lime)!important}
+.planning-unassigned-rail>span{font-size:22px}
+.planning-unassigned{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;border:1px solid var(--dt-border);border-radius:0 8px 8px 0;background:var(--dt-surface-1)}
 .planning-unassigned>header{display:flex;align-items:center;justify-content:space-between;padding:12px;gap:8px;border-bottom:1px solid var(--dt-border)}
-.planning-unassigned h2{font-size:16px;margin:0 0 4px}.planning-unassigned h2 span{color:var(--dt-lime)}
+.planning-unassigned h2{font-size:14px;margin:0 0 4px}.planning-unassigned h2 span{color:var(--dt-lime);font-size:12px;padding-left:4px}
 .planning-unassigned small{font-size:11px;color:var(--dt-text-2)}
-.planning-unassigned-filters{display:grid;gap:8px;padding:12px}.planning-unassigned input,.planning-unassigned select{width:100%;min-width:0}
-.planning-unassigned-list{flex:1;min-height:0;overflow:auto;padding:0 10px}
-.planning-unassigned-list article{padding:10px;margin-bottom:8px;border:1px solid var(--dt-border);border-radius:6px;display:flex;flex-direction:column;gap:6px;cursor:grab;user-select:none}
-.planning-unassigned-list article.is-selected{border-color:var(--dt-lime);background:var(--dt-surface-3)}
-.planning-unassigned .player-name{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;font-size:13px}
-.planning-unassigned-rating{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}.planning-unassigned-rating>span:first-child{min-width:0}
-.planning-unassigned>footer{display:grid;gap:8px;padding:12px;border-top:1px solid var(--dt-border);flex-shrink:0}
-@media(max-width:1100px){.tactics-workspace-planning .planning-pitch-list-page .planning-full-pitch-layout.has-unassigned-drawer{grid-template-columns:minmax(0,1fr) 270px!important;gap:6px!important}}
+.planning-unassigned-filters{display:grid;gap:6px;padding:10px}.planning-unassigned input,.planning-unassigned select{width:100%;min-width:0;height:34px;font-size:12px;margin:0}
+.planning-unassigned-list{flex:1;min-height:0;overflow:auto;padding:0 8px}
+.planning-unassigned-list article{padding:9px;margin-bottom:6px;border:1px solid var(--dt-border);border-radius:5px;background:var(--dt-bg-canvas);display:flex;flex-direction:column;gap:5px;cursor:grab;user-select:none}
+.planning-unassigned-list article.is-selected{border-color:var(--dt-lime);background:color-mix(in srgb,var(--dt-lime) 5%,var(--dt-surface-1))}
+.planning-unassigned .player-name{display:block;max-width:100%;min-height:0!important;height:auto!important;width:auto;padding:0!important;margin:0;border:0!important;border-radius:0!important;background:transparent!important;color:var(--dt-text-1);box-shadow:none!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;font-size:13px;font-weight:700;line-height:1.5}
+.planning-unassigned .player-name:hover{text-decoration:underline}
+.planning-unassigned-rating,.planning-unassigned-set-ratings>div{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.planning-unassigned-rating>span:first-child{min-width:0;color:var(--dt-text-2)}
+.planning-unassigned .planning-unassigned-details-toggle{padding:4px 0!important;min-height:0!important;height:auto!important;border:0!important;background:transparent!important;box-shadow:none!important;text-align:left;font-size:11px;color:var(--dt-text-2)}
+.planning-unassigned .planning-unassigned-details-toggle:hover{color:var(--dt-lime)}
+.planning-unassigned-set-ratings{display:grid;gap:8px;border-top:1px solid var(--dt-border);padding-top:8px}
+.planning-unassigned-set-ratings>div>div:first-child{display:flex;flex-direction:column;min-width:0}
+.planning-unassigned-set-ratings>div.is-unfamiliar{opacity:.65}
+.planning-unassigned>footer{display:grid;gap:6px;padding:10px;border-top:1px solid var(--dt-border);flex-shrink:0}
+.planning-unassigned>footer>button{font-size:12px;min-height:32px}
+@media(max-width:1100px){.tactics-workspace-planning .planning-pitch-list-page .planning-full-pitch-layout.has-unassigned-drawer{grid-template-columns:minmax(0,1fr) 24px 280px!important}}

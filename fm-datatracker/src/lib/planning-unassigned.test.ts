@@ -19,6 +19,7 @@ it('includes only observed members of this squad without a set allocation', () =
     { id: 'free', squadId: 'A', observed: true },
     { id: 'allocated', squadId: 'A', observed: true },
     { id: 'other', squadId: 'B', observed: true },
+    { id: 'loan', squadId: 'A', observed: true, loanedOut: true },
     { id: 'old', squadId: 'A', observed: false },
     { id: 'unknown', squadId: null, observed: true },
   ], 'A', { defence: ['allocated'] })).toEqual(['free'])

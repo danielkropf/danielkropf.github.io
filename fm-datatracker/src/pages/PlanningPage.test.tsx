@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlanningPage } from './PlanningPage'
@@ -529,4 +529,64 @@ it('restores the drawer and its search and selection after returning from a play
   await screen.findByRole('complementary', { name: 'Jogadores sem conjunto' })
   expect((screen.getByLabelText('Buscar nos jogadores sem conjunto') as HTMLInputElement).value).toBe('Teste')
   expect(within(screen.getByRole('listbox', { name: 'Jogadores disponíveis' })).getByRole('option', { selected: true }).textContent).toContain('Jogador Teste')
+})
+
+it('preserves manual squad choices on load and refreshes changes made outside Planning', async () => {
+  const config = await mocks.loadConfig()
+  config.planning.groups.splice(1, 0, { id: 'reserve', name: 'Reservas' })
+  config.planning.squadAssignments = { player: 'reserve' }
+  mocks.loadConfig.mockResolvedValue(config)
+  const view = render(<MemoryRouter><PlanningPage active /></MemoryRouter>)
+  await ready()
+  await screen.findByRole('button', { name: 'Sem conjunto · 0' })
+  await waitFor(() => expect(mocks.schedule.mock.calls.at(-1)?.[2].planning_by_club['club-a'].squadAssignments.player).toBe('reserve'))
+  view.rerender(<MemoryRouter><PlanningPage active={false} /></MemoryRouter>)
+  mocks.loadConfig.mockResolvedValue({ ...config, planning: { ...config.planning, squadAssignments: { player: 'principal' } } })
+  view.rerender(<MemoryRouter><PlanningPage active /></MemoryRouter>)
+  await screen.findByRole('button', { name: 'Sem conjunto · 1' })
+  await waitFor(() => expect(mocks.schedule.mock.calls.at(-1)?.[2].planning_by_club['club-a'].squadAssignments.player).toBe('principal'))
+})
+
+it('excludes an outgoing loan even with a manual squad assignment', async () => {
+  const config = await mocks.loadConfig()
+  config.planning.squadAssignments = { player: 'principal' }
+  mocks.loadConfig.mockResolvedValue(config)
+  const rows = await mocks.loadMemberships()
+  mocks.loadMemberships.mockResolvedValue(rows.map((row: any) => ({ ...row, provenance: { membership_authority: 'membership_facts_v1', membership_facts_sync_version: 'e-mc-01b-v1', factual_fields: Object.fromEntries(['current_organization','owner_organization','is_loan'].map(key => [key, { status: 'confirmed', binding_status: 'confirmed', evidence_refs: [key] }])) }, is_loan: true, current_club_id: 'club-b', loan_from_club_id: 'club-a', loan_to_club_id: 'club-b', currentClub: { id: 'club-b', name: 'Destino' } })))
+  render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+  await ready()
+  fireEvent.click(await screen.findByRole('button', { name: 'Sem conjunto · 0' }))
+  expect(screen.queryByRole('button', { name: 'Jogador Teste' })).toBeNull()
+})
+
+it('remeasures expanded sets when the pitch changes size and includes the add-player row', async () => {
+  const config = await mocks.loadConfig()
+  config.planning.slotAssignments = { principal: { 'slot-1': ['p0','p1','p2','p3'] } }
+  mocks.loadConfig.mockResolvedValue(config)
+  mocks.loadPlayers.mockResolvedValue([0,1,2,3].map(i => ({ id: `p${i}`, current_name: `Jogador ${i}`, nationality: 'BRA', player_snapshots: [{ ...snapshot, id: `s${i}` }] })))
+  let pitchWidth = 1000
+  let resized: (() => void) | undefined
+  const observe = vi.fn()
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resized = callback } observe = observe; disconnect() {} })
+  const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const rect = this.classList.contains('planning-set-list') ? { left: 0, top: 0, width: pitchWidth, height: 800 } : { left: pitchWidth * .4, top: 300, width: pitchWidth * .2, height: 110 }
+    return { ...rect, right: rect.left+rect.width, bottom: rect.top+rect.height, x: rect.left, y: rect.top, toJSON() {} } as DOMRect
+  })
+  try {
+    const view = render(<MemoryRouter><PlanningPage /></MemoryRouter>)
+    await ready()
+    fireEvent.click(view.container.querySelector('.planning-set-expand')!)
+    const expanded = view.container.querySelector<HTMLElement>('.planning-set-row.is-expanded')!
+    expect(expanded.style.getPropertyValue('--planning-expanded-width')).toBe('200px')
+    expect(Number.parseFloat(expanded.style.getPropertyValue('--planning-expanded-height'))).toBeGreaterThanOrEqual(188)
+    expect(observe).toHaveBeenCalledWith(expanded.parentElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Sem conjunto · 0' }))
+    pitchWidth = 700
+    act(() => resized?.())
+    expect(expanded.style.getPropertyValue('--planning-expanded-width')).toBe('140px')
+    expect(expanded.style.getPropertyValue('--planning-expanded-left')).toBe('280px')
+    pitchWidth = 1000
+    act(() => resized?.())
+    expect(expanded.style.getPropertyValue('--planning-expanded-left')).toBe('400px')
+  } finally { measure.mockRestore() }
 })
