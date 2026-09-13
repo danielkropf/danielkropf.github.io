@@ -1,3 +1,4 @@
+import { importRpcErrorMessage } from '../../lib/import-rpc-error'
 import { checkDatabaseCompatibility } from '../../lib/database-compatibility'
 import { requiresReader033Membership } from '../../lib/membership-persistence'
 import { safeSessionStorage } from '../../lib/safe-storage'
@@ -191,6 +192,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
   const csvTask = useRef(0), fmTask = useRef(0)
   const cancelFm = useRef<(() => void) | null>(null)
   const mounted = useRef(true)
+  const confirmInFlight = useRef(false)
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false; csvTask.current++; fmTask.current++; cancelFm.current?.() }
@@ -442,7 +444,8 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
   }
 
   async function confirm() {
-    if (!selected || !canConfirm) return
+    if (!selected || !canConfirm || confirmInFlight.current) return
+    confirmInFlight.current = true
     const generation = privateSessionGeneration()
     setSaving(true); setMessage('')
     try {
@@ -480,7 +483,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
         p_snapshot_date: snapshotDate, p_delimiter: preview?.delimiter ?? ',',
         p_rows: importRows, p_warnings: warnings,
       })
-      if (error) throw error
+      if (error) throw new Error(importRpcErrorMessage(error))
       assertPrivateSession(generation)
       const result = data as { duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
       const tacticOutcome = await persistTacticPlan(tacticPlan)
@@ -516,7 +519,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
       resetTransientImportState()
       onImported?.()
     } catch (error) { setMessage(`Falha na persistência: ${errorMessage(error)}`) }
-    finally { setSaving(false) }
+    finally { confirmInFlight.current = false; setSaving(false) }
   }
 
   const detectedSummary = preview
