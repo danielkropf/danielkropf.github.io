@@ -12,6 +12,7 @@ describe('FM26 offline worker result contract', () => {
     }
     const input = {
       raw: { private_reader_diagnostics: true },
+      intakes: {version:'fm26-intakes-v1',checkpoint_date:'2028-06-30',classes:[],warnings:[]},
       players: [],
       tactics: [],
       diagnostics: { human_manager_count: 0 },
@@ -22,6 +23,7 @@ describe('FM26 offline worker result contract', () => {
 
     const result = buildOfflineWorkerResult(input)
 
+    expect(result.intakes).toEqual(input.intakes)
     expect(result.competition_history).toEqual(competitionHistory)
     expect(result).not.toHaveProperty('raw')
     expect(result).toMatchObject({

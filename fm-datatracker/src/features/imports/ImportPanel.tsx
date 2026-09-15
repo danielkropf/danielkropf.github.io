@@ -1,3 +1,4 @@
+import type { IntakeRead } from '../../lib/fm26-intakes'
 import { importRpcErrorMessage } from '../../lib/import-rpc-error'
 import { checkDatabaseCompatibility } from '../../lib/database-compatibility'
 import { requiresReader033Membership } from '../../lib/membership-persistence'
@@ -34,7 +35,7 @@ type CompetitionHistoryPreview = {
   }>
   diagnostics?: { warnings?: string[]; errors?: string[] }
 }
-type OfflineRead = { players: PreparedRow[]; tactics?: unknown[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null; competition_history?: CompetitionHistoryPreview | null }
+type OfflineRead = { intakes?: IntakeRead | null; players: PreparedRow[]; tactics?: unknown[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null; competition_history?: CompetitionHistoryPreview | null }
 type ComparisonDifference = { player: string; field: string; csv: string; fm: string }
 type DataComparison = {
   matched: number; csvTotal: number; fmTotal: number; coverage: number; valid: boolean; csvOnly: number; fmOnly: number; ambiguous: number
@@ -477,7 +478,9 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
       }
       assertPrivateSession(generation)
       if (!mounted.current) return
-      const { data, error } = await supabase.rpc('import_fm_export', {
+      const intakePayload = fmRead?.intakes && ['fm-beta', 'validated'].includes(importMode) && fmRead.intakes.checkpoint_date === snapshotDate ? fmRead.intakes : null
+      const { data, error } = await supabase.rpc(intakePayload ? 'import_fm_with_intakes' : 'import_fm_export', {
+        ...(intakePayload ? { p_intakes: intakePayload } : {}),
         p_save_id: selected.id, p_filename: [csvFile?.name, fmFile?.name].filter(Boolean).join(' + '),
         p_file_hash: importFileHash, p_file_type: effectiveType,
         p_snapshot_date: snapshotDate, p_delimiter: preview?.delimiter ?? ',',
@@ -487,7 +490,8 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
       assertPrivateSession(generation)
       const result = data as { duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
       const tacticOutcome = await persistTacticPlan(tacticPlan)
-      const tacticSuffix = tacticOutcome.note ? ` ${tacticOutcome.note}` : ''
+      const intakeSuffix = intakePayload ? ` ${intakePayload.classes.length} turma(s) de intake registrada(s) para consulta e revisão na Academia.` : ''
+      const tacticSuffix = (tacticOutcome.note ? ` ${tacticOutcome.note}` : '') + intakeSuffix
       if (result?.duplicate) {
         if (updateTarget) {
           if (result.import_id !== updateTarget.id) throw new Error('O hash corresponde a outra importação deste save. A atualização foi bloqueada.')
@@ -506,7 +510,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
         }
         const duplicateMessage = `Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.${tacticSuffix}`
         setMessage(duplicateMessage)
-        if (tacticOutcome.changed) {
+        if (tacticOutcome.changed || intakePayload) {
           writeImportFlash(selected.id, duplicateMessage)
           onImported?.()
         }
@@ -537,6 +541,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
       </div>
       {fmFile && !csvFile && <p className="warning">Leitura <code>.fm</code> em construção e testes: ela pode trazer jogadores ou campos incorretos e valores vazios. Revise os dados antes de usar o snapshot.</p>}
       {csvFile && !fmFile && <p className="notice">O CSV continua sendo o caminho estável. Alguns dados e recursos que dependem da leitura do save não ficam disponíveis sem o arquivo <code>.fm</code>.</p>}
+      {fmRead?.intakes && <section className="card"><h3>Turmas de intake</h3><p>A origem será preservada na Academia. Testes de seis semanas sem notícia correspondente ficam pendentes de revisão.</p>{fmRead.intakes.classes.map(item => <p key={item.key}><strong>{item.club_name} · {item.intake_date}</strong> — {item.members.length}/{item.expected_members} jogadores · {item.confidence === 'supported' ? 'Notícia e grupo de candidatos compatíveis' : 'Grupo candidato: requer revisão'}</p>)}{fmRead.intakes.warnings.map((warning,i)=><p key={i}>{warning}</p>)}{!['fm-beta','validated'].includes(importMode) && <p>Os intakes do .fm não serão gravados enquanto esta importação usar apenas os dados CSV.</p>}</section>}
       <div className="stats import-overview"><div><span>Save</span><strong>{selected?.name ?? 'Nenhum save ativo'}</strong></div><div><span>Snapshot</span><strong>{snapshotDate || (confirmedFmYear ? `Ano ${confirmedFmYear} confirmado · falta dia/mês` : suggestedSnapshotYear ? `Ano sugerido: ${suggestedSnapshotYear}` : 'Informe a data')}</strong></div><div><span>Dados detectados</span><strong>{detectedSummary}</strong></div><div><span>Leitura .fm</span><strong>{fmSummary}</strong></div></div>
       <div className="import-fields"><label>{exactFmDate ? 'Data atual do save .fm' : confirmedFmYear ? `Data do snapshot (ano ${confirmedFmYear} confirmado)` : 'Data do snapshot'}<input type="date" value={snapshotDate} onChange={event => setSnapshotDate(event.target.value)} placeholder="AAAA-MM-DD" disabled={Boolean(updateTarget || exactFmDate)} /></label><label>Fonte dos dados<input value={sourceLabel} disabled /></label><label>Tipo<select value={type} onChange={event => setType(event.target.value as ImportType)} disabled={Boolean(updateTarget || fmFile)}><option value="squad">Elenco</option><option value="intake">Intake</option><option value="stats">Estatísticas</option></select></label><label>Coluna com o nome<select value={nameColumn} onChange={event => setNameColumn(event.target.value)} disabled={!preview}>{preview ? preview.headers.map(header => <option key={header} value={header}>{header}</option>) : <option>Carregue um CSV</option>}</select></label></div>
       {(csvFile || fmFile) && !snapshotDateValid && <p className="warning">{confirmedFmYear ? `O leitor confirmou apenas o ano ${confirmedFmYear}. Informe dia e mês reais para liberar a importação.` : suggestedSnapshotYear ? `O CSV sugere o ano ${suggestedSnapshotYear}, mas a data completa precisa ser confirmada manualmente.` : 'Informe uma data completa e válida para o snapshot.'}</p>}

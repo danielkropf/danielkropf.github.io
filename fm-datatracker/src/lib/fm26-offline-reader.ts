@@ -1,3 +1,4 @@
+import { readIntakes } from './fm26-intakes'
 import { ZSTDDecoder } from 'zstddec/stream'
 import { FM26OfflineReaderV022 } from './fm26-offline-reader-v022.js'
 import { enrichOfflineTeamNames } from './fm26-team-resolver'
@@ -117,6 +118,16 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
     competitionHistory.diagnostics.errors.push(`E-TC-01 sidecar failure: ${error instanceof Error ? error.message : String(error)}`)
     competitionHistory.diagnostics.warnings.push(...competitionWarnings)
     result.competition_history = competitionHistory
+  }
+
+  onStatus('Identificando turmas de intake…')
+  const intakeWarnings: string[] = []
+  try {
+    const news = await optionalArchiveMember(archive, 'news.dat', intakeWarnings)
+    result.intakes = readIntakes(result, news, gameDb)
+    ;(result.intakes as { warnings: string[] }).warnings.push(...intakeWarnings)
+  } catch (error) {
+    result.intakes = { version: 'fm26-intakes-v1', checkpoint_date: saveSummary.status === 'confirmed' ? saveSummary.current_date : null, classes: [], warnings: [`Leitura de intakes indisponível: ${String(error)}`] }
   }
 
   onStatus('Concluído.')
