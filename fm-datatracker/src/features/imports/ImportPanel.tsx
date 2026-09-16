@@ -15,7 +15,7 @@ import { uploadDiagnosticSample } from '../../lib/diagnostic-upload'
 import { loadModelConfig, patchModelConfig } from '../../lib/model-config'
 import { buildImportedFmTactic, mergeImportedFmTactic, type FmTacticImportPlan } from '../../lib/fm26-tactic-import'
 import { supabase } from '../../lib/supabase'
-import { stampImportVersion } from '../../lib/import-management'
+import { findImportByHash, stampImportVersion } from '../../lib/import-management'
 import type { ImportPreview, ImportType } from '../../types/domain'
 import { useSaves } from '../saves/SaveContext'
 
@@ -46,7 +46,7 @@ type DataComparison = {
 type ImportFlash = { saveId: string; message: string; createdAt: number }
 type FmReadMarker = { fileName: string; startedAt: number; runtimeId: string }
 export type ImportUpdateTarget = { id: string; original_filename: string; file_type: ImportType; snapshot_date: string; file_hash: string; source_schema?: Record<string, unknown> | null }
-export type ImportProgress = { phase: 'idle' | 'reading' | 'ready' | 'attention' | 'writing'; detail: string; stage?: 'reading' | 'writing'; progress?: number; fileName?: string }
+export type ImportProgress = { phase: 'idle' | 'reading' | 'ready' | 'attention' | 'writing'; detail: string; stage?: 'reading' | 'writing'; progress?: number; fileName?: string; operation?: 'new' | 'update'; detectedImportId?: string }
 type ImportPanelProps = { onImported?: () => void; updateTarget?: ImportUpdateTarget | null; onCancelUpdate?: () => void; pinnedSave?: Save; initialFmFile?: File; initialCsvFile?: File; autoConfirm?: boolean; confirmRequest?: number; onProgress?: (progress: ImportProgress) => void; onCompleted?: (summary: string) => void }
 
 const TACTIC_MODEL_VERSION = '2.9.0'
@@ -192,7 +192,7 @@ export function ImportPanel(props: ImportPanelProps) {
   return <ScopedImportPanel key={`${selected?.id ?? 'none'}:${props.updateTarget?.id ?? 'new'}`} {...props} />
 }
 
-function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pinnedSave, initialFmFile, initialCsvFile, autoConfirm = false, confirmRequest = 0, onProgress, onCompleted }: ImportPanelProps) {
+function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = null, onCancelUpdate, pinnedSave, initialFmFile, initialCsvFile, autoConfirm = false, confirmRequest = 0, onProgress, onCompleted }: ImportPanelProps) {
   const context = useSaves()
   const selected = pinnedSave ?? context.selected
   const autoAttempt = useRef(false)
@@ -211,6 +211,28 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
   const fmInput = useRef<HTMLInputElement>(null)
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [fmFile, setFmFile] = useState<File | null>(null)
+  const [classification, setClassification] = useState<{ fm: File; csv: File | null; target: ImportUpdateTarget | null; error?: string } | null>(null)
+  const classificationCurrent = classification?.fm === fmFile && classification?.csv === csvFile
+  const updateTarget = requestedUpdateTarget ?? (classificationCurrent ? classification?.target : null)
+  const classifying = Boolean(fmFile && !requestedUpdateTarget && !classificationCurrent)
+  const classificationError = classificationCurrent ? classification?.error : undefined
+  useEffect(() => {
+    if (!fmFile || requestedUpdateTarget || !selected) return
+    let cancelled = false
+    const generation = privateSessionGeneration()
+    void (async () => {
+      try {
+        const hash = await filesHash([csvFile, fmFile].filter((file): file is File => Boolean(file)))
+        assertPrivateSession(generation)
+        const target = await findImportByHash(selected.id, hash)
+        assertPrivateSession(generation)
+        if (!cancelled) setClassification({ fm: fmFile, csv: csvFile, target })
+      } catch (error) {
+        if (!cancelled) setClassification({ fm: fmFile, csv: csvFile, target: null, error: `Falha ao consultar importações anteriores: ${errorMessage(error)}. Selecione o arquivo novamente para tentar outra vez.` })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [fmFile, csvFile, selected?.id, requestedUpdateTarget])
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [nameColumn, setNameColumn] = useState('')
   const [snapshotDate, setSnapshotDate] = useState(updateTarget?.snapshot_date ?? '')
@@ -285,7 +307,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
     return { importRows: tagRows(csvRows, 'csv-only', 'unavailable'), importMode: 'csv-only' }
   }, [comparison, csvRows, fmRows, type])
   const effectiveType: ImportType = importMode === 'fm-beta' ? 'squad' : type
-  const isReading = loadingCsv || loadingFm
+  const isReading = loadingCsv || loadingFm || classifying
   const suggestedSnapshotYear = useMemo(() => inferSnapshotYear(csvRows), [csvRows])
   const exactFmDate = fmRead?.snapshot_date_precision === 'day' ? fmRead.snapshot_date ?? null : null
   const confirmedFmYear = fmRead?.snapshot_date_precision === 'year' && fmRead.snapshot_date ? fmRead.snapshot_date.slice(0, 4) : null
@@ -294,7 +316,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
   const resolvedHumanClubCount = comparableNumber(fmRead?.diagnostics?.resolved_human_club_count) ?? 0
   const fmIdentitySafe = !fmIdentityRequired || resolvedHumanClubCount > 0
   const updateFilesReady = !updateTarget || ((!updateNeedsCsv || Boolean(csvFile)) && (!updateNeedsFm || Boolean(fmFile)))
-  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid && fmIdentitySafe && updateFilesReady)
+  const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid && fmIdentitySafe && updateFilesReady && !classificationError && (!updateTarget || !exactFmDate || exactFmDate === updateTarget.snapshot_date))
 
   const handledConfirmation = useRef(0)
   useEffect(() => {
@@ -306,9 +328,9 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
   useEffect(() => { if (initialCsvFile) void chooseCsv(initialCsvFile) }, [initialCsvFile])
   useEffect(() => { if (initialFmFile) void chooseFm(initialFmFile) }, [initialFmFile])
   useEffect(() => {
-    progressCallback.current?.({stage: saving || message.startsWith('Falha na persistência') ? 'writing' : 'reading', progress: canConfirm ? 100 : taskProgress, fileName:[csvFile?.name,fmFile?.name].filter(Boolean).join(' + ')||undefined,phase: saving ? 'writing' : isReading ? 'reading' : message.startsWith('Falha') ? 'attention' : canConfirm && importMode !== 'csv-fallback' ? 'ready' : csvFile || fmFile ? 'attention' : 'idle',
-      detail: message || (isReading ? (loadingFm ? fmStatus : csvStatus) : canConfirm ? `${importRows.length} jogadores · ${snapshotDate} · ${fmRead?.tactics?.length ?? 0} tática(s). Revise antes de salvar.` : fmFile ? fmStatus : csvStatus)})
-  }, [saving,isReading,canConfirm,message,fmStatus,csvStatus,csvFile,fmFile,loadingFm,importMode,importRows.length,snapshotDate,fmRead,taskProgress])
+    progressCallback.current?.({operation: updateTarget ? 'update' : fmFile && classificationCurrent && !classificationError ? 'new' : undefined, detectedImportId: updateTarget?.id, stage: saving || message.startsWith('Falha na persistência') ? 'writing' : 'reading', progress: canConfirm ? 100 : taskProgress, fileName:[csvFile?.name,fmFile?.name].filter(Boolean).join(' + ')||undefined,phase: saving ? 'writing' : isReading ? 'reading' : message.startsWith('Falha') ? 'attention' : canConfirm && importMode !== 'csv-fallback' ? 'ready' : csvFile || fmFile ? 'attention' : 'idle',
+      detail: classificationError || (classifying ? 'Verificando se este arquivo já foi importado…' : '') || message || (isReading ? (loadingFm ? fmStatus : csvStatus) : canConfirm ? `${importRows.length} jogadores · ${snapshotDate} · ${fmRead?.tactics?.length ?? 0} tática(s). Revise antes de salvar.` : fmFile ? fmStatus : csvStatus)})
+  }, [saving,isReading,canConfirm,message,fmStatus,csvStatus,csvFile,fmFile,loadingFm,importMode,importRows.length,snapshotDate,fmRead,taskProgress,classificationError,classifying,classificationCurrent,updateTarget])
   useEffect(() => {
     if (autoConfirm && canConfirm && importMode !== 'csv-fallback' && !autoAttempt.current) {
       autoAttempt.current = true
@@ -603,6 +625,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
       {(!initialFmFile || comparison) && <div className={`fm-comparison ${comparison ? (comparison.valid ? 'valid' : 'invalid') : ''}`}><strong>Validação CSV × .fm</strong>{comparison ? <><span>{comparison.matched}/{comparison.csvTotal} jogadores associados · {comparison.matchingFields}/{comparison.checkedFields} dados coincidem ({Math.round(comparison.dataCoverage * 100)}%).</span><small>{comparison.valid ? `Validação aprovada. O CSV define os ${comparison.csvTotal} jogadores persistidos; ${comparison.fmOnly} jogador(es) extra(s) do .fm ficam fora deste import. ${comparison.unavailableFields.length} campos ainda não têm equivalência confirmada e não entraram no cálculo.` : `Validação recusada: ${comparison.csvOnly} jogador(es) do CSV sem associação, ${comparison.ambiguous} associação(ões) ambígua(s) e ${comparison.divergentFields} divergência(s) objetiva(s). Por segurança, serão usados apenas dados CSV.`}</small><div className="comparison-actions">{comparison.differences.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('differences')}>Ver {comparison.divergentFields} divergência(s)</button>}{comparison.unavailableFields.length > 0 && <button type="button" className="ghost" onClick={() => setComparisonModal('unavailable')}>Ver campos ainda não comparáveis</button>}</div>{comparison.missingValues > 0 && <small>{comparison.missingValues} comparação(ões) foram ignoradas porque o valor estava vazio em pelo menos um dos arquivos.</small>}</> : <span>Envie os dois arquivos para validar identidade, posições, atributos, nascimento e nacionalidade.</span>}</div>}
       {comparison && !comparison.valid && <div className="diagnostic-consent"><label><input type="checkbox" checked={shareForDiagnostics} onChange={event => setShareForDiagnostics(event.target.checked)} /> Autorizo o envio privado destes dois arquivos para diagnóstico e melhoria do leitor.</label><button className="ghost" disabled={!shareForDiagnostics || sendingDiagnostics} onClick={() => void uploadDiagnostics()}>{sendingDiagnostics ? 'Enviando…' : 'Enviar arquivos para diagnóstico'}</button></div>}
       {message && <p className={message.startsWith('Falha') || message.startsWith('Não foi') ? 'warning' : 'notice'} role="status">{message}</p>}
+      {classificationError && <p role="alert">{classificationError}</p>}
       <div className="import-actions"><button className="primary" disabled={!canConfirm} onClick={() => void confirm()}>{saving ? (updateTarget ? 'Atualizando…' : 'Importando…') : isReading ? 'Aguardando leitura…' : updateTarget ? 'Atualizar esta importação' : importMode === 'csv-fallback' ? 'Importar CSV sem dados do .fm' : 'Confirmar importação'}</button></div>
       {comparisonModal && comparison && <div className="settings-overlay import-comparison-overlay" role="presentation" onMouseDown={() => setComparisonModal(null)}><section className="import-comparison-modal" role="dialog" aria-modal="true" aria-label="Detalhes da validação" onMouseDown={event => event.stopPropagation()}><header><div><span className="eyebrow">VALIDAÇÃO CSV × .FM</span><h2>{comparisonModal === 'differences' ? 'Divergências encontradas' : 'Campos ainda não comparáveis'}</h2></div><button className="ghost" type="button" onClick={() => setComparisonModal(null)} aria-label="Fechar">×</button></header><div className="import-comparison-modal-body">{comparisonModal === 'differences' ? <><p>Mostrando as primeiras {comparison.differences.length} de {comparison.divergentFields} divergências objetivas.</p><ul>{comparison.differences.map((difference, index) => <li key={`${difference.player}-${difference.field}-${index}`}><b>{difference.player}</b><span>{difference.field}</span><code>CSV: {difference.csv}</code><code>.fm: {difference.fm}</code></li>)}</ul></> : <><p>Estes campos ainda não têm uma equivalência segura: alguns não foram mapeados pelo leitor <code>.fm</code>; outros existem nas duas fontes, mas usam escalas ou formatos diferentes. Eles não entram no cálculo da validação.</p><ul className="field-list">{comparison.unavailableFields.map(field => <li key={field}>{field}</li>)}</ul></>}</div></section></div>}
     </div>

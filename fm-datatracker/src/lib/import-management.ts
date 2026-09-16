@@ -167,3 +167,13 @@ export async function deleteFmImportSafe(saveId: string, importId: string): Prom
     () => directDeleteImport(saveId, importId),
   )
 }
+
+/** Exact content identity, scoped to the destination save. Names and dates are not keys. */
+export async function findImportByHash(saveId: string, hash: string) {
+  if (!supabase) throw new Error('Banco Mestre não configurado.')
+  const { data, error } = await supabase.from('imports')
+    .select('id,original_filename,file_type,snapshot_date,file_hash,source_schema')
+    .eq('save_id', saveId).eq('file_hash', hash).maybeSingle()
+  if (error) throw new Error(errorText(error))
+  return data as import('../features/imports/ImportPanel').ImportUpdateTarget | null
+}

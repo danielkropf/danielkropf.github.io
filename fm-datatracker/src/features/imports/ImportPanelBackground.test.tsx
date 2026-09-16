@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup,render,waitFor,screen } from '@testing-library/react'
 import { afterEach,beforeEach,expect,it,vi } from 'vitest'
-const mocks=vi.hoisted(()=>({rpc:vi.fn(),stamp:vi.fn()}))
+const mocks=vi.hoisted(()=>({rpc:vi.fn(),stamp:vi.fn(),find:vi.fn()}))
 vi.mock('../saves/SaveContext',()=>({useSaves:()=>({selected:{id:'other',name:'Other'}})}))
 vi.mock('../../lib/supabase',()=>({supabase:{rpc:mocks.rpc}}))
-vi.mock('../../lib/import-management',()=>({stampImportVersion:mocks.stamp}))
+vi.mock('../../lib/import-management',()=>({stampImportVersion:mocks.stamp,findImportByHash:mocks.find}))
 vi.mock('../../lib/importer',async original=>({...await original<typeof import('../../lib/importer')>(),filesHash:async()=> 'fixed-hash'}))
 vi.mock('../../lib/file-picker',()=>({IMPORT_DIRECTORY_CHANGED:'dir-change',getImportDirectoryName:async()=>null,supportsPersistentFilePicker:()=>false,chooseImportFile:vi.fn(),chooseImportDirectory:vi.fn()}))
 import {ImportPanel} from './ImportPanel'
@@ -12,6 +12,7 @@ import type {Save} from '../../types/domain'
 afterEach(()=>{cleanup();vi.unstubAllGlobals();mocks.rpc.mockReset();mocks.stamp.mockReset()})
 function testFile(){const file=new File(['fm'],'test.fm');Object.defineProperty(file,'arrayBuffer',{value:async()=>new ArrayBuffer(4)});return file}
 beforeEach(()=>{
+ mocks.find.mockReset().mockResolvedValue(null)
  vi.stubGlobal('__APP_VERSION__','0.37.0')
  mocks.rpc.mockResolvedValue({data:{import_id:'import-a',new_players:1,updated_players:0},error:null});mocks.stamp.mockResolvedValue(undefined)
  vi.stubGlobal('Worker',class{
@@ -56,4 +57,31 @@ it('saves a read result only after an explicit queue confirmation, once per requ
  await waitFor(()=>expect(done).toHaveBeenCalledOnce())
  view.rerender(<ImportPanel pinnedSave={save} initialFmFile={file} onCompleted={done} confirmRequest={1}/>)
  expect(mocks.rpc).toHaveBeenCalledOnce()
+})
+
+it('detects an existing renamed file before confirmation and updates its original ID', async()=>{
+ mocks.find.mockResolvedValue({id:'old',original_filename:'original.fm',file_hash:'fixed-hash',snapshot_date:'2030-09-22',file_type:'squad'})
+ mocks.rpc.mockResolvedValue({data:{duplicate:true,import_id:'old'},error:null})
+ const done=vi.fn(), progress=vi.fn()
+ render(<ImportPanel pinnedSave={{id:'pinned',name:'Pinned'} as Save} initialFmFile={testFile()} autoConfirm onProgress={progress} onCompleted={done}/>)
+ await waitFor(()=>expect(done).toHaveBeenCalledOnce())
+ expect(mocks.find).toHaveBeenCalledWith('pinned','fixed-hash')
+ expect(progress.mock.calls.some(([p])=>p.operation==='update' && p.detectedImportId==='old')).toBe(true)
+ expect(mocks.stamp).toHaveBeenCalledWith('pinned','old','0.37.0',expect.objectContaining({reprocessed_reader:expect.any(String)}))
+})
+it('blocks automatic persistence if the history lookup fails', async()=>{
+ mocks.find.mockRejectedValue(new Error('offline'))
+ render(<ImportPanel pinnedSave={{id:'pinned',name:'Pinned'} as Save} initialFmFile={testFile()} autoConfirm/>)
+ await screen.findByRole('alert')
+ expect(mocks.rpc).not.toHaveBeenCalled()
+})
+
+it('classifies a mixed batch as two updates and one new import without saving before review',async()=>{
+ const targets=[{id:'jan',original_filename:'old-jan.fm',file_hash:'fixed-hash',snapshot_date:'2030-09-22',file_type:'squad'},null,{id:'dec',original_filename:'old-dec.fm',file_hash:'fixed-hash',snapshot_date:'2030-09-22',file_type:'squad'}]
+ mocks.find.mockImplementation(async()=>targets.shift())
+ const progress=[vi.fn(),vi.fn(),vi.fn()]
+ render(<>{progress.map((callback,i)=><ImportPanel key={i} pinnedSave={{id:'pinned',name:'Pinned'} as Save} initialFmFile={testFile()} onProgress={callback}/>)}</>)
+ await waitFor(()=>expect(progress.map(fn=>fn.mock.calls.at(-1)?.[0].phase)).toEqual(['ready','ready','ready']))
+ expect(progress.map(fn=>fn.mock.calls.at(-1)?.[0].operation)).toEqual(['update','new','update'])
+ expect(mocks.rpc).not.toHaveBeenCalled()
 })

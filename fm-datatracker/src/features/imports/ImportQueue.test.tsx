@@ -52,3 +52,15 @@ it('persists preference in settings and never exposes it in the import launcher'
  expect(screen.getAllByLabelText(label)).toHaveLength(1)
  expect(screen.queryByText('Importar automaticamente após leitura e validação')).toBeNull()
 })
+
+it('keeps the import window open when a historical update starts and completes', () => {
+ function Update() { const q=useImportQueue(); return <button onClick={()=>q.add([new File(['a'],'old.fm')],{id:'old',original_filename:'old.fm',file_hash:'hash',file_type:'squad',snapshot_date:'2025-01-01'})}>Atualizar antigo</button> }
+ render(<ImportQueueProvider><State/><Update/><ImportQueueLauncher/></ImportQueueProvider>)
+ fireEvent.click(screen.getByText('Atualizar antigo'))
+ expect(screen.getByTestId('open').textContent).toBe('true')
+ fireEvent.click(screen.getByText('Pronto old.fm'))
+ fireEvent.click(screen.getByText('Salvar'))
+ expect(screen.getByTestId('open').textContent).toBe('true')
+ fireEvent.click(screen.getByText('Concluir old.fm'))
+ expect(screen.getByTestId('open').textContent).toBe('true')
+})
