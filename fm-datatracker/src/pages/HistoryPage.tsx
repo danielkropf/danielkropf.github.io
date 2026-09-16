@@ -5,7 +5,7 @@ import { createManualSaveEvent, loadSaveHistory, type SaveHistoryEvent } from '.
 import { historyEventText, historyYear, summarizeHistory } from '../lib/save-history'
 
 export function HistoryPage() {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const [events, setEvents] = useState<SaveHistoryEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -19,12 +19,12 @@ export function HistoryPage() {
 
   async function reload() {
     if (!selected) return
-    setLoading(true); setError('')
+    setLoading(!events.length); setError('')
     try { setEvents(await loadSaveHistory(selected.id)) }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao carregar a história.') }
     finally { setLoading(false) }
   }
-  useEffect(() => { void reload() }, [selected?.id])
+  useEffect(() => { void reload() }, [selected?.id, currentCheckpoint?.revision])
   const filtered = useMemo(() => events.filter(event => (clubFilter === 'all' || event.club_id === clubFilter) && (typeFilter === 'all' || event.source_kind === typeFilter)), [events, clubFilter, typeFilter])
   const grouped = useMemo(() => {
     const groups = new Map<string, SaveHistoryEvent[]>()

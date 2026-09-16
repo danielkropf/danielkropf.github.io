@@ -46,8 +46,8 @@ type DataComparison = {
 type ImportFlash = { saveId: string; message: string; createdAt: number }
 type FmReadMarker = { fileName: string; startedAt: number; runtimeId: string }
 export type ImportUpdateTarget = { id: string; original_filename: string; file_type: ImportType; snapshot_date: string; file_hash: string; source_schema?: Record<string, unknown> | null }
-export type ImportProgress = { phase: 'idle' | 'reading' | 'ready' | 'attention' | 'writing'; detail: string; progress?: number; fileName?: string }
-type ImportPanelProps = { onImported?: () => void; updateTarget?: ImportUpdateTarget | null; onCancelUpdate?: () => void; pinnedSave?: Save; initialFmFile?: File; autoConfirm?: boolean; confirmRequest?: number; onProgress?: (progress: ImportProgress) => void; onCompleted?: (summary: string) => void }
+export type ImportProgress = { phase: 'idle' | 'reading' | 'ready' | 'attention' | 'writing'; detail: string; stage?: 'reading' | 'writing'; progress?: number; fileName?: string }
+type ImportPanelProps = { onImported?: () => void; updateTarget?: ImportUpdateTarget | null; onCancelUpdate?: () => void; pinnedSave?: Save; initialFmFile?: File; initialCsvFile?: File; autoConfirm?: boolean; confirmRequest?: number; onProgress?: (progress: ImportProgress) => void; onCompleted?: (summary: string) => void }
 
 const TACTIC_MODEL_VERSION = '2.9.0'
 const IMPORT_FLASH_KEY = 'fm-datatracker:import-success-v1'
@@ -192,7 +192,7 @@ export function ImportPanel(props: ImportPanelProps) {
   return <ScopedImportPanel key={`${selected?.id ?? 'none'}:${props.updateTarget?.id ?? 'new'}`} {...props} />
 }
 
-function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pinnedSave, initialFmFile, autoConfirm = false, confirmRequest = 0, onProgress, onCompleted }: ImportPanelProps) {
+function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pinnedSave, initialFmFile, initialCsvFile, autoConfirm = false, confirmRequest = 0, onProgress, onCompleted }: ImportPanelProps) {
   const context = useSaves()
   const selected = pinnedSave ?? context.selected
   const autoAttempt = useRef(false)
@@ -303,9 +303,10 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
       if (canConfirm && importMode !== 'csv-fallback') void confirm()
     }
   }, [confirmRequest, canConfirm, importMode])
+  useEffect(() => { if (initialCsvFile) void chooseCsv(initialCsvFile) }, [initialCsvFile])
   useEffect(() => { if (initialFmFile) void chooseFm(initialFmFile) }, [initialFmFile])
   useEffect(() => {
-    progressCallback.current?.({progress: canConfirm ? 80 : taskProgress, fileName:[csvFile?.name,fmFile?.name].filter(Boolean).join(' + ')||undefined,phase: saving ? 'writing' : isReading ? 'reading' : message.startsWith('Falha') ? 'attention' : canConfirm && importMode !== 'csv-fallback' ? 'ready' : csvFile || fmFile ? 'attention' : 'idle',
+    progressCallback.current?.({stage: saving || message.startsWith('Falha na persistência') ? 'writing' : 'reading', progress: canConfirm ? 100 : taskProgress, fileName:[csvFile?.name,fmFile?.name].filter(Boolean).join(' + ')||undefined,phase: saving ? 'writing' : isReading ? 'reading' : message.startsWith('Falha') ? 'attention' : canConfirm && importMode !== 'csv-fallback' ? 'ready' : csvFile || fmFile ? 'attention' : 'idle',
       detail: message || (isReading ? (loadingFm ? fmStatus : csvStatus) : canConfirm ? `${importRows.length} jogadores · ${snapshotDate} · ${fmRead?.tactics?.length ?? 0} tática(s). Revise antes de salvar.` : fmFile ? fmStatus : csvStatus)})
   }, [saving,isReading,canConfirm,message,fmStatus,csvStatus,csvFile,fmFile,loadingFm,importMode,importRows.length,snapshotDate,fmRead,taskProgress])
   useEffect(() => {
@@ -379,7 +380,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
         if (response.type === 'status') {
           lastStatus = response.status ?? 'Lendo o save localmente…'
           setFmStatus(lastStatus)
-          if (typeof response.progress === 'number') setTaskProgress(Math.min(79, Math.max(0, response.progress * 0.8)))
+          if (typeof response.progress === 'number') setTaskProgress(Math.min(99, Math.max(0, response.progress)))
           return
         }
         if (settled) return
@@ -482,13 +483,13 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
     if (!selected || !canConfirm || confirmInFlight.current) return
     confirmInFlight.current = true
     const generation = privateSessionGeneration()
-    setSaving(true); setTaskProgress(80); setMessage('Aguardando gravação na fila…')
+    setSaving(true); setTaskProgress(0); setMessage('Aguardando gravação na fila…')
     let releaseWrite: (() => void) | undefined
     try {
       releaseWrite = await importWriteSlots.acquire()
       assertPrivateSession(generation)
       if (!mounted.current) return
-      setTaskProgress(85); setMessage('Gravando importação…')
+      setTaskProgress(20); setMessage('Gravando importação…')
       if (!supabase) throw new Error('Banco mestre não configurado.')
       if (!fmIdentitySafe) throw new Error('O clube do human manager não foi resolvido com segurança. A importação .fm foi bloqueada para proteger a identidade do save.')
       if (!snapshotDateValid) throw new Error(confirmedFmYear ? `Informe uma data completa de ${confirmedFmYear} antes de confirmar.` : 'Informe uma data completa e válida antes de confirmar.')
@@ -534,7 +535,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pi
         catch { versionNote = ' Dados gravados, mas o registro da versão precisa ser atualizado.' }
       }
       const finish = (summary: string) => { assertPrivateSession(generation); onCompleted?.(`${summary} ${importRows.length} jogadores processados.${result?.duplicate ? '' : ` ${result?.new_players ?? 0} novos, ${result?.updated_players ?? 0} atualizados.`}${versionNote}`) }
-      setTaskProgress(95)
+      setTaskProgress(90)
       const tacticOutcome = await persistTacticPlan(tacticPlan)
       const intakeSuffix = intakePayload ? ` ${intakePayload.classes.length} turma(s) de intake registrada(s) para consulta e revisão na Academia.` : ''
       const tacticSuffix = (tacticOutcome.note ? ` ${tacticOutcome.note}` : '') + intakeSuffix

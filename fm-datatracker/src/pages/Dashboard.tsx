@@ -28,7 +28,7 @@ export function Dashboard() {
       return () => { active = false }
     }
 
-    setLoading(!peekCurrentPlayers(selected.id))
+    setLoading(!peekCurrentPlayers(selected.id) && !players.length)
     void Promise.all([
       loadCurrentPlayers(selected.id, { summary: true }),
       loadModelConfig(selected.id),
@@ -42,7 +42,7 @@ export function Dashboard() {
     })
 
     return () => { active = false }
-  }, [selected?.id])
+  }, [selected?.id, currentCheckpoint?.revision])
 
   const summary = useMemo(() => {
     const latest = players.map(player => player.player_snapshots[0]).filter(Boolean)

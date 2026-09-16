@@ -74,7 +74,7 @@ function AppShellContent() {
   const checkpointMatchesSave = !selected || currentCheckpoint.saveId === selected.id
   const checkpointReady = !selected || (checkpointMatchesSave && currentCheckpoint.status === 'ready')
   const checkpointError = Boolean(selected && checkpointMatchesSave && currentCheckpoint.status === 'error')
-  const routeKey = selected ? `${selected.id}:${currentCheckpoint.date ?? 'none'}:${currentCheckpoint.revision}` : 'no-save'
+  const routeKey = selected ? selected.id : 'no-save'
 
   return <div className="shell">
     <aside>

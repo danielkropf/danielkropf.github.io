@@ -34,7 +34,7 @@ it('confirms only selected ready jobs, supports individual confirmation and addi
  render(<ImportQueueProvider><State /><ImportQueueLauncher /></ImportQueueProvider>)
  stage('one.fm', 'two.fm', 'three.fm'); start(3)
  fireEvent.click(screen.getByText('Pronto one.fm')); fireEvent.click(screen.getByText('Pronto two.fm'))
- expect(screen.getAllByLabelText('3 tarefas restantes')[0]).toBeTruthy()
+ expect(screen.getAllByLabelText('1 tarefas restantes')[0]).toBeTruthy()
  fireEvent.click(screen.getByLabelText('Selecionar one.fm')); fireEvent.click(screen.getByText('Salvar selecionados (1)'))
  expect(screen.getAllByTestId('task').map(t => t.getAttribute('data-confirm'))).toEqual(['1','0','0'])
  const row = screen.getByText('two.fm').closest('li')!

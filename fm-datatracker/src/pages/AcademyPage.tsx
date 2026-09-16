@@ -6,7 +6,7 @@ import { createManualIntakeClass, loadIntakeArchive, type IntakeArchiveClass } f
 import { loadCurrentPlayers, type RichPlayer } from '../lib/dataCache'
 
 export function AcademyPage() {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const [classes, setClasses] = useState<IntakeArchiveClass[]>([])
   const [currentPlayers, setCurrentPlayers] = useState<RichPlayer[]>([])
   const [loading, setLoading] = useState(true)
@@ -20,7 +20,7 @@ export function AcademyPage() {
 
   async function reload() {
     if (!selected) return
-    setLoading(true); setError('')
+    setLoading(!classes.length); setError('')
     try {
       const [archive, current] = await Promise.all([loadIntakeArchive(selected.id), loadCurrentPlayers(selected.id)])
       setClasses(archive)
@@ -28,7 +28,7 @@ export function AcademyPage() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao carregar a academia.') }
     finally { setLoading(false) }
   }
-  useEffect(() => { void reload() }, [selected?.id])
+  useEffect(() => { void reload() }, [selected?.id, currentCheckpoint?.revision])
 
   const currentByPlayer = useMemo(() => new Map(currentPlayers.map(player => [player.id, player])), [currentPlayers])
   const filtered = useMemo(() => classes.filter(item => clubFilter === 'all' || item.club_id === clubFilter), [classes, clubFilter])

@@ -194,7 +194,7 @@ function PersonOutline() {
 type TacticsPageProps = { active?: boolean }
 
 export function TacticsPage({ active = true }: TacticsPageProps = {}) {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const navigate = useNavigate()
   const [config, setConfig] = useState<Config>(fresh)
   const [status, setStatus] = useState('Carregando…')
@@ -262,7 +262,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
       if (loadGuard.current.isCurrent(token)) saveStatus('⚠ Não foi possível carregar', describeDbError(error).full)
     })
     return () => loadGuard.current.invalidate(token)
-  }, [selected?.id])
+  }, [selected?.id, currentCheckpoint?.revision])
 
   useEffect(() => {
     if (!active || !loaded.current || !selected || !supabase) return
@@ -301,7 +301,7 @@ export function TacticsPage({ active = true }: TacticsPageProps = {}) {
       }
     })
     return () => { active = false }
-  }, [selected?.id])
+  }, [selected?.id, currentCheckpoint?.revision])
 
   useEffect(() => {
     if (!loaded.current || !selected || !supabase) return

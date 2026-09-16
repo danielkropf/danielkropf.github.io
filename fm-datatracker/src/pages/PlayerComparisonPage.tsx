@@ -36,7 +36,7 @@ function roleCodeFor(position: string, phase: TacticPhase, requested: string | n
 }
 
 export function PlayerComparisonPage() {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const [params, setParams] = useSearchParams()
   const [state, setState] = useState<PageState>({ status: 'loading' })
   const [stats, setStats] = useState<Record<string, PlayerStat[]>>({})
@@ -47,7 +47,7 @@ export function PlayerComparisonPage() {
       setState({ status: 'error', message: 'Nenhum save ativo.' })
       return () => { active = false }
     }
-    setState({ status: 'loading' })
+    setState(previous => previous.status === 'data' ? previous : { status: 'loading' })
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)])
       .then(([players, model]) => {
         if (!active) return
@@ -61,7 +61,7 @@ export function PlayerComparisonPage() {
         if (active) setState({ status: 'error', message: error instanceof Error ? error.message : 'Falha ao carregar jogadores para comparação.' })
       })
     return () => { active = false }
-  }, [selected?.id])
+  }, [selected?.id, currentCheckpoint?.revision])
 
   const players = state.status === 'data' ? state.players : []
   const overrides = state.status === 'data' ? state.overrides : {}

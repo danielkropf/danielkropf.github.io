@@ -5,7 +5,9 @@ import { aggregateImportProgress, ImportProgressRing } from './ImportProgressRin
 afterEach(cleanup)
 it('averages completed stages without treating review or errors as completed', () => {
  expect(aggregateImportProgress([{phase:'done'}, {phase:'reading',progress:40}])).toEqual({pending:1,value:70,complete:false})
- expect(aggregateImportProgress([{phase:'ready',progress:80}]).complete).toBe(false)
+ expect(aggregateImportProgress([{phase:'ready',progress:100}]).complete).toBe(true)
+ expect(aggregateImportProgress([{phase:'ready',progress:100}], 'writing')).toEqual({pending:0,value:0,complete:false})
+ expect(aggregateImportProgress([{phase:'writing',progress:20}], 'writing')).toEqual({pending:1,value:20,complete:false})
  expect(aggregateImportProgress([{phase:'attention',progress:95}]).complete).toBe(false)
  expect(aggregateImportProgress([{phase:'done'}])).toEqual({pending:0,value:100,complete:true})
 })

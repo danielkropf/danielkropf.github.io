@@ -8,7 +8,7 @@ import { deriveNetworkBalance, globalPlannedClubIndex, type NetworkConfig } from
 type Player = RichPlayer
 
 export function NetworkPage() {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const [players, setPlayers] = useState<Player[]>(() => selected ? peekCurrentPlayers(selected.id) ?? [] : [])
   const [config, setConfig] = useState<NetworkConfig>(() => selected ? peekModelConfig(selected.id) as NetworkConfig ?? {} : {})
   const [loading, setLoading] = useState(() => !selected || !peekCurrentPlayers(selected.id))
@@ -22,13 +22,13 @@ export function NetworkPage() {
   useEffect(() => {
     let active = true
     if (!selected) return () => { active = false }
-    setLoading(!peekCurrentPlayers(selected.id)); setError('')
+    setLoading(!peekCurrentPlayers(selected.id) && !players.length); setError('')
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)])
       .then(([rows, model]) => { if (active) { setPlayers(rows); setConfig(model as NetworkConfig) } })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Falha ao carregar a rede.') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [selected?.id])
+  }, [selected?.id, currentCheckpoint?.revision])
 
   const balance = useMemo(() => deriveNetworkBalance(clubs.map(item => item.club_id), config), [clubs, config])
   const index = useMemo(() => globalPlannedClubIndex(config), [config])

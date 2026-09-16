@@ -96,6 +96,7 @@ export function PlayerPage() {
   const [state, setState] = useState<LoadState>(() => warmProfile() ?? { status: 'loading' })
   const [index, setIndex] = useState(() => checkpointDate ? warmProfile()?.player.player_snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) ?? -1 : -1)
   const [section, setSection] = useState('summary')
+  useEffect(() => { setSection('summary') }, [id, selected?.id])
   const [compareMode, setCompareMode] = useState('previous')
 
 
@@ -103,8 +104,7 @@ export function PlayerPage() {
     let active = true
     const warm = warmProfile()
     setIndex(checkpointDate ? warm?.player.player_snapshots.findIndex(snapshot => snapshot.snapshot_date === checkpointDate) ?? -1 : -1)
-    setSection('summary')
-    setState(warm ?? { status: 'loading' })
+    setState(previous => previous.status === 'data' && previous.player.id === id ? previous : warm ?? { status: 'loading' })
 
     if (!supabase) { setState({ status: 'error', message: 'Banco Mestre não configurado.' }); return () => { active = false } }
     if (!id || !selected) { setState({ status: 'not-found' }); return () => { active = false } }
@@ -153,7 +153,7 @@ export function PlayerPage() {
     })().catch(cause => { if (active) setState({ status: 'error', message: cause instanceof Error ? cause.message : 'Falha inesperada ao carregar a ficha do jogador.' }) })
 
     return () => { active = false }
-  }, [id, selected?.id, checkpointDate])
+  }, [id, selected?.id, checkpointDate, currentCheckpoint?.revision])
 
   const player = state.status === 'data' ? state.player : null
   const stats = state.status === 'data' ? state.stats : []

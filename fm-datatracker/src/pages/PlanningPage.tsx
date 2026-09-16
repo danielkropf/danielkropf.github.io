@@ -201,7 +201,7 @@ function modelDiagnostic(result: { diagnostic?: string | null }) { return result
 
 type PlanningPageProps = { active?: boolean }
 export function PlanningPage({ active = true }: PlanningPageProps = {}) {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const navigate = useNavigate()
   const location = useLocation()
   const pickerReturnKey = `${selected?.id ?? 'none'}:${location.key}`
@@ -265,11 +265,12 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
   useEffect(() => { void loadReferenceDataset().then(setReference) }, [])
   useEffect(() => {
     let alive = true
-    loaded.current = false
+    if (!loaded.current) {
     setDrawerOpen(false); setDrawerRestore(null); setUndoPlanning(null); setMemberships([]); setMembershipDiagnostic(''); setExpandedSets(new Set()); setFocusedSetId(null); setPlayerDropPreview(null); setPickerSetId(null); setPickerSelected(new Set()); setPickerAnchor(null)
     setManagerSetDragging(null); setManagerSetPreview(undefined); setManagerGroupDragging(null); setManagerGroupPreview(undefined)
+    }
     if (!supabase || !selected) return () => { alive = false }
-    setLoading(true); saveStatus('Carregando…')
+    setLoading(!loaded.current); if (!loaded.current) saveStatus('Carregando…')
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)]).then(async ([cached, modelConfig]) => {
       const currentPlayers = cached as unknown as Player[]
       const existing = modelConfig as Config
@@ -302,7 +303,7 @@ export function PlanningPage({ active = true }: PlanningPageProps = {}) {
       })
     }).catch(error => { if (alive) { setStatus('⚠ Não foi possível carregar'); setSaveDetail(describeDbError(error).full); setLoading(false) } })
     return () => { alive = false }
-  }, [selected?.id])
+  }, [selected?.id, currentCheckpoint?.revision])
 
   useEffect(() => {
     if (!active || !loaded.current || !selected || !supabase) return

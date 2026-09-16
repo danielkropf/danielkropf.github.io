@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 const mocks=vi.hoisted(()=>({range:vi.fn(),add:vi.fn()}))
 vi.mock('../features/saves/SaveContext',()=>({useSaves:()=>({selected:{id:'save',name:'Save'}})}))
@@ -17,5 +17,10 @@ it('loads history beside new imports, paginates all rows and only offers necessa
  expect(screen.getByText('Importar arquivos')).toBeTruthy()
  expect(screen.getAllByRole('button',{name:/Atualizar /})).toHaveLength(1)
  expect(mocks.range.mock.calls).toEqual([[0,499],[500,999]])
+ fireEvent.click(screen.getByRole('button',{name:'Atualizar old.fm'}))
+ expect(mocks.add).not.toHaveBeenCalled()
+ const file=new File(['save'],'old.fm')
+ fireEvent.change(screen.getByLabelText('Arquivo original para atualização'),{target:{files:[file]}})
+ expect(mocks.add).toHaveBeenCalledWith([file],expect.objectContaining({id:'old'}))
  await waitFor(()=>expect(screen.queryByText('Carregando histórico…')).toBeNull())
 })

@@ -127,7 +127,7 @@ function projectionKeyForColumn(column: TableColumn, model: ModelConfig) {
 }
 
 export function SquadPage() {
-  const { selected } = useSaves()
+  const { selected, currentCheckpoint } = useSaves()
   const navigate = useNavigate()
   const potential = usePotential()
   const [players, setPlayers] = useState<RichPlayer[]>(() => selected ? peekCurrentPlayers(selected.id) ?? [] : [])
@@ -167,13 +167,13 @@ export function SquadPage() {
   useEffect(() => {
     let active = true
     if (!supabase || !selected) { setPlayers([]); setModel({}); return () => { active = false } }
-    setLoading(!peekCurrentPlayers(selected.id))
+    setLoading(!peekCurrentPlayers(selected.id) && !players.length)
     void Promise.all([loadCurrentPlayers(selected.id), loadModelConfig(selected.id)]).then(([cached, modelConfig]) => {
       if (!active) return
       startTransition(() => { setPlayers(cached as RichPlayer[]); setModel(modelConfig as ModelConfig); setLoading(false); setSaveStatus('✓ Salvo'); setSaveDetail('') })
     }).catch(error => { if (active) { setLoading(false); setSaveStatus('⚠ Não foi possível carregar'); setSaveDetail(describeDbError(error).full) } })
     return () => { active = false }
-  }, [selected?.id])
+  }, [selected?.id, currentCheckpoint?.revision])
 
   const primaryClubId = primaryPlanningClubId(selected?.structure?.trackedClubs ?? [])
   const selectedTacticId = primaryClubId ? resolveClubTacticId(model, primaryClubId, primaryClubId, (model.tactics ?? []).map(item => item.id)) : model.selected_tactic_id ?? null

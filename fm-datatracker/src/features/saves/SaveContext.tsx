@@ -48,8 +48,8 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     const request = ++checkpointRequest.current
     setCurrentCheckpoint(previous => ({
       saveId,
-      status: 'loading',
-      date: null,
+      status: previous.saveId === saveId && previous.status === 'ready' ? 'ready' : 'loading',
+      date: previous.saveId === saveId ? previous.date : null,
       error: null,
       revision: previous.saveId === saveId ? previous.revision : 0,
     }))
