@@ -242,12 +242,12 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
   return { raw, intakes: record(raw.intakes).version === 'fm26-intakes-v1' ? raw.intakes as IntakeRead : null, players: playersWithAge, tactics, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null, competition_history: competitionHistory }
 }
 
-export async function readFmSaveBytes(bytes: Uint8Array, fileName = 'save.fm', onStatus?: (status: string) => void): Promise<OfflineFmRead> {
+export async function readFmSaveBytes(bytes: Uint8Array, fileName = 'save.fm', onStatus?: (status: string, progress?: number) => void): Promise<OfflineFmRead> {
   const raw = await readOfflineSaveBytes(bytes, fileName, onStatus)
   return normalizeOfflineFmResult(raw)
 }
 
-export async function readFmSave(file: File | Uint8Array, onStatus?: (status: string) => void): Promise<OfflineFmRead> {
+export async function readFmSave(file: File | Uint8Array, onStatus?: (status: string, progress?: number) => void): Promise<OfflineFmRead> {
   const bytes = file instanceof Uint8Array ? file : new Uint8Array(await file.arrayBuffer())
   const fileName = file instanceof Uint8Array ? 'save.fm' : file.name
   return readFmSaveBytes(bytes, fileName, onStatus)

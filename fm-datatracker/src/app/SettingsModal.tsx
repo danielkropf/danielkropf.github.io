@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, type ReactNode } from 'react'
 import { RequireSave } from '../components/RequireSave'
+import { ImportSettings } from '../features/imports/ImportQueue'
 import { Resources } from './Resources'
 
 const AppearanceSettings = lazy(() => import('../pages/AppearanceSettings').then(module => ({ default: module.AppearanceSettings })))
@@ -7,12 +8,12 @@ const ModelLabPage = lazy(() => import('../pages/ModelLabPage').then(module => (
 const QualityPage = lazy(() => import('../pages/QualityPage').then(module => ({ default: module.QualityPage })))
 const SavesPage = lazy(() => import('../pages/SavesPage').then(module => ({ default: module.SavesPage })))
 
-type SettingsTab = 'saves' | 'quality' | 'scoring' | 'resources' | 'appearance'
-const tabs: Array<{ id: SettingsTab; label: string }> = [{ id: 'saves', label: 'Saves' }, { id: 'quality', label: 'Qualidade dos dados' }, { id: 'scoring', label: 'Pontuação & Funções' }, { id: 'resources', label: 'Downloads' }, { id: 'appearance', label: 'Aparência' }]
+type SettingsTab = 'imports' | 'saves' | 'quality' | 'scoring' | 'resources' | 'appearance'
+const tabs: Array<{ id: SettingsTab; label: string }> = [{ id: 'imports', label: 'Importações' }, { id: 'saves', label: 'Saves' }, { id: 'quality', label: 'Qualidade dos dados' }, { id: 'scoring', label: 'Pontuação & Funções' }, { id: 'resources', label: 'Downloads' }, { id: 'appearance', label: 'Aparência' }]
 function Protected({ children }: { children: ReactNode }) { return <RequireSave>{children}</RequireSave> }
 
 export function SettingsModal({ close }: { close: () => void }) {
   const [tab, setTab] = useState<SettingsTab>('saves')
-  const content: Record<SettingsTab, ReactNode> = { saves: <SavesPage />, quality: <Protected><QualityPage /></Protected>, scoring: <Protected><ModelLabPage /></Protected>, resources: <Resources />, appearance: <AppearanceSettings /> }
+  const content: Record<SettingsTab, ReactNode> = { imports: <ImportSettings />, saves: <SavesPage />, quality: <Protected><QualityPage /></Protected>, scoring: <Protected><ModelLabPage /></Protected>, resources: <Resources />, appearance: <AppearanceSettings /> }
   return <div className="settings-overlay" onClick={close}><section className="settings-modal" role="dialog" aria-modal="true" aria-label="Configurações" onClick={event => event.stopPropagation()}><header><div><span className="eyebrow">ADMINISTRAÇÃO</span><h1>Configurações</h1></div><button className="close" aria-label="Fechar configurações" onClick={close}>×</button></header><div className="settings-tabs">{tabs.map(item => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}</div><div className="settings-content"><Suspense fallback={<div className="route-loading" role="status">Carregando configuração…</div>}>{content[tab]}</Suspense></div></section></div>
 }

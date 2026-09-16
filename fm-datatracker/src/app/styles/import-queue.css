@@ -3,3 +3,33 @@
 .import-job-host[hidden]{display:none!important}.import-job-host{z-index:1900}.import-job-dialog{width:min(1150px,94vw);max-height:90vh;overflow:auto;background:var(--bg-panel,#101c16);border:1px solid var(--border,#345341);border-radius:12px;padding:16px}.import-job-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:3;background:var(--bg-panel,#101c16);padding:8px}.import-queue-preference{display:flex;align-items:center;gap:8px}.import-queue-preference input[type=checkbox]{width:16px;height:16px;flex:none}.import-job-dialog .import-update-close{display:none}
 
 .import-task-fields{border:0;padding:0;margin:0;min-width:0}
+
+/* 0.38: single import center, sized to its contents. */
+.import-modal{width:min(1000px,96vw);height:auto;max-height:calc(100dvh - 40px)}
+.import-modal-content{height:auto;max-height:calc(100dvh - 100px)}
+.import-center{padding:4px;min-width:0}.import-center>header{padding-right:150px}.import-center h1{margin:0 0 8px}.import-center h2{font-size:16px;margin:0}.import-center p{color:var(--text-muted,#9aada3)}
+.import-center-toolbar,.import-center-footer{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0}.import-center-footer{justify-content:space-between;font-size:13px}.import-center>section{border-top:1px solid var(--border,#345341);padding-top:16px;margin-top:16px}
+.import-file-list{list-style:none;padding:0;margin:12px 0;max-height:44vh;overflow:auto}.import-file-list>li{padding:12px;border-bottom:1px solid var(--border,#345341);display:flex;align-items:center;justify-content:space-between;gap:12px}.import-file-list strong{overflow-wrap:anywhere}.import-file-list small{display:block;color:var(--text-muted,#9aada3);margin-top:4px}.import-file-list input[type=checkbox]{width:16px;height:16px;flex:none}.import-file-list>li.import-result-row{display:block}.import-result-main{display:flex;align-items:center;gap:12px}.import-result-main>div:first-of-type{flex:1;min-width:0}.import-row-actions{display:flex;gap:6px;flex-wrap:wrap}.import-result-row p{font-size:12px;margin:8px 0 0 28px}.import-empty{padding:24px 0;font-size:14px}
+.sidebar-import{display:flex;align-items:center;gap:8px}.import-radial{position:relative;width:24px;height:24px;display:inline-grid;place-items:center;font-size:11px;flex:none}.import-radial:before{content:'';position:absolute;inset:0;border:2px solid #a8fa3833;border-top-color:var(--accent,#a8fa38);border-radius:50%;animation:import-spin 1s linear infinite}.import-ready-count{border:1px solid var(--accent,#a8fa38);border-radius:50%;min-width:22px;height:22px;display:inline-grid;place-items:center;font-size:11px}@keyframes import-spin{to{transform:rotate(360deg)}}
+.import-notice{position:fixed;right:18px;bottom:18px;z-index:990;max-width:min(560px,94vw);padding:12px;background:var(--bg-panel,#101c16);border:1px solid var(--border,#345341);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:13px;box-shadow:0 8px 30px #0006}.import-notice>span{max-height:120px;overflow:auto}.settings-overlay.import-job-host{z-index:1100!important}.import-job-dialog{width:min(1050px,94vw)}
+@media(max-width:650px){.import-center>header{padding-right:0;padding-top:36px}.import-result-main{flex-wrap:wrap}.import-row-actions{width:100%;margin-left:28px}.import-center-footer .button{width:100%}.import-notice{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.import-radial:before{animation:none}}
+.import-read-players{margin:12px 0;border:1px solid var(--border,#345341);border-radius:6px;padding:12px}.import-read-players summary{cursor:pointer;font-weight:600}.import-read-players>div{max-height:280px;overflow:auto;margin-top:8px}.import-read-players table{width:100%;font-size:13px}.import-read-players td,.import-read-players th{text-align:left;padding:6px 10px}.import-job-dialog .import-overview{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+
+/* Import center 0.39: scoped geometry, determinate stage progress and inline history. */
+.import-job-dialog .import-panel .fm-import-preview{display:flex;flex-direction:column;gap:16px;padding:0;min-width:0}
+.import-job-dialog .fm-import-preview>*{width:100%;min-width:0;box-sizing:border-box;grid-column:auto}
+.import-job-dialog .fm-import-preview>.warning,.import-job-dialog .fm-import-preview>.notice{margin:0;padding:12px 16px}
+.import-job-dialog .fm-import-preview>.card{margin:0;padding:16px}
+.import-job-dialog .import-panel .title-row{margin:16px 0}
+.import-job-dialog .import-panel h1{font-size:24px}
+.import-job-dialog .import-panel .import-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.import-job-dialog .import-panel .import-actions{position:sticky;bottom:-16px;background:var(--bg-panel,#101c16);padding:12px 0;border-top:1px solid var(--border,#345341)}
+.import-job-dialog>header{overflow-wrap:anywhere}.import-job-dialog>header>strong{min-width:0}.import-job-dialog>header>button{flex:none}
+.import-center>header{display:block;padding-right:36px}.import-center>header p{margin:6px 0 0}
+.import-progress-ring{width:34px;height:34px;position:relative;display:inline-grid;place-items:center;flex:none;color:var(--accent,#a8fa38)}
+.import-progress-ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);overflow:visible}.import-progress-ring circle{fill:none;stroke-width:2.5}.import-progress-track{stroke:#a8fa3826}.import-progress-fill{stroke:currentColor;transition:stroke-dasharray .25s linear;stroke-linecap:round}.import-progress-ring>span{font-size:9px;font-weight:700}
+.sidebar-import>.import-progress-ring{margin-left:auto;width:24px;height:24px}.sidebar-import>.import-progress-ring>span{font-size:11px}
+.import-overall-progress{display:flex;align-items:center;gap:12px;margin:16px 0;padding:12px;border:1px solid var(--border,#345341);border-radius:8px}.import-overall-progress small{display:block;color:var(--text-muted,#9aada3);margin-top:4px}
+.import-inline-history{border-top:1px solid var(--border,#345341);padding-top:20px;margin-top:20px}.import-inline-history .table-wrap{max-height:46vh;overflow:auto}.import-inline-history table{width:100%;font-size:12px}.import-inline-history th{position:sticky;top:0;background:var(--bg-panel,#101c16)}.import-inline-history td:nth-child(2){min-width:160px;max-width:340px;overflow-wrap:anywhere;white-space:normal}.import-inline-history .import-history-actions{display:flex;gap:6px}.import-inline-history td,.import-inline-history th{padding:10px 8px}
+@media(prefers-reduced-motion:reduce){.import-progress-fill{transition:none}}

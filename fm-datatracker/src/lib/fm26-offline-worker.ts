@@ -55,9 +55,9 @@ scope.onmessage = event => {
       const result = await readFmSaveBytes(
         new Uint8Array(bytes),
         fileName,
-        status => {
+        (status, progress) => {
           stage = status
-          scope.postMessage({ id, type: 'status', status })
+          scope.postMessage({ id, type: 'status', status, progress })
         },
       )
 

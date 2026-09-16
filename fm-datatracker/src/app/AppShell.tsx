@@ -7,6 +7,7 @@ import { usePotential } from '../features/potential/PotentialContext'
 import { useSaves } from '../features/saves/SaveContext'
 import { supabase } from '../lib/supabase'
 import { AppRoutes } from './AppRoutes'
+import { useImportQueue, ImportQueueIndicator } from '../features/imports/ImportQueue'
 import { ImportModal } from './ImportModal'
 import { SettingsModal } from './SettingsModal'
 import { preloadSave } from '../lib/dataCache'
@@ -22,7 +23,7 @@ function AppShellContent() {
   const { saves, selected, select, currentCheckpoint } = useSaves()
   const location = useLocation()
   const potential = usePotential()
-  const [importOpen, setImportOpen] = useState(false)
+  const { importOpen, setImportOpen } = useImportQueue()
   const [settings, setSettings] = useState(false)
   const [elencoMenuOpen, setElencoMenuOpen] = useState(false)
   const elencoCloseTimerRef = useRef<number | null>(null)
@@ -113,7 +114,7 @@ function AppShellContent() {
       </nav>
       <div className="sidebar-footer">
         <div className="sidebar-actions">
-          <button className="ghost sidebar-import" type="button" onClick={() => { setSettings(false); setImportOpen(true) }}>↥ Import</button>
+          <button className="ghost sidebar-import" type="button" onClick={() => { setSettings(false); setImportOpen(true) }}><span aria-hidden="true">↥</span><span>Import</span><ImportQueueIndicator /></button>
           <button className="ghost" type="button" onClick={() => { setImportOpen(false); setSettings(true) }}>⚙ Configurações</button>
           <button className="ghost" onClick={() => void supabase?.auth.signOut()}>Sair</button>
         </div>

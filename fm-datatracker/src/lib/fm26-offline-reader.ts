@@ -54,22 +54,22 @@ async function optionalArchiveMember(archive: Archive, name: string, warnings: s
 }
 
 /** Reads the required FM26 members locally and keeps the characterized v0.22 core read-only. */
-export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'save.fm', onStatus: (status: string) => void = () => {}): Promise<ReaderResult> {
-  onStatus('Lendo contêiner e manifesto…')
+export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'save.fm', onStatus: (status: string, progress?: number) => void = () => {}): Promise<ReaderResult> {
+  onStatus('Lendo contêiner e manifesto…', 5)
   const ArchiveConstructor = FM26OfflineReaderV022.FMArchive as unknown as new (data: Uint8Array, fileName: string, decompress: (frame: Uint8Array) => Promise<Uint8Array>) => Archive
   const archive = await new ArchiveConstructor(saveBytes, fileName, localZstd).init()
-  onStatus('Descompactando game_db.dat…')
+  onStatus('Descompactando game_db.dat…', 10)
   const gameDb = await archive.getMember('game_db.dat')
-  onStatus('Descompactando estatísticas…')
+  onStatus('Descompactando estatísticas…', 25)
   const stats = await archive.getMember('rgman/player_stats.dat')
   const history = archive.memberByName.has('player_stats_hist_dt.cmt') ? await archive.getMember('player_stats_hist_dt.cmt') : null
-  onStatus('Descompactando tática, técnicos humanos e resumo do save…')
+  onStatus('Descompactando tática, técnicos humanos e resumo do save…', 35)
   const [tactics, humans, saveSummaryData] = await Promise.all([
     archive.getMember('tactics_man.dat'),
     archive.getMember('humans.dat'),
     archive.memberByName.has('save_game_summary.dat') ? archive.getMember('save_game_summary.dat') : Promise.resolve(null),
   ])
-  onStatus('Interpretando elencos, atributos, estatísticas e táticas…')
+  onStatus('Interpretando elencos, atributos, estatísticas e táticas…', 45)
   const Reader = FM26OfflineReaderV022.FM26V1Reader as unknown as ReaderConstructor
   const result = new Reader({ gameDb, stats, tactics, humans, historyDt: history, fileName, internalName: archive.saveName, manifestMembers: archive.members.length }).read()
   const expectedHumanCount = humans.length >= 10 ? humans[8] | (humans[9] << 8) : 0
@@ -84,16 +84,16 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
     } : {}),
     save_game_summary: saveSummary,
   }
-  onStatus('Resolvendo nomes de equipes confirmados…')
+  onStatus('Resolvendo nomes de equipes confirmados…', 55)
   enrichOfflineTeamNames(result, gameDb)
-  onStatus('Interpretando contratos, termos e empréstimos…')
+  onStatus('Interpretando contratos, termos e empréstimos…', 60)
   enrichOfflineContracts(result, gameDb, saveSummary.status === 'confirmed' ? saveSummary.current_date : null)
-  onStatus('Resolvendo membership factual E-MC-01A…')
+  onStatus('Resolvendo membership factual E-MC-01A…', 65)
   enrichOfflineMembershipFacts(result, gameDb, saveSummary.status === 'confirmed' ? saveSummary.current_date : null)
 
   // E-TC-01 is an additive, fail-closed sidecar. Historical member failures must
   // never invalidate the already-characterized players/tactics/membership result.
-  onStatus('Interpretando histórico de competições E-TC-01…')
+  onStatus('Interpretando histórico de competições E-TC-01…', 70)
   const competitionWarnings: string[] = []
   try {
     const hasLeagueHistory = archive.memberByName.has('tc_league_history_dt.cmt')
@@ -120,7 +120,7 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
     result.competition_history = competitionHistory
   }
 
-  onStatus('Identificando turmas de intake…')
+  onStatus('Identificando turmas de intake…', 80)
   const intakeWarnings: string[] = []
   try {
     const news = await optionalArchiveMember(archive, 'news.dat', intakeWarnings)
@@ -130,6 +130,6 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
     result.intakes = { version: 'fm26-intakes-v1', checkpoint_date: saveSummary.status === 'confirmed' ? saveSummary.current_date : null, classes: [], warnings: [`Leitura de intakes indisponível: ${String(error)}`] }
   }
 
-  onStatus('Concluído.')
+  onStatus('Concluído.', 95)
   return result
 }

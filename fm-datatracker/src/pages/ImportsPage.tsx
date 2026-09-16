@@ -6,7 +6,7 @@ import { useSaves } from '../features/saves/SaveContext'
 import { type ImportUpdateTarget } from '../features/imports/ImportPanel'
 import { canonicalFieldKey, displayFmPositions, normalizedDate, normalizedFoot, normalizedText, positionsMatch } from '../lib/fm-comparison'
 import { deleteFmImportSafe } from '../lib/import-management'
-import { importVersionState, normalizeAppVersion } from '../lib/import-version'
+import { importVersionState, normalizeAppVersion, needsImportUpdate, IMPORT_DATA_VERSION } from '../lib/import-version'
 import { createLatestSaveRequestGuard } from '../lib/latest-save-request'
 import type { ImportRecord } from '../types/domain'
 
@@ -32,11 +32,11 @@ const importAppVersion = (item: VersionedImportRecord) => normalizeAppVersion(it
 
 function ImportVersion({ item }: { item: VersionedImportRecord }) {
   const version = importAppVersion(item)
-  const state = importVersionState(version, __APP_VERSION__)
+  const state = importVersionState(version, IMPORT_DATA_VERSION)
   if (state === 'unknown') return <span title="Este import não registrou a versão do DataTracker. Ele pode ter sido criado antes do versionamento de imports e pode não conter campos adicionados posteriormente.">⚠ não registrada</span>
-  if (state === 'older') return <span title={`Import feito na v${version}. A versão atual é v${__APP_VERSION__}; dados adicionados em versões posteriores podem estar ausentes.`}>⚠ v{version}</span>
-  if (state === 'newer') return <span title={`Este import foi criado na v${version}, mais nova que a versão atualmente aberta (v${__APP_VERSION__}).`}>v{version}</span>
-  return <span title="Import realizado na versão atual do DataTracker.">v{version}</span>
+  if (state === 'older') return <span title={`Import feito na v${version}. A versão de referência dos dados é v${IMPORT_DATA_VERSION}; dados adicionados em versões posteriores podem estar ausentes.`}>⚠ v{version}</span>
+  if (state === 'newer') return <span title={`Este import foi criado na v${version}, compatível com a versão de referência dos dados (v${IMPORT_DATA_VERSION}).`}>v{version}</span>
+  return <span title="Dados compatíveis com o leitor atual.">v{version}</span>
 }
 
 function flatten(value: unknown, prefix = '', output: Record<string, unknown> = {}): Record<string, unknown> {
@@ -130,31 +130,42 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
   const rawRequestGuard = useRef(createLatestSaveRequestGuard())
   const selectedIdRef = useRef<string | null>(selected?.id ?? null)
   selectedIdRef.current = selected?.id ?? null
-  const compatibilityWarnings = useMemo(() => items.filter(item => {
-    const state = importVersionState(importAppVersion(item), __APP_VERSION__)
-    return state === 'older' || state === 'unknown'
-  }).length, [items])
+  const compatibilityWarnings = useMemo(() => items.filter(needsImportUpdate).length, [items])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   async function load(saveId: string) {
     if (!supabase) return
     const token = historyRequestGuard.current.begin(saveId)
-    const { data, error } = await supabase.from('imports').select('*').eq('save_id', saveId).order('created_at', { ascending: false })
-    if (!historyRequestGuard.current.isCurrent(token) || selectedIdRef.current !== saveId) return
-    if (error) { setMessage(`Não foi possível carregar o histórico: ${error.message}`); return }
-    setItems((data ?? []) as VersionedImportRecord[])
+    setLoadingHistory(true)
+    try {
+      const all: VersionedImportRecord[] = []
+      for (let offset = 0; ; offset += 500) {
+        const { data, error } = await supabase.from('imports').select('*').eq('save_id', saveId).order('created_at', { ascending: false }).order('id', { ascending: false }).range(offset, offset + 499)
+        if (!historyRequestGuard.current.isCurrent(token) || selectedIdRef.current !== saveId) return
+        if (error) throw error
+        all.push(...(data ?? []) as VersionedImportRecord[])
+        if (!data || data.length < 500) break
+      }
+      setItems(all)
+    } catch (error) {
+      if (historyRequestGuard.current.isCurrent(token) && selectedIdRef.current === saveId) setMessage(`Não foi possível carregar o histórico: ${error instanceof Error ? error.message : 'Falha ao consultar imports.'}`)
+    } finally {
+      if (historyRequestGuard.current.isCurrent(token) && selectedIdRef.current === saveId) setLoadingHistory(false)
+    }
   }
   useEffect(() => {
     const saveId = selected?.id
-    if (mode !== 'history' || !saveId) {
+    if (!saveId) {
       historyRequestGuard.current.invalidate()
       setItems([])
       return
     }
+    setItems([]); setMessage('')
     void load(saveId)
     const changed=(event:Event)=>{if((event as CustomEvent<{saveId:string}>).detail?.saveId===saveId)void load(saveId)}
     window.addEventListener(SAVE_FACTS_INVALIDATED_EVENT,changed)
     return () => { historyRequestGuard.current.invalidate();window.removeEventListener(SAVE_FACTS_INVALIDATED_EVENT,changed) }
-  }, [mode, selected?.id])
+  }, [selected?.id])
 
   useEffect(() => {
     rawRequestGuard.current.invalidate()
@@ -207,16 +218,14 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
     setLoadingRaw(false)
   }
 
-  if (mode === 'history') return <section className="settings-import-history">
+  return <div className="screen-page imports-page">{mode !== 'history' && <ImportQueueLauncher />}<section className="settings-import-history import-inline-history">
     <span className="eyebrow">GERENCIAMENTO</span><h2>Importações anteriores</h2>
-    <p>Consulte os arquivos já confirmados neste save. Para adicionar uma nova fotografia, use <strong>Novo import</strong> no menu lateral.</p>
+    <p>Histórico completo do save selecionado, com versão e dados de cada import.</p>
     {compatibilityWarnings > 0 && <p className="warning">{compatibilityWarnings} {compatibilityWarnings === 1 ? 'import foi feito em uma versão anterior ou não possui versão registrada' : 'imports foram feitos em versões anteriores ou não possuem versão registrada'}. Eles continuam válidos, mas podem não conter dados que só passaram a ser extraídos em versões mais novas. Use Atualizar para reler com segurança imports que contenham o arquivo .fm original; snapshots CSV históricos permanecem imutáveis.</p>}
-    <div className="table-wrap"><table><thead><tr><th>Data</th><th>Arquivo</th><th>Fonte</th><th>Versão</th><th>Linhas</th><th>Status</th><th aria-label="Ações" /></tr></thead><tbody>{items.map(item => <tr key={item.id} className="import-history-row" onClick={() => void openRaw(item)} tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRaw(item) } }}><td>{item.snapshot_date}</td><td>{item.original_filename}</td><td>{sourceLabel(item.original_filename)}</td><td><ImportVersion item={item} /></td><td>{item.row_count}</td><td><span className="status">{item.status}</span></td><td><div className="import-history-actions"><button className="ghost import-update" disabled={deletingId !== null} onClick={event => { event.stopPropagation(); setMessage(''); importQueue.add([], item) }} title={`Atualizar ${item.original_filename} usando o leitor atual`} aria-label={`Atualizar ${item.original_filename}`}>↻</button><button className="ghost import-delete" disabled={deletingId !== null || importQueue.isUpdating(item.id)} onClick={event => { event.stopPropagation(); void remove(item) }} title={`Excluir ${item.original_filename}`} aria-label={`Excluir ${item.original_filename}`}>{deletingId === item.id ? '…' : '🗑'}</button></div></td></tr>)}</tbody></table></div>
+    <div className="table-wrap"><table><thead><tr><th>Data</th><th>Arquivo</th><th>Fonte</th><th>Versão</th><th>Linhas</th><th>Status</th><th aria-label="Ações" /></tr></thead><tbody>{items.map(item => <tr key={item.id} className="import-history-row" onClick={() => void openRaw(item)} tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRaw(item) } }}><td>{item.snapshot_date}</td><td>{item.original_filename}</td><td>{sourceLabel(item.original_filename)}</td><td><ImportVersion item={item} /></td><td>{item.row_count}</td><td><span className="status">{item.status}</span></td><td><div className="import-history-actions">{needsImportUpdate(item) && <button className="ghost import-update" disabled={deletingId !== null} onClick={event => { event.stopPropagation(); setMessage(''); importQueue.add([], item) }} title={`Atualizar ${item.original_filename} usando o leitor atual`} aria-label={`Atualizar ${item.original_filename}`}>Atualizar</button>}<button className="ghost import-delete" disabled={deletingId !== null || importQueue.isUpdating(item.id)} onClick={event => { event.stopPropagation(); void remove(item) }} title={`Excluir ${item.original_filename}`} aria-label={`Excluir ${item.original_filename}`}>{deletingId === item.id ? '…' : '🗑'}</button></div></td></tr>)}</tbody></table></div>
     {message && <p className={message.startsWith('Não foi') ? 'warning' : 'notice'}>{message}</p>}
-    {!items.length && <p>Nenhum import confirmado.</p>}
+    {loadingHistory && <p role="status">Carregando histórico…</p>}{!loadingHistory && !items.length && <p>Nenhum import confirmado.</p>}
     {rawItem && <RawImportInspector item={rawItem} rows={rawRows} onClose={closeRaw} />}
     {rawItem && loadingRaw && <div className="settings-overlay raw-import-overlay"><div className="raw-import-loading">Carregando dados brutos…</div></div>}
-  </section>
-
-  return <div className="screen-page imports-page"><ImportQueueLauncher />{message && <p className={message.startsWith('Importação concluída, mas') ? 'warning' : 'notice'}>{message}</p>}</div>
+  </section></div>
 }

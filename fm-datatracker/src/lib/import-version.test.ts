@@ -22,3 +22,13 @@ describe('import version metadata', () => {
     expect(importVersionState(null, '0.24.2')).toBe('unknown')
   })
 })
+
+import { needsImportUpdate } from './import-version'
+it('offers reprocessing only for FM imports older than the data version, not UI versions', () => {
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.35.3'}})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm'})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.36.0'}})).toBe(false)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.38.0'}})).toBe(false)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.99.0'}})).toBe(false)
+  expect(needsImportUpdate({original_filename:'squad.csv',source_schema:{app_version:'0.30.0'}})).toBe(false)
+})

@@ -46,3 +46,14 @@ it('refuses an update whose original hash does not match',async()=>{
  await screen.findByText(/O conteúdo selecionado não corresponde/)
  expect(mocks.rpc).not.toHaveBeenCalled()
 })
+
+it('saves a read result only after an explicit queue confirmation, once per request',async()=>{
+ const file=testFile(), done=vi.fn(), save={id:'pinned',name:'Pinned'} as Save
+ const view=render(<ImportPanel pinnedSave={save} initialFmFile={file} onCompleted={done} confirmRequest={0}/>)
+ await waitFor(()=>expect((screen.getByRole('button',{name:'Confirmar importação'}) as HTMLButtonElement).disabled).toBe(false))
+ expect(mocks.rpc).not.toHaveBeenCalled()
+ view.rerender(<ImportPanel pinnedSave={save} initialFmFile={file} onCompleted={done} confirmRequest={1}/>)
+ await waitFor(()=>expect(done).toHaveBeenCalledOnce())
+ view.rerender(<ImportPanel pinnedSave={save} initialFmFile={file} onCompleted={done} confirmRequest={1}/>)
+ expect(mocks.rpc).toHaveBeenCalledOnce()
+})
