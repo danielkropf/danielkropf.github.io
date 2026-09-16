@@ -7,7 +7,7 @@ import { usePotential } from '../features/potential/PotentialContext'
 import { useSaves } from '../features/saves/SaveContext'
 import { supabase } from '../lib/supabase'
 import { AppRoutes } from './AppRoutes'
-import { useImportQueue, ImportQueueIndicator } from '../features/imports/ImportQueue'
+import { useImportQueue, ImportQueueIndicator, ImportNotice } from '../features/imports/ImportQueue'
 import { ImportModal } from './ImportModal'
 import { SettingsModal } from './SettingsModal'
 import { preloadSave } from '../lib/dataCache'
@@ -114,7 +114,7 @@ function AppShellContent() {
       </nav>
       <div className="sidebar-footer">
         <div className="sidebar-actions">
-          <button className="ghost sidebar-import" type="button" onClick={() => { setSettings(false); setImportOpen(true) }}><span aria-hidden="true">↥</span><span>Import</span><ImportQueueIndicator /></button>
+          <div className="sidebar-import-stack"><ImportNotice /><button className="ghost sidebar-import" type="button" onClick={() => { setSettings(false); setImportOpen(true) }}><span aria-hidden="true">↥</span><span>Import</span><ImportQueueIndicator /></button></div>
           <button className="ghost" type="button" onClick={() => { setImportOpen(false); setSettings(true) }}>⚙ Configurações</button>
           <button className="ghost" onClick={() => void supabase?.auth.signOut()}>Sair</button>
         </div>

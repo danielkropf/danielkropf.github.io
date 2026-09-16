@@ -5,8 +5,8 @@ const mocks = vi.hoisted(() => ({ selected: { id: 'a', name: 'Save A' }, invalid
 vi.mock('../saves/SaveContext', () => ({ useSaves: () => ({ selected: mocks.selected }) }))
 vi.mock('../../lib/dataCache', () => ({ invalidateSaveData: mocks.invalidate }))
 vi.mock('./ImportPanel', () => ({ ImportPanel: (props: any) => <div data-testid="task" data-save={props.pinnedSave.id} data-confirm={props.confirmRequest}><button onClick={() => props.onProgress({ phase: 'ready', detail: '20 jogadores' })}>Pronto {props.initialFmFile?.name}</button><button onClick={() => props.onCompleted('Resumo: 20 jogadores, 1 intake')}>Concluir {props.initialFmFile?.name}</button></div> }))
-import { ImportQueueProvider, ImportQueueLauncher, ImportSettings, ImportQueueIndicator, useImportQueue } from './ImportQueue'
-function State() { const q = useImportQueue(); return <><span data-testid="open">{String(q.importOpen)}</span><button onClick={() => q.setImportOpen(true)}>Import</button><ImportQueueIndicator /></> }
+import { ImportQueueProvider, ImportQueueLauncher, ImportSettings, ImportQueueIndicator, ImportNotice, useImportQueue } from './ImportQueue'
+function State() { const q = useImportQueue(); return <><span data-testid="open">{String(q.importOpen)}</span><button onClick={() => q.setImportOpen(true)}>Import</button><ImportQueueIndicator /><ImportNotice /></> }
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear(); mocks.selected = { id: 'a', name: 'Save A' }; mocks.invalidate.mockClear() })
 function stage(...names: string[]) { fireEvent.change(screen.getByLabelText('Selecionar vários saves .fm'), { target: { files: names.map(name => new File(['a'], name)) } }) }
 function start(count: number) { fireEvent.click(screen.getByText(`Confirmar leitura de ${count} arquivo(s)`)) }
@@ -24,11 +24,14 @@ it('keeps tasks and drafts pinned when navigating or changing save, and notifies
  const view = render(<ImportQueueProvider><ImportQueueLauncher /></ImportQueueProvider>)
  stage('one.fm'); mocks.selected = { id: 'b', name: 'Save B' }
  view.rerender(<ImportQueueProvider><ImportQueueLauncher /></ImportQueueProvider>); start(1)
- view.rerender(<ImportQueueProvider><p>Outra tela</p></ImportQueueProvider>)
+ view.rerender(<ImportQueueProvider><p>Outra tela</p><ImportNotice /></ImportQueueProvider>)
  expect(screen.getByTestId('task').getAttribute('data-save')).toBe('a')
  fireEvent.click(screen.getByText('Concluir one.fm'))
  expect(mocks.invalidate).toHaveBeenCalledWith('a')
- expect(screen.getByRole('status').textContent).toContain('20 jogadores')
+ expect(screen.getByRole('status').textContent).toBe('Import salvo.')
+ fireEvent.click(screen.getByRole('button', { name: 'Import salvo. Fechar aviso' }))
+ expect(screen.getByRole('status').textContent).toBe('')
+ expect(screen.queryByText('Ver imports')).toBeNull()
 })
 it('confirms only selected ready jobs, supports individual confirmation and adding more while jobs remain', () => {
  render(<ImportQueueProvider><State /><ImportQueueLauncher /></ImportQueueProvider>)

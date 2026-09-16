@@ -13,6 +13,7 @@ type Queue = {
   add: (files?: File[], updateTarget?: ImportUpdateTarget) => void
   automatic: boolean; setAutomatic: (value: boolean) => void; isUpdating: (id: string) => boolean
   importOpen: boolean; setImportOpen: (value: boolean) => void; remaining: number; ready: number
+  notice: string; dismissNotice: () => void
   jobs: Job[]; drafts: Draft[]; stage: (files: File[]) => void; removeDraft: (id: string) => void
   start: () => void; review: (id: string) => void; remove: (id: string) => void; confirm: (ids: string[]) => void
 }
@@ -31,7 +32,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
   const ready = jobs.filter(j => j.phase === 'ready').length
   const jobsRef = useRef(jobs); jobsRef.current = jobs
   useEffect(() => {
-    if (safeSessionStorage.getItem(INTERRUPTED)) setNotice('A página foi recarregada com tarefas pendentes. Selecione os arquivos novamente; arquivos já salvos serão reconhecidos.')
+    if (safeSessionStorage.getItem(INTERRUPTED)) setNotice('Leituras interrompidas. Reenvie os arquivos.')
     return onPrivateSessionChange(() => { setJobs([]); setDrafts([]); setActive(null); setImportOpen(false); setNotice(''); safeSessionStorage.removeItem(INTERRUPTED) })
   }, [])
   useEffect(() => {
@@ -62,7 +63,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
   }
   function progress(id: string, value: ImportProgress) {
     const previous = jobsRef.current.find(j => j.id === id)
-    if (previous && previous.phase !== value.phase && (value.phase === 'ready' || value.phase === 'attention')) setNotice(`${value.fileName ?? previous.name}: ${value.phase === 'ready' ? 'leitura concluída. Abra Import para revisar e salvar.' : 'precisa de revisão. Abra Import para continuar.'}`)
+    if (previous && previous.phase !== value.phase && (value.phase === 'ready' || value.phase === 'attention')) setNotice(value.phase === 'ready' ? 'Leitura pronta para confirmar.' : 'Import precisa de revisão.')
     setJobs(old => old.map(j => j.id === id && j.phase !== 'done' ? { ...j, ...value, name: value.fileName ?? j.name } : j))
   }
   function completed(id: string, summary: string) {
@@ -70,7 +71,7 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
     invalidateSaveData(job.save.id)
     setJobs(old => old.map(j => j.id === id ? { ...j, phase: 'done', detail: summary, progress: 100, file: undefined, csvFile: undefined } : j))
     if (active === id) setImportOpen(true)
-    setActive(old => old === id ? null : old); setNotice(`${job.name}: ${summary}`)
+    setActive(old => old === id ? null : old); setNotice(job.updateTarget || job.operation === 'update' ? 'Atualização salva.' : 'Import salvo.')
   }
   function remove(id: string) {
     if (jobsRef.current.find(j => j.id === id)?.phase === 'writing') return
@@ -79,9 +80,8 @@ export function ImportQueueProvider({ children }: { children: ReactNode }) {
   function confirm(ids: string[]) {
     setJobs(old => old.map(j => ids.includes(j.id) && j.phase === 'ready' ? { ...j, confirmation: j.confirmation + 1 } : j))
   }
-  return <Context.Provider value={{ add, automatic, setAutomatic, isUpdating: id => jobs.some(j => (j.updateTarget?.id ?? j.detectedImportId) === id && j.phase !== 'done'), importOpen, setImportOpen, remaining, ready, jobs, drafts, stage, removeDraft: id => setDrafts(old => old.filter(d => d.id !== id)), start, review: setActive, remove, confirm }}>
+  return <Context.Provider value={{ notice, dismissNotice: () => setNotice(''), add, automatic, setAutomatic, isUpdating: id => jobs.some(j => (j.updateTarget?.id ?? j.detectedImportId) === id && j.phase !== 'done'), importOpen, setImportOpen, remaining, ready, jobs, drafts, stage, removeDraft: id => setDrafts(old => old.filter(d => d.id !== id)), start, review: setActive, remove, confirm }}>
     {children}
-    {notice && <aside className="import-notice" role="status" aria-live="polite"><span>{notice}</span><button className="ghost" onClick={() => { setImportOpen(true); setNotice('') }}>Ver imports</button><button className="ghost" aria-label="Dispensar aviso" onClick={() => setNotice('')}>×</button></aside>}
     {jobs.filter(job => job.phase !== 'done').map(job => <div key={job.id} hidden={active !== job.id} className="import-job-host settings-overlay"><section className="import-job-dialog" role="dialog" aria-modal="true" aria-label={`Resumo: ${job.name}`}><header><strong>{job.save.name} · {job.name}</strong><button className="ghost" onClick={() => { setActive(null); setImportOpen(true) }}>Voltar à lista</button></header><ImportPanel pinnedSave={job.save} initialFmFile={job.file} initialCsvFile={job.csvFile} updateTarget={job.updateTarget} autoConfirm={automatic} confirmRequest={job.confirmation} onProgress={value => progress(job.id, value)} onCompleted={summary => completed(job.id, summary)} onCancelUpdate={() => setActive(null)} /></section></div>)}
   </Context.Provider>
 }
@@ -89,6 +89,14 @@ export function ImportSettings() {
   const { automatic, setAutomatic } = useImportQueue()
   return <section className="card"><h2>Importações</h2><label className="import-queue-preference"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} />Salvar imports sem pedir confirmação</label><p>Por padrão, a leitura termina e aguarda sua revisão antes de salvar ou atualizar os dados. Ative esta opção para salvar automaticamente os arquivos que passarem nas validações. Leituras com pendências continuarão exigindo revisão.</p></section>
 }
+/** Lives next to the Import button, never over the page content. */
+export function ImportNotice() {
+  const { notice, dismissNotice } = useImportQueue()
+  return <div className="import-notice" role="status" aria-live="polite" aria-atomic="true">
+    {notice && <button type="button" onClick={dismissNotice} aria-label={`${notice} Fechar aviso`}>{notice}</button>}
+  </div>
+}
+
 export function ImportQueueIndicator() {
   const { jobs } = useImportQueue()
   if (!jobs.length) return null
