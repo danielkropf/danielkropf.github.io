@@ -1,3 +1,5 @@
+import { importReadSlots, importWriteSlots } from '../../lib/import-task-limiter'
+import type { Save } from '../../types/domain'
 import type { IntakeRead } from '../../lib/fm26-intakes'
 import { importRpcErrorMessage } from '../../lib/import-rpc-error'
 import { checkDatabaseCompatibility } from '../../lib/database-compatibility'
@@ -44,7 +46,8 @@ type DataComparison = {
 type ImportFlash = { saveId: string; message: string; createdAt: number }
 type FmReadMarker = { fileName: string; startedAt: number; runtimeId: string }
 export type ImportUpdateTarget = { id: string; original_filename: string; file_type: ImportType; snapshot_date: string; file_hash: string; source_schema?: Record<string, unknown> | null }
-type ImportPanelProps = { onImported?: () => void; updateTarget?: ImportUpdateTarget | null; onCancelUpdate?: () => void }
+export type ImportProgress = { phase: 'idle' | 'reading' | 'ready' | 'attention' | 'writing'; detail: string; fileName?: string }
+type ImportPanelProps = { onImported?: () => void; updateTarget?: ImportUpdateTarget | null; onCancelUpdate?: () => void; pinnedSave?: Save; initialFmFile?: File; autoConfirm?: boolean; onProgress?: (progress: ImportProgress) => void; onCompleted?: (summary: string) => void }
 
 const TACTIC_MODEL_VERSION = '2.9.0'
 const IMPORT_FLASH_KEY = 'fm-datatracker:import-success-v1'
@@ -184,12 +187,17 @@ function tagRows(rows: PreparedRow[], source: string, validation: 'validated' | 
 }
 
 export function ImportPanel(props: ImportPanelProps) {
-  const { selected } = useSaves()
+  const context = useSaves()
+  const selected = props.pinnedSave ?? context.selected
   return <ScopedImportPanel key={`${selected?.id ?? 'none'}:${props.updateTarget?.id ?? 'new'}`} {...props} />
 }
 
-function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: ImportPanelProps) {
-  const { selected } = useSaves()
+function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate, pinnedSave, initialFmFile, autoConfirm = false, onProgress, onCompleted }: ImportPanelProps) {
+  const context = useSaves()
+  const selected = pinnedSave ?? context.selected
+  const autoAttempt = useRef(false)
+  const progressCallback = useRef(onProgress)
+  progressCallback.current = onProgress
   const csvTask = useRef(0), fmTask = useRef(0)
   const cancelFm = useRef<(() => void) | null>(null)
   const mounted = useRef(true)
@@ -286,7 +294,20 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
   const updateFilesReady = !updateTarget || ((!updateNeedsCsv || Boolean(csvFile)) && (!updateNeedsFm || Boolean(fmFile)))
   const canConfirm = Boolean(selected && importRows.length && !saving && !isReading && snapshotDateValid && fmIdentitySafe && updateFilesReady)
 
+  useEffect(() => { if (initialFmFile) void chooseFm(initialFmFile) }, [initialFmFile])
+  useEffect(() => {
+    progressCallback.current?.({fileName:[csvFile?.name,fmFile?.name].filter(Boolean).join(' + ')||undefined,phase: saving ? 'writing' : isReading ? 'reading' : message.startsWith('Falha') ? 'attention' : canConfirm ? 'ready' : csvFile || fmFile ? 'attention' : 'idle',
+      detail: message || (isReading ? (loadingFm ? fmStatus : csvStatus) : canConfirm ? 'Pronto para confirmar.' : fmFile ? fmStatus : csvStatus)})
+  }, [saving,isReading,canConfirm,message,fmStatus,csvStatus,csvFile,fmFile,loadingFm])
+  useEffect(() => {
+    if (autoConfirm && canConfirm && importMode !== 'csv-fallback' && !autoAttempt.current) {
+      autoAttempt.current = true
+      void confirm()
+    }
+  }, [autoConfirm,canConfirm,importMode])
+
   function clearSuccessForNewInput() {
+    autoAttempt.current = false
     clearImportFlash()
     setMessage('')
   }
@@ -316,6 +337,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
   }
 
   async function readFmInWorker(file: File, task: number): Promise<OfflineRead> {
+    if (!mounted.current || task !== fmTask.current) throw new Error('Leitura cancelada.')
     const id = crypto.randomUUID()
     const bytes = await file.arrayBuffer()
     if (task !== fmTask.current) throw new Error('Leitura substituída.')
@@ -370,10 +392,10 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
     if (!file) return
     const task = ++fmTask.current
     cancelFm.current?.()
-    clearSuccessForNewInput(); setFmFile(file); setFmRead(null); if (!updateTarget) setType('squad'); setLoadingFm(true); setFmStatus('Lendo o save localmente em segundo plano…')
+    clearSuccessForNewInput(); setFmFile(file); setFmRead(null); if (!updateTarget) setType('squad'); setLoadingFm(true); setFmStatus('Na fila de leitura do save…')
     if (typeof window !== 'undefined') safeSessionStorage.setItem(FM_READ_MARKER_KEY, JSON.stringify({ fileName: file.name, startedAt: Date.now(), runtimeId: IMPORT_PANEL_RUNTIME_ID } satisfies FmReadMarker))
     try {
-      const read = await readFmInWorker(file, task)
+      const read = await importReadSlots.run(() => readFmInWorker(file, task))
       if (task !== fmTask.current) return
       if (updateTarget) {
         if (read.snapshot_date_precision === 'day' && read.snapshot_date && read.snapshot_date !== updateTarget.snapshot_date) throw new Error(`O arquivo selecionado está na data ${read.snapshot_date}, mas esta importação pertence a ${updateTarget.snapshot_date}.`)
@@ -448,8 +470,13 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
     if (!selected || !canConfirm || confirmInFlight.current) return
     confirmInFlight.current = true
     const generation = privateSessionGeneration()
-    setSaving(true); setMessage('')
+    setSaving(true); setMessage('Aguardando gravação na fila…')
+    let releaseWrite: (() => void) | undefined
     try {
+      releaseWrite = await importWriteSlots.acquire()
+      assertPrivateSession(generation)
+      if (!mounted.current) return
+      setMessage('Gravando importação…')
       if (!supabase) throw new Error('Banco mestre não configurado.')
       if (!fmIdentitySafe) throw new Error('O clube do human manager não foi resolvido com segurança. A importação .fm foi bloqueada para proteger a identidade do save.')
       if (!snapshotDateValid) throw new Error(confirmedFmYear ? `Informe uma data completa de ${confirmedFmYear} antes de confirmar.` : 'Informe uma data completa e válida antes de confirmar.')
@@ -488,7 +515,13 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
       })
       if (error) throw new Error(importRpcErrorMessage(error))
       assertPrivateSession(generation)
-      const result = data as { duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
+      const result = data as { new_players?: number; updated_players?: number; duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
+      let versionNote = ''
+      if (onCompleted && result?.import_id && !updateTarget) {
+        try { await stampImportVersion(selected.id, result.import_id, __APP_VERSION__) }
+        catch { versionNote = ' Dados gravados, mas o registro da versão precisa ser atualizado.' }
+      }
+      const finish = (summary: string) => { assertPrivateSession(generation); onCompleted?.(`${summary} ${importRows.length} jogadores processados.${result?.duplicate ? '' : ` ${result?.new_players ?? 0} novos, ${result?.updated_players ?? 0} atualizados.`}${versionNote}`) }
       const tacticOutcome = await persistTacticPlan(tacticPlan)
       const intakeSuffix = intakePayload ? ` ${intakePayload.classes.length} turma(s) de intake registrada(s) para consulta e revisão na Academia.` : ''
       const tacticSuffix = (tacticOutcome.note ? ` ${tacticOutcome.note}` : '') + intakeSuffix
@@ -496,34 +529,37 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
         if (updateTarget) {
           if (result.import_id !== updateTarget.id) throw new Error('O hash corresponde a outra importação deste save. A atualização foi bloqueada.')
           const previousVersion = typeof updateTarget.source_schema?.app_version === 'string' ? updateTarget.source_schema.app_version : null
-          await stampImportVersion(selected.id, updateTarget.id, __APP_VERSION__, {
+          try { await stampImportVersion(selected.id, updateTarget.id, __APP_VERSION__, {
             reprocessed_at: new Date().toISOString(),
             reprocessed_from_version: previousVersion,
             reprocessed_reader: 'e-mc-01b-duplicate-enrichment',
-          })
+          }) } catch { versionNote = ' Dados atualizados, mas não foi possível registrar a versão desta releitura.' }
           const sync = result.membership_sync
           const updatedMessage = `Importação atualizada com segurança para v${__APP_VERSION__}: mesmo arquivo, mesmo save e mesma data confirmados.${sync?.status === 'synced' ? ` ${sync.synced_rows ?? 0} vínculo(s) factual(is) sincronizado(s); ${sync.idempotent_rows ?? 0} já estavam atualizados.` : ''}${tacticSuffix}`
           writeImportFlash(selected.id, updatedMessage)
           setMessage(updatedMessage)
+          finish(updatedMessage)
           onImported?.()
           return
         }
         const duplicateMessage = `Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.${tacticSuffix}`
         setMessage(duplicateMessage)
+        finish(duplicateMessage)
         if (tacticOutcome.changed || intakePayload) {
           writeImportFlash(selected.id, duplicateMessage)
           onImported?.()
         }
         return
       }
-      if (updateTarget) throw new Error('O arquivo não foi reconhecido como a mesma importação existente. Nenhuma atualização foi aplicada.')
+      if (updateTarget) throw new Error('A importação original não foi encontrada e o banco criou uma nova fotografia. Verifique o histórico antes de repetir; não foi uma atualização do registro original.')
       const successMessage = `${importMode === 'validated' ? 'Importação concluída: CSV e .fm foram validados juntos.' : 'Importação concluída.'} Save: ${selected.name}. Snapshot: ${snapshotDate}.${tacticSuffix}`
       writeImportFlash(selected.id, successMessage)
       setMessage(successMessage)
+      finish(successMessage)
       resetTransientImportState()
       onImported?.()
     } catch (error) { setMessage(`Falha na persistência: ${errorMessage(error)}`) }
-    finally { confirmInFlight.current = false; setSaving(false) }
+    finally { releaseWrite?.(); confirmInFlight.current = false; setSaving(false) }
   }
 
   const detectedSummary = preview
@@ -532,7 +568,7 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
   const fmSummary = fmRead ? `${fmRows.length} jogadores · ${fmRead.tactics?.length ?? 0} tática(s) resolvida(s) · atributos, posições e dados de save` : 'Aguardando arquivo .fm.'
   const sourceLabel = csvFile && fmFile ? 'CSV + .fm' : fmFile ? '.fm' : csvFile ? 'CSV' : 'Aguardando arquivos'
 
-  return <section className="import-panel">
+  return <section className="import-panel"><fieldset disabled={saving} className="import-task-fields">
     <div className="title-row"><div><span className="eyebrow">IMPORTAÇÃO SEGURA</span><h1>Novo Snapshot</h1><p>Envie CSV, arquivo <code>.fm</code> ou os dois para validar a leitura do save.</p></div></div>
     <div className="preview fm-import-preview">
       <div className="import-file-pickers">
@@ -555,5 +591,5 @@ function ScopedImportPanel({ onImported, updateTarget = null, onCancelUpdate }: 
       <div className="import-actions"><button className="primary" disabled={!canConfirm} onClick={() => void confirm()}>{saving ? (updateTarget ? 'Atualizando…' : 'Importando…') : isReading ? 'Aguardando leitura…' : updateTarget ? 'Atualizar esta importação' : importMode === 'csv-fallback' ? 'Importar CSV sem dados do .fm' : 'Confirmar importação'}</button></div>
       {comparisonModal && comparison && <div className="settings-overlay import-comparison-overlay" role="presentation" onMouseDown={() => setComparisonModal(null)}><section className="import-comparison-modal" role="dialog" aria-modal="true" aria-label="Detalhes da validação" onMouseDown={event => event.stopPropagation()}><header><div><span className="eyebrow">VALIDAÇÃO CSV × .FM</span><h2>{comparisonModal === 'differences' ? 'Divergências encontradas' : 'Campos ainda não comparáveis'}</h2></div><button className="ghost" type="button" onClick={() => setComparisonModal(null)} aria-label="Fechar">×</button></header><div className="import-comparison-modal-body">{comparisonModal === 'differences' ? <><p>Mostrando as primeiras {comparison.differences.length} de {comparison.divergentFields} divergências objetivas.</p><ul>{comparison.differences.map((difference, index) => <li key={`${difference.player}-${difference.field}-${index}`}><b>{difference.player}</b><span>{difference.field}</span><code>CSV: {difference.csv}</code><code>.fm: {difference.fm}</code></li>)}</ul></> : <><p>Estes campos ainda não têm uma equivalência segura: alguns não foram mapeados pelo leitor <code>.fm</code>; outros existem nas duas fontes, mas usam escalas ou formatos diferentes. Eles não entram no cálculo da validação.</p><ul className="field-list">{comparison.unavailableFields.map(field => <li key={field}>{field}</li>)}</ul></>}</div></section></div>}
     </div>
-  </section>
+  </fieldset></section>
 }

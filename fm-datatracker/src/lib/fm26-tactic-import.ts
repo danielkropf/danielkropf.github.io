@@ -181,6 +181,7 @@ export function mergeImportedFmTactic(existingTacticsValue: unknown, existingSou
   if (matching.length === 1) {
     const existingId = matching[0]; const existing = existingTactics.find(item => tacticIdOf(item) === existingId) as UnknownRecord | undefined
     const previousSource = sources[existingId]
+    if (previousSource.snapshot_date && source.snapshot_date < previousSource.snapshot_date) return { status: 'blocked', code: 'older_tactic_snapshot', diagnostic: 'A tática atual veio de um checkpoint mais recente; o import histórico não a substituiu.' }
     if (!existing || structureSignature(existing) !== previousSource.structure_signature) return { status: 'blocked', code: 'existing_tactic_structure_changed', diagnostic: 'A estrutura da tática importada foi editada manualmente desde o último .fm; o update automático foi recusado.' }
     const currentName = text(existing.name) ?? tactic.name
     const currentLineup = existing.lineup && typeof existing.lineup === 'object' && !Array.isArray(existing.lineup) ? existing.lineup as Record<string, string | null> : {}

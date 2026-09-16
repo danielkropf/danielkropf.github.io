@@ -52,6 +52,11 @@ describe('FM26 tactic import adapter', () => {
     expect(mergeImportedFmTactic([edited], first.sources, plan.tactic, plan.source)).toMatchObject({ status: 'blocked', code: 'existing_tactic_structure_changed' })
   })
 
+  it('preserves a newer tactic when background reads finish out of date order', () => {
+    const plan=ready();const first=mergeImportedFmTactic([],{},plan.tactic,plan.source);if(first.status!=='ready')throw new Error(first.diagnostic)
+    expect(mergeImportedFmTactic(first.tactics,first.sources,plan.tactic,{...plan.source,snapshot_date:'1900-01-01'})).toMatchObject({status:'blocked',code:'older_tactic_snapshot'})
+  })
+
   it('treats an ID collision without provenance as manual', () => {
     const plan = ready(); expect(mergeImportedFmTactic([{ ...plan.tactic, name: 'Manual collision' }], {}, plan.tactic, plan.source)).toMatchObject({ status: 'blocked', code: 'manual_id_collision' })
   })
