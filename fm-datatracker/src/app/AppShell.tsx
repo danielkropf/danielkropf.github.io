@@ -1,3 +1,4 @@
+import { SeasonStartButton } from '../components/SeasonStartButton'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { AppVersion } from '../components/AppVersion'
@@ -113,7 +114,7 @@ function AppShellContent() {
         {secondaryNavigation.map(([to, label]) => <NavLink to={to} key={to}>{label}</NavLink>)}
       </nav>
       <div className="sidebar-footer">
-        <div className="sidebar-actions">
+        <div className="sidebar-actions"><SeasonStartButton />
           <div className="sidebar-import-stack"><ImportNotice /><button className="ghost sidebar-import" type="button" onClick={() => { setSettings(false); setImportOpen(true) }}><span aria-hidden="true">↥</span><span>Import</span><ImportQueueIndicator /></button></div>
           <button className="ghost" type="button" onClick={() => { setImportOpen(false); setSettings(true) }}>⚙ Configurações</button>
           <button className="ghost" onClick={() => void supabase?.auth.signOut()}>Sair</button>

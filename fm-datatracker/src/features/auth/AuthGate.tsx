@@ -4,6 +4,22 @@ import type { Session } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { AppVersion } from '../../components/AppVersion'
 
+export const AUTH_WAIT_MS = 15000
+const unavailable = 'O serviço de login não respondeu. Tente novamente em instantes.'
+function authError(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause ?? '')
+  if (/failed to fetch|network|timeout|522|aborted/i.test(message)) return unavailable
+  return message || 'Não foi possível verificar a sessão.'
+}
+async function boundedAuth<T>(operation: PromiseLike<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([Promise.resolve(operation), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(unavailable)), AUTH_WAIT_MS)
+    })])
+  } finally { clearTimeout(timer) }
+}
+
 type AuthState =
   | { status: 'loading'; session: null; error: '' }
   | { status: 'authenticated'; session: Session; error: '' }
@@ -27,8 +43,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
     let authEventSeen = false
     setAuth(loadingState())
 
+    const timer = setTimeout(() => {
+      if (active && !authEventSeen) setAuth({ status: 'error', session: null, error: unavailable })
+    }, AUTH_WAIT_MS)
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, next) => {
       if (!active) return
+      clearTimeout(timer)
       authEventSeen = true
       setPrivateSession(next?.user.id ?? null)
       setAuth(next
@@ -38,8 +59,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!active || authEventSeen) return
+      clearTimeout(timer)
       if (error) {
-        setAuth({ status: 'error', session: null, error: error.message })
+        setAuth({ status: 'error', session: null, error: authError(error) })
         return
       }
       setPrivateSession(data.session?.user.id ?? null)
@@ -48,14 +70,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
         : unauthenticatedState())
     }).catch(cause => {
       if (!active || authEventSeen) return
+      clearTimeout(timer)
       setAuth({
         status: 'error',
         session: null,
-        error: cause instanceof Error ? cause.message : 'Falha inesperada ao recuperar a sessão.',
+        error: authError(cause),
       })
     })
 
     return () => {
+      clearTimeout(timer)
       active = false
       subscription.unsubscribe()
     }
@@ -63,19 +87,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!supabase) return
+    if (!supabase || submitting) return
     setSubmitting(true)
     setMessage('')
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await boundedAuth(supabase.auth.signInWithPassword({ email, password }))
       if (error) {
-        setMessage(error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : `Falha no login: ${error.message}`)
+        setMessage(error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : authError(error))
       } else if (data.session) {
         setPrivateSession(data.session.user.id)
         setAuth({ status: 'authenticated', session: data.session, error: '' })
       }
     } catch (cause) {
-      setMessage(`Falha no login: ${cause instanceof Error ? cause.message : 'erro inesperado'}`)
+      setMessage(authError(cause))
     } finally {
       setSubmitting(false)
     }

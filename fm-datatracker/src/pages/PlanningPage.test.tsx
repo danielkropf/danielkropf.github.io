@@ -590,3 +590,14 @@ it('remeasures expanded sets when the pitch changes size and includes the add-pl
     expect(expanded.style.getPropertyValue('--planning-expanded-left')).toBe('400px')
   } finally { measure.mockRestore() }
 })
+
+it('keeps icon-only expand control inside the pitch and toggles all sets',async()=>{
+ const view=render(<MemoryRouter><PlanningPage /></MemoryRouter>);await ready()
+ const expand=screen.getByRole('button',{name:'Expandir todos'})
+ expect(expand.closest('.planning-flex-board')).not.toBeNull()
+ expect(expand.textContent).toBe('⊞')
+ fireEvent.click(expand)
+ expect(view.container.querySelectorAll('.planning-set-row.is-expanded').length).toBe(2)
+ fireEvent.click(screen.getByRole('button',{name:'Recolher todos'}))
+ expect(view.container.querySelectorAll('.planning-set-row.is-expanded').length).toBe(0)
+})

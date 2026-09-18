@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+vi.mock('../../lib/planning-maintenance',()=>({reconcileImportedPlanning:vi.fn().mockResolvedValue(undefined)}))
 import { cleanup,render,waitFor,screen } from '@testing-library/react'
 import { afterEach,beforeEach,expect,it,vi } from 'vitest'
-const mocks=vi.hoisted(()=>({rpc:vi.fn(),stamp:vi.fn(),find:vi.fn()}))
+const mocks=vi.hoisted(()=>({rpc:vi.fn(),stamp:vi.fn(),find:vi.fn(),config:vi.fn(),patch:vi.fn(),excluded:[] as Array<{uid:number}>}))
 vi.mock('../saves/SaveContext',()=>({useSaves:()=>({selected:{id:'other',name:'Other'}})}))
+vi.mock('../../lib/model-config',()=>({loadModelConfig:mocks.config,patchModelConfig:mocks.patch}))
 vi.mock('../../lib/supabase',()=>({supabase:{rpc:mocks.rpc}}))
 vi.mock('../../lib/import-management',()=>({stampImportVersion:mocks.stamp,findImportByHash:mocks.find}))
 vi.mock('../../lib/importer',async original=>({...await original<typeof import('../../lib/importer')>(),filesHash:async()=> 'fixed-hash'}))
@@ -13,11 +15,12 @@ afterEach(()=>{cleanup();vi.unstubAllGlobals();mocks.rpc.mockReset();mocks.stamp
 function testFile(){const file=new File(['fm'],'test.fm');Object.defineProperty(file,'arrayBuffer',{value:async()=>new ArrayBuffer(4)});return file}
 beforeEach(()=>{
  mocks.find.mockReset().mockResolvedValue(null)
+ mocks.excluded=[];mocks.config.mockReset().mockResolvedValue({excluded_non_players_by_date:{'2029-01-01':['10']}});mocks.patch.mockReset().mockResolvedValue({})
  vi.stubGlobal('__APP_VERSION__','0.37.0')
  mocks.rpc.mockResolvedValue({data:{import_id:'import-a',new_players:1,updated_players:0},error:null});mocks.stamp.mockResolvedValue(undefined)
  vi.stubGlobal('Worker',class{
   onmessage:any;terminate(){}
-  postMessage(request:any){queueMicrotask(()=>this.onmessage?.({data:{id:request.id,type:'result',result:{players:[{fm_player_id:'1',current_name:'Youth',normalized_name:'youth',identity_key:'fm:1',date_of_birth:'2014-01-01',positions:[],attributes:[],normalized_data:{},raw_data:{}}],tactics:[],diagnostics:{resolved_human_club_count:1},snapshot_date:'2030-09-22',snapshot_date_precision:'day'}}}))}
+  postMessage(request:any){queueMicrotask(()=>this.onmessage?.({data:{id:request.id,type:'result',result:{players:[{fm_player_id:'1',current_name:'Youth',normalized_name:'youth',identity_key:'fm:1',date_of_birth:'2014-01-01',positions:[],attributes:[],normalized_data:{},raw_data:{}}],tactics:[],diagnostics:{resolved_human_club_count:1,excluded_non_players:mocks.excluded},snapshot_date:'2030-09-22',snapshot_date_precision:'day'}}}))}
  })
 })
 it('automatically persists a valid initial file exactly once into its pinned save and returns a summary',async()=>{
@@ -84,4 +87,12 @@ it('classifies a mixed batch as two updates and one new import without saving be
  await waitFor(()=>expect(progress.map(fn=>fn.mock.calls.at(-1)?.[0].phase)).toEqual(['ready','ready','ready']))
  expect(progress.map(fn=>fn.mock.calls.at(-1)?.[0].operation)).toEqual(['update','new','update'])
  expect(mocks.rpc).not.toHaveBeenCalled()
+})
+
+it('persists record exclusions for the exact checkpoint while preserving other dates',async()=>{
+ mocks.excluded=[{uid:19400558},{uid:23289648}]
+ const done=vi.fn()
+ render(<ImportPanel pinnedSave={{id:'pinned',name:'Pinned'} as Save} initialFmFile={testFile()} autoConfirm onCompleted={done}/>)
+ await waitFor(()=>expect(done).toHaveBeenCalledOnce())
+ expect(mocks.patch).toHaveBeenCalledWith('pinned','0.37.0',{excluded_non_players_by_date:{'2029-01-01':['10'],'2030-09-22':['19400558','23289648']}})
 })

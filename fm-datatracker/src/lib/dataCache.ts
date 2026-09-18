@@ -1,3 +1,4 @@
+import { loadModelConfig } from './model-config'
 import { loadSaveRead, peekSaveRead, invalidateSaveReads, rememberSaveRead } from './save-read-cache'
 import { assertPrivateSession, onPrivateSessionChange, privateSessionGeneration } from './private-session'
 import { paginatedQuery } from './paginated-query'
@@ -205,6 +206,15 @@ function applyFactualSnapshotFields(snapshot: RichSnapshot | null, rawSnapshots:
 }
 
 async function resolvePortrait(saveId: string, identities: IdentityRow[], snapshots: SnapshotQueryRow[], checkpointDate: string | null): Promise<RichPlayer[]> {
+  const config=await loadModelConfig(saveId)
+  const exclusions=(config.excluded_non_players_by_date ?? {}) as Record<string,string[]>
+  const excluded=new Set(checkpointDate ? exclusions[checkpointDate] ?? [] : [])
+  if(excluded.size){
+    const ids=new Set(snapshots.filter(s=>excluded.has(String((s.raw_data as Record<string,unknown> | null)?.uid))).map(s=>s.player_id))
+    identities=identities.filter(p=>!ids.has(p.id))
+    snapshots=snapshots.filter(s=>!ids.has(s.player_id))
+  }
+
   const byPlayer = new Map<string, SnapshotQueryRow[]>()
   for (const snapshot of snapshots) byPlayer.set(snapshot.player_id, [...(byPlayer.get(snapshot.player_id) ?? []), snapshot])
   const contexts = checkpointDate
@@ -283,12 +293,12 @@ export function peekCurrentPlayers(saveId: string) { return peekSaveRead<RichPla
 
 export function preloadSave(saveId: string) { void loadCurrentPlayers(saveId).catch(() => undefined) }
 
-export function invalidateSaveData(saveId: string) {
+export function invalidateSaveData(saveId: string, notify = true) {
   invalidateSaveReads(saveId)
   players.delete(saveId)
   checkpoints.delete(saveId)
   clearPortraitKeys(saveId)
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(SAVE_FACTS_INVALIDATED_EVENT, { detail: { saveId } }))
+  if (notify && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(SAVE_FACTS_INVALIDATED_EVENT, { detail: { saveId } }))
 }
 
 export function loadReferenceDataset() {

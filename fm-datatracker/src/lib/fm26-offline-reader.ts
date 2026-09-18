@@ -1,3 +1,4 @@
+import { excludeNonPlayerRecords } from './fm26-person-eligibility'
 import { readIntakes } from './fm26-intakes'
 import { ZSTDDecoder } from 'zstddec/stream'
 import { FM26OfflineReaderV022 } from './fm26-offline-reader-v022.js'
@@ -72,6 +73,7 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
   onStatus('Interpretando elencos, atributos, estatísticas e táticas…', 45)
   const Reader = FM26OfflineReaderV022.FM26V1Reader as unknown as ReaderConstructor
   const result = new Reader({ gameDb, stats, tactics, humans, historyDt: history, fileName, internalName: archive.saveName, manifestMembers: archive.members.length }).read()
+  excludeNonPlayerRecords(result, gameDb)
   const expectedHumanCount = humans.length >= 10 ? humans[8] | (humans[9] << 8) : 0
   const saveSummary = parseFm26SaveSummaryDate(saveSummaryData, expectedHumanCount)
   const currentSave = result.save && typeof result.save === 'object' && !Array.isArray(result.save) ? result.save as Record<string, unknown> : {}

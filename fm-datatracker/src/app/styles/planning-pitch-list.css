@@ -654,3 +654,24 @@
 .planning-unassigned>footer{display:grid;gap:6px;padding:10px;border-top:1px solid var(--dt-border);flex-shrink:0}
 .planning-unassigned>footer>button{font-size:12px;min-height:32px}
 @media(max-width:1100px){.tactics-workspace-planning .planning-pitch-list-page .planning-full-pitch-layout.has-unassigned-drawer{grid-template-columns:minmax(0,1fr) 24px 280px!important}}
+
+/* 0.42: compact identities and unassigned cards. */
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name{display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:1px!important;min-width:0}
+.tactics-workspace-planning .planning-pitch-list-page .planning-pitch-player-name>span{width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tactics-workspace-planning .planning-pitch-list-page .planning-player-meta{display:block!important;margin:0!important;line-height:1.1!important;font-size:9px!important}
+.planning-unassigned-list article{display:grid;grid-template-columns:minmax(0,1fr) 22px;gap:2px 5px;padding:6px 8px;margin-bottom:4px}
+.planning-unassigned-list article>.player-name{grid-column:1;grid-row:1;line-height:1.25;font-size:12px}
+.planning-unassigned-list article>small{grid-column:1;grid-row:2;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px;line-height:1.2}
+.planning-unassigned-list article>.planning-unassigned-rating{grid-column:1 / -1;grid-row:3;min-height:24px}
+.planning-unassigned-list article>.planning-unassigned-details-toggle{grid-column:2;grid-row:1 / 3;text-align:center;font-size:15px}
+.planning-unassigned-set-ratings{grid-column:1 / -1}
+.planning-unassigned-list article.is-unfamiliar>.player-name,.planning-unassigned-list article.is-unfamiliar>.planning-unassigned-rating{opacity:.65}
+.planning-unassigned .custom-select{min-width:0;width:100%}
+
+/* 0.42.1 — shared headings, restrained selection and name-only navigation. */
+.planning-flex-board>.planning-expand-all{position:absolute;top:8px;right:8px;z-index:30;width:28px;height:28px;padding:0;font-size:23px;line-height:1;border-color:var(--dt-border);background:var(--dt-surface-1)}
+.planning-unassigned-list article.is-selected{border-color:color-mix(in srgb,var(--dt-lime) 25%,var(--dt-border));background:color-mix(in srgb,var(--dt-lime) 2%,var(--dt-surface-1))}
+.planning-unassigned-identity{grid-column:1;grid-row:1;display:flex;align-items:center;gap:4px;min-width:0}
+.planning-unassigned-identity>.player-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0;font-size:12px;line-height:1.25;text-align:left}
+.planning-unassigned-identity .player-peek{width:18px;height:18px;padding:0}
+.tactics-workspace-planning .planning-pitch-list-page .planning-player-name-link{display:block;width:max-content;max-width:100%;min-height:0;background:none;border:0;color:inherit;font:inherit;font-weight:700;padding:0;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}

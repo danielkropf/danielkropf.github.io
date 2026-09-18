@@ -236,6 +236,7 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
   }))
   const diagnostics = {
     ...record(raw.humans_summary),
+    excluded_non_players: raw.excluded_non_players ?? [],
     human_manager_count: humans.length,
     resolved_human_club_count: humans.filter(value => numberOrNull(record(record(value).human_club).root_team_id) !== null).length,
   }

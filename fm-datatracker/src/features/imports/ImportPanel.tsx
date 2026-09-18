@@ -1,3 +1,4 @@
+import { reconcileImportedPlanning } from '../../lib/planning-maintenance'
 import { importReadSlots, importWriteSlots } from '../../lib/import-task-limiter'
 import type { Save } from '../../types/domain'
 import type { IntakeRead } from '../../lib/fm26-intakes'
@@ -559,6 +560,16 @@ function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = n
       const finish = (summary: string) => { assertPrivateSession(generation); onCompleted?.(`${summary} ${importRows.length} jogadores processados.${result?.duplicate ? '' : ` ${result?.new_players ?? 0} novos, ${result?.updated_players ?? 0} atualizados.`}${versionNote}`) }
       setTaskProgress(90)
       const tacticOutcome = await persistTacticPlan(tacticPlan)
+      try {
+        const excluded=fmRead?.diagnostics?.excluded_non_players
+        if(Array.isArray(excluded) && snapshotDate){
+          const config=await loadModelConfig(selected.id)
+          const byDate=(config.excluded_non_players_by_date ?? {}) as Record<string,string[]>
+          await patchModelConfig(selected.id,__APP_VERSION__,{excluded_non_players_by_date:{...byDate,[snapshotDate]:excluded.map(row=>String((row as {uid:unknown}).uid))}})
+        }
+      } catch { versionNote += ' Não foi possível registrar a exclusão de registros sem atributos próprios de jogador; reprocesse o import.' }
+      try { await reconcileImportedPlanning(selected) }
+      catch { versionNote += ' Não foi possível sincronizar as saídas no planejamento. Reprocesse o import para tentar novamente.' }
       const intakeSuffix = intakePayload ? ` ${intakePayload.classes.length} turma(s) de intake registrada(s) para consulta e revisão na Academia.` : ''
       const tacticSuffix = (tacticOutcome.note ? ` ${tacticOutcome.note}` : '') + intakeSuffix
       if (result?.duplicate) {
