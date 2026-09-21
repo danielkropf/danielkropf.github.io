@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { adjacentLeagues, leagueLevel, stableLeagueGroups, type LeagueRule } from './fm26-league-rules'
 import { ATTRIBUTE_CATALOG } from './attributes'
 import { pairedRoleScore } from './role-scoring'
-import { planningFamiliarity } from './planning-familiarity'
+import { compactPositionCode, positionalRating } from './position-aptitude'
 
 export const LEAGUE_REFERENCE_VERSION = 'fm26-league-reference-v1' as const
 export type LeaguePlayer = { eid: number; uid: number; name?: string; birth: string | null; team: number; attributes: Array<number | null>; positions: string[]; ratings?: Record<string, number> }
@@ -155,28 +155,124 @@ export function leagueComparisons(data: LeagueReference, team: number) {
   return { current, rows }
 }
 export type LeagueRolePair = { label: string; ip: { position: string; weights: Record<string, number> }; oop: { position: string; weights: Record<string, number> } }
-export function summarizeLeagueRole(data: LeagueReference, population: ReferencePopulation, pair: LeagueRolePair) {
-  const scored: Array<{ score: number; player: LeaguePlayer }> = []; let missing = 0, ineligible = 0
+
+export const LEAGUE_CUTOFF_MIN_COVERAGE = 0.80
+
+const LEAGUE_CUTOFF_TOP_N: Record<string, number> = {
+  GK: 1,
+  DC: 2,
+  DL: 1, DR: 1,
+  WBL: 1, WBR: 1,
+  DM: 2,
+  MC: 3, CM: 3,
+  ML: 1, MR: 1,
+  AML: 2, AMR: 2,
+  AMC: 2,
+  ST: 1,
+}
+
+/**
+ * Canonical maximum selected players per club for a league cutoff reference.
+ * The planning slot is identified by the exact IP position; OOP still remains
+ * part of the exact paired function used for familiarity and scoring.
+ */
+function leagueCutoffPositionCode(position: string) {
+  const raw = position.trim().toUpperCase().replace(/[^A-Z]/g, '')
+  if (raw === 'CM') return 'MC'
+  return compactPositionCode(position)
+}
+
+export function leagueCutoffTopN(position: string): number | null {
+  return LEAGUE_CUTOFF_TOP_N[leagueCutoffPositionCode(position)] ?? null
+}
+
+export type LeagueCutoffSummary = {
+  cutoffMean: number | null
+  /** Diagnostic-only distribution fields over the selected Top-N pool. UI must use cutoffMean. */
+  mean: number | null
+  median: number | null
+  p25: number | null
+  p75: number | null
+  n: number
+  clubsWithSelected: number
+  expectedTeams: number | null
+  coverage: number | null
+  topN: number | null
+  missing: number
+  ineligible: number
+  reason: 'available' | 'unsupported_cutoff_position' | 'missing_expected_teams' | 'insufficient_cutoff_coverage'
+  best: { name: string | null; score: number; uid: number; team: number } | null
+}
+
+export function summarizeLeagueRole(data: LeagueReference, population: ReferencePopulation, pair: LeagueRolePair): LeagueCutoffSummary | null {
   if (population.status !== 'available_partial') return null
-  for (const p of population.players) {
-    if (planningFamiliarity({ positions: p.positions, normalized_data: { positional_ratings: p.ratings } }, [pair]) !== 'familiar') { ineligible++; continue }
-    const attributes = data.attributes.map((key, i) => ({ attribute_key: key, value: p.attributes[i] }))
-    if (attributes.some(a => ((pair.ip.weights[a.attribute_key] ?? 1) > 1 || (pair.oop.weights[a.attribute_key] ?? 1) > 1) && a.value === null)) { missing++; continue }
+
+  const topN = leagueCutoffTopN(pair.ip.position)
+  const scoredByTeam = new Map<number, Array<{ score: number; player: LeaguePlayer }>>()
+  const eligible: Array<{ score: number; player: LeaguePlayer }> = []
+  let missing = 0, ineligible = 0
+
+  for (const player of population.players) {
+    // The league cutoff requires numeric familiarity >=15 for both exact
+    // positions. `planningFamiliarity` historically has a string-position
+    // fallback when numeric ratings are absent; that fallback is intentionally
+    // not valid for this canonical competitive reference.
+    const familiaritySnapshot = { positions: player.positions, normalized_data: { positional_ratings: player.ratings } }
+    const ipRating = positionalRating(familiaritySnapshot, leagueCutoffPositionCode(pair.ip.position))
+    const oopRating = positionalRating(familiaritySnapshot, leagueCutoffPositionCode(pair.oop.position))
+    if (ipRating === null || oopRating === null || ipRating < 15 || oopRating < 15) {
+      ineligible++
+      continue
+    }
+    const attributes = data.attributes.map((key, index) => ({ attribute_key: key, value: player.attributes[index] }))
+    if (attributes.some(attribute => ((pair.ip.weights[attribute.attribute_key] ?? 1) > 1 || (pair.oop.weights[attribute.attribute_key] ?? 1) > 1) && attribute.value === null)) {
+      missing++
+      continue
+    }
     const score = pairedRoleScore(attributes, pair.ip.weights, pair.oop.weights)
-    if (score !== null) scored.push({ score, player: p }); else missing++
+    if (score === null) {
+      missing++
+      continue
+    }
+    const item = { score, player }
+    eligible.push(item)
+    const team = scoredByTeam.get(player.team)
+    if (team) team.push(item)
+    else scoredByTeam.set(player.team, [item])
   }
-  scored.sort((a, b) => a.score - b.score || b.player.uid - a.player.uid || b.player.eid - a.player.eid)
-  const scores = scored.map(item => item.score)
-  const quantile = (q: number) => { const at = (scores.length - 1) * q, lo = Math.floor(at); return scores[lo] + (scores[Math.ceil(at)] - scores[lo]) * (at - lo) }
-  const top = scored.length ? scored[scored.length - 1] : null
-  return {
-    n: scores.length,
-    missing,
-    ineligible,
-    mean: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
-    median: scores.length ? quantile(.5) : null,
-    p25: scores.length ? quantile(.25) : null,
-    p75: scores.length ? quantile(.75) : null,
-    best: top ? { name: top.player.name ?? null, score: top.score, uid: top.player.uid, team: top.player.team } : null,
+
+  const bestItem = [...eligible].sort((left, right) => (right.score - left.score) || (left.player.uid - right.player.uid) || (left.player.eid - right.player.eid))[0] ?? null
+  const best = bestItem ? { name: bestItem.player.name ?? null, score: bestItem.score, uid: bestItem.player.uid, team: bestItem.player.team } : null
+  const expectedTeams = Number.isInteger(population.teams) && population.teams > 0 ? population.teams : null
+
+  const emptyDistribution = { mean: null, median: null, p25: null, p75: null }
+  if (topN === null) return { cutoffMean: null, ...emptyDistribution, n: 0, clubsWithSelected: 0, expectedTeams, coverage: expectedTeams ? 0 : null, topN, missing, ineligible, reason: 'unsupported_cutoff_position', best }
+
+  const selected: Array<{ score: number; player: LeaguePlayer }> = []
+  let clubsWithSelected = 0
+  for (const teamPlayers of scoredByTeam.values()) {
+    teamPlayers.sort((left, right) => (right.score - left.score) || (left.player.uid - right.player.uid) || (left.player.eid - right.player.eid))
+    const clubSelection = teamPlayers.slice(0, topN)
+    if (clubSelection.length) {
+      clubsWithSelected++
+      selected.push(...clubSelection)
+    }
   }
+
+  const selectedScores = selected.map(item => item.score).sort((a, b) => a - b)
+  const quantile = (q: number) => {
+    if (!selectedScores.length) return null
+    const at = (selectedScores.length - 1) * q, lo = Math.floor(at)
+    return selectedScores[lo] + (selectedScores[Math.ceil(at)] - selectedScores[lo]) * (at - lo)
+  }
+  const diagnosticMean = selectedScores.length ? selectedScores.reduce((sum, score) => sum + score, 0) / selectedScores.length : null
+  const distribution = { mean: diagnosticMean, median: quantile(.5), p25: quantile(.25), p75: quantile(.75) }
+
+  if (expectedTeams === null) return { cutoffMean: null, ...distribution, n: selected.length, clubsWithSelected, expectedTeams, coverage: null, topN, missing, ineligible, reason: 'missing_expected_teams', best }
+
+  const coverage = clubsWithSelected / expectedTeams
+  if (coverage < LEAGUE_CUTOFF_MIN_COVERAGE) return { cutoffMean: null, ...distribution, n: selected.length, clubsWithSelected, expectedTeams, coverage, topN, missing, ineligible, reason: 'insufficient_cutoff_coverage', best }
+
+  const cutoffMean = diagnosticMean
+  return { cutoffMean, ...distribution, n: selected.length, clubsWithSelected, expectedTeams, coverage, topN, missing, ineligible, reason: cutoffMean === null ? 'insufficient_cutoff_coverage' : 'available', best }
 }

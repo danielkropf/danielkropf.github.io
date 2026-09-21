@@ -23,6 +23,9 @@ const reasonLabels: Record<string, string> = {
   adjacent_unresolved: 'Divisão não confirmada.',
   multiple_adjacent_targets: 'Divisão não confirmada.',
   quota_not_positive: 'Divisão não confirmada.',
+  insufficient_cutoff_coverage: 'Cobertura insuficiente para esta função.',
+  missing_expected_teams: 'Quantidade de clubes da liga não confirmada.',
+  unsupported_cutoff_position: 'Posição sem referência de corte configurada.',
 }
 export const leagueReason = (reason: string) => reasonLabels[reason] ?? 'Sem dados disponíveis.'
 const displayDate = (iso: string | null | undefined) => iso ? iso.split('-').reverse().join('/') : '—'
@@ -87,7 +90,7 @@ export function LeagueComparisonHint({ data, team, pairs, message, requestedDate
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
   const comparison = useMemo(() => at && data && team !== null ? leagueComparisons(data, team) : null, [Boolean(at), data, team])
-  const fmt = (n: number | null) => n === null ? '—' : n.toFixed(1)
+  const fmt = (n: number | null) => n === null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
   const checkpoint = displayDate(sourceDate ?? requestedDate ?? data?.checkpoint)
 
   return <span ref={anchor} className="league-hint-anchor" onMouseEnter={show} onMouseLeave={leave} onFocus={show} onBlur={leave} aria-describedby={at ? id : undefined}>
@@ -110,11 +113,10 @@ export function LeagueComparisonHint({ data, team, pairs, message, requestedDate
               const label = row.direction === 'current' ? 'Sua liga' : row.direction === 'down' ? 'Divisão inferior' : 'Referência mundial'
               return <article className={`league-reference-card is-${row.direction}`} key={`${row.direction}-${row.target}`}>
                 <header>{label}</header>
-                {summary ? <div className="league-reference-summary">
-                  <div className="league-reference-primary"><strong>{fmt(summary.mean)}</strong><span>Média</span></div>
-                  <div className="league-reference-secondary"><span>Mediana <b>{fmt(summary.median)}</b></span><span>Amostra <b>{summary.n}</b></span></div>
+                {summary && summary.cutoffMean !== null ? <div className="league-reference-summary">
+                  <div className="league-reference-cutoff"><span>Nota de corte média:</span><strong>{fmt(summary.cutoffMean)}</strong></div>
                   <div className="league-reference-best"><span>Melhor jogador</span><strong title={summary.best?.name ?? undefined}>{summary.best?.name ?? '—'}</strong><b>{summary.best ? fmt(summary.best.score) : '—'}</b></div>
-                </div> : <div className="league-reference-unavailable">{leagueReason(row.population.reason === 'adjacent_unresolved' ? row.reason : row.population.reason)}</div>}
+                </div> : <div className="league-reference-unavailable">{leagueReason(summary?.reason ?? (row.population.reason === 'adjacent_unresolved' ? row.reason : row.population.reason))}</div>}
               </article>
             })}</div>
           </section>)}
