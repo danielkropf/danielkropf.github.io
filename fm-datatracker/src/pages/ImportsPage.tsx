@@ -142,10 +142,10 @@ export function ImportsPage({ mode = 'import' }: ImportsPageProps) {
     try {
       const all: VersionedImportRecord[] = []
       for (let offset = 0; ; offset += 500) {
-        const { data, error } = await supabase.from('imports').select('*').eq('save_id', saveId).order('created_at', { ascending: false }).order('id', { ascending: false }).range(offset, offset + 499)
+        const { data, error } = await supabase.from('imports').select('id,original_filename,file_type,snapshot_date,row_count,status,warnings,created_at,file_hash,app_version:source_schema->>app_version').eq('save_id', saveId).order('created_at', { ascending: false }).order('id', { ascending: false }).range(offset, offset + 499)
         if (!historyRequestGuard.current.isCurrent(token) || selectedIdRef.current !== saveId) return
         if (error) throw error
-        all.push(...(data ?? []) as VersionedImportRecord[])
+        all.push(...(data ?? []).map(row => ({ ...row, source_schema: { app_version: row.app_version } })) as VersionedImportRecord[])
         if (!data || data.length < 500) break
       }
       setItems(all)

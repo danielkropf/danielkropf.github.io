@@ -23,13 +23,19 @@ describe('import version metadata', () => {
   })
 })
 
-import { needsImportUpdate } from './import-version'
+import { needsImportUpdate, IMPORT_DATA_VERSION } from './import-version'
 it('offers reprocessing only for FM imports older than the data version, not UI versions', () => {
   expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.35.3'}})).toBe(true)
   expect(needsImportUpdate({original_filename:'save.fm'})).toBe(true)
   expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.36.0'}})).toBe(true)
   expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.42.0'}})).toBe(true)
-  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.42.1'}})).toBe(false)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.42.1'}})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.43.0'}})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.43.1'}})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.43.2'}})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.43.3'}})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.43.4'}})).toBe(true)
+  expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:IMPORT_DATA_VERSION}})).toBe(false)
   expect(needsImportUpdate({original_filename:'save.fm',source_schema:{app_version:'0.99.0'}})).toBe(false)
   expect(needsImportUpdate({original_filename:'squad.csv',source_schema:{app_version:'0.30.0'}})).toBe(false)
 })

@@ -1,3 +1,5 @@
+import { persistLeagueReference } from '../../lib/league-reference-store'
+import type { LeagueReference } from '../../lib/league-reference'
 import { reconcileImportedPlanning } from '../../lib/planning-maintenance'
 import { importReadSlots, importWriteSlots } from '../../lib/import-task-limiter'
 import type { Save } from '../../types/domain'
@@ -38,7 +40,7 @@ type CompetitionHistoryPreview = {
   }>
   diagnostics?: { warnings?: string[]; errors?: string[] }
 }
-type OfflineRead = { intakes?: IntakeRead | null; players: PreparedRow[]; tactics?: unknown[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null; competition_history?: CompetitionHistoryPreview | null }
+type OfflineRead = { league_reference?: LeagueReference | null; intakes?: IntakeRead | null; players: PreparedRow[]; tactics?: unknown[]; diagnostics?: Record<string, unknown>; snapshot_date?: string | null; snapshot_date_precision?: 'day' | 'year' | null; competition_history?: CompetitionHistoryPreview | null }
 type ComparisonDifference = { player: string; field: string; csv: string; fm: string }
 type DataComparison = {
   matched: number; csvTotal: number; fmTotal: number; coverage: number; valid: boolean; csvOnly: number; fmOnly: number; ambiguous: number
@@ -552,7 +554,15 @@ function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = n
       if (error) throw new Error(importRpcErrorMessage(error))
       assertPrivateSession(generation)
       const result = data as { new_players?: number; updated_players?: number; duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
+      if (updateTarget && (result?.import_id !== updateTarget.id || !result.duplicate)) throw new Error('A releitura não corresponde à importação original; a referência não foi vinculada.')
       let versionNote = ''
+      let leagueSaved = false
+      if (result?.import_id && fmFileHash && fmRead?.league_reference && ['fm-beta', 'validated'].includes(importMode)) {
+        try {
+          await persistLeagueReference({ saveId: selected.id, importId: result.import_id, importHash: importFileHash, fmFileHash, date: snapshotDate, value: fmRead.league_reference, mode: importMode })
+          leagueSaved = true
+        } catch { versionNote += ' Jogadores gravados, mas os comparativos de ligas não foram vinculados; releia o mesmo .fm para tentar novamente.' }
+      }
       if (onCompleted && result?.import_id && !updateTarget) {
         try { await stampImportVersion(selected.id, result.import_id, __APP_VERSION__) }
         catch { versionNote = ' Dados gravados, mas o registro da versão precisa ser atualizado.' }
@@ -592,7 +602,7 @@ function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = n
         const duplicateMessage = `Este mesmo conteúdo já foi importado neste save; nenhuma nova fotografia foi criada.${tacticSuffix}`
         setMessage(duplicateMessage)
         finish(duplicateMessage)
-        if (tacticOutcome.changed || intakePayload) {
+        if (tacticOutcome.changed || intakePayload || leagueSaved) {
           writeImportFlash(selected.id, duplicateMessage)
           onImported?.()
         }
@@ -624,6 +634,8 @@ function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = n
       </div>}
       {fmFile && !csvFile && <p className="warning">Leitura <code>.fm</code> em construção e testes: ela pode trazer jogadores ou campos incorretos e valores vazios. Revise os dados antes de usar o snapshot.</p>}
       {csvFile && !fmFile && <p className="notice">O CSV continua sendo o caminho estável. Alguns dados e recursos que dependem da leitura do save não ficam disponíveis sem o arquivo <code>.fm</code>.</p>}
+      {fmRead?.league_reference && <details className="card"><summary>Referências de ligas · {fmRead.league_reference.cohorts.filter(c => c.status === 'confirmed').length} confirmadas · {fmRead.league_reference.players.length} jogadores observados</summary><p>Amostras parciais do próprio save. Liga superior e inferior dependem de regras e populações confirmadas; grupos regionais só são agregados quando todos estão disponíveis.</p><p>{fmRead.league_reference.cohorts.filter(c => c.status === 'candidate').length} associações candidatas ficam fora dos cálculos. {fmRead.league_reference.diagnostics.recovered} vínculos recuperados por organização atual confirmada.</p><p>{Object.values(fmRead.league_reference.diagnostics.excluded).reduce((a,b) => a+b,0)} candidatos excluídos por identidade, atributos próprios ou vínculo atual não confirmado. O diagnóstico contratual permanece independente do comparativo.</p>{fmRead.league_reference.diagnostics.offerRegistry && <p>Registro contratual experimental: {fmRead.league_reference.diagnostics.offerRegistry.records.length} registros na estrutura reconhecida. Isso não confirma propostas pendentes.</p>}{fmRead.league_reference.diagnostics.warnings.map((w,i) => <p key={i}>{w}</p>)}{!['fm-beta','validated'].includes(importMode) && <p>Comparativos não serão gravados no modo somente CSV.</p>}</details>}
+      {typeof fmRead?.diagnostics?.league_reference_warning === 'string' && <p className="warning">{fmRead.diagnostics.league_reference_warning}</p>}
       {fmRead?.intakes && <section className="card"><h3>Turmas de intake</h3><p>A origem será preservada na Academia. Testes de seis semanas sem notícia correspondente ficam pendentes de revisão.</p>{fmRead.intakes.classes.map(item => <p key={item.key}><strong>{item.club_name} · {item.intake_date}</strong> — {item.members.length}/{item.expected_members} jogadores · {item.confidence === 'supported' ? 'Notícia e grupo de candidatos compatíveis' : 'Grupo candidato: requer revisão'}</p>)}{fmRead.intakes.warnings.map((warning,i)=><p key={i}>{warning}</p>)}{!['fm-beta','validated'].includes(importMode) && <p>Os intakes do .fm não serão gravados enquanto esta importação usar apenas os dados CSV.</p>}</section>}
       <div className="stats import-overview"><div><span>Save</span><strong>{selected?.name ?? 'Nenhum save ativo'}</strong></div><div><span>Snapshot</span><strong>{snapshotDate || (confirmedFmYear ? `Ano ${confirmedFmYear} confirmado · falta dia/mês` : suggestedSnapshotYear ? `Ano sugerido: ${suggestedSnapshotYear}` : 'Informe a data')}</strong></div>{preview && <div><span>Dados detectados</span><strong>{detectedSummary}</strong></div>}<div><span>Leitura .fm</span><strong>{fmSummary}</strong></div></div>
       {initialFmFile && importRows.length > 0 && <details className="import-read-players" onToggle={event => setShowReadPlayers(event.currentTarget.open)}><summary>Jogadores lidos · {importRows.length}</summary>{showReadPlayers && <div><table><thead><tr><th>Nome</th><th>Nascimento</th><th>ID no FM</th></tr></thead><tbody>{importRows.map((row, index) => <tr key={index}><td>{row.current_name}</td><td>{row.date_of_birth ?? '—'}</td><td>{row.fm_player_id ?? '—'}</td></tr>)}</tbody></table></div>}</details>}

@@ -1,3 +1,4 @@
+import { isLeagueReference, type LeagueReference } from './league-reference'
 import type { IntakeRead } from './fm26-intakes'
 import { ATTRIBUTE_LOOKUP, type AttributeCategory } from './attributes'
 import { COMPETITION_HISTORY_VERSION, type CompetitionHistory } from './fm26-competition-history'
@@ -38,6 +39,7 @@ export type OfflineFmRead = {
   diagnostics: UnknownRecord
   snapshot_date: string | null
   snapshot_date_precision: 'day' | 'year' | null
+  league_reference?: LeagueReference | null
   competition_history: CompetitionHistory | null
 }
 
@@ -236,11 +238,12 @@ export function normalizeOfflineFmResult(rawResult: unknown): OfflineFmRead {
   }))
   const diagnostics = {
     ...record(raw.humans_summary),
+    league_reference_warning: raw.league_reference_warning ?? null,
     excluded_non_players: raw.excluded_non_players ?? [],
     human_manager_count: humans.length,
     resolved_human_club_count: humans.filter(value => numberOrNull(record(record(value).human_club).root_team_id) !== null).length,
   }
-  return { raw, intakes: record(raw.intakes).version === 'fm26-intakes-v1' ? raw.intakes as IntakeRead : null, players: playersWithAge, tactics, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null, competition_history: competitionHistory }
+  return { raw, league_reference: isLeagueReference(raw.league_reference) ? raw.league_reference : null, intakes: record(raw.intakes).version === 'fm26-intakes-v1' ? raw.intakes as IntakeRead : null, players: playersWithAge, tactics, diagnostics, snapshot_date, snapshot_date_precision: exactDate ? 'day' : latestYear ? 'year' : null, competition_history: competitionHistory }
 }
 
 export async function readFmSaveBytes(bytes: Uint8Array, fileName = 'save.fm', onStatus?: (status: string, progress?: number) => void): Promise<OfflineFmRead> {

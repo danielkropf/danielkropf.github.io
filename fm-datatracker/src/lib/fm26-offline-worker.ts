@@ -8,11 +8,12 @@ type WorkerScope = {
 
 type WorkerResultInput = Pick<
   OfflineFmRead,
-  'intakes' | 'players' | 'tactics' | 'diagnostics' | 'snapshot_date' | 'snapshot_date_precision' | 'competition_history'
+  'intakes' | 'players' | 'tactics' | 'diagnostics' | 'snapshot_date' | 'snapshot_date_precision' | 'competition_history' | 'league_reference'
 >
 
 export function buildOfflineWorkerResult(result: WorkerResultInput) {
   return {
+    league_reference: result.league_reference,
     intakes: result.intakes,
     players: result.players,
     tactics: result.tactics,

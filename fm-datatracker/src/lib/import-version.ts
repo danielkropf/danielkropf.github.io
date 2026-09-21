@@ -33,7 +33,7 @@ export function importVersionState(importVersion: unknown, currentVersion: strin
 }
 
 // Bump only when reprocessing can add/correct imported data, not for UI releases.
-export const IMPORT_DATA_VERSION = '0.42.1'
+export const IMPORT_DATA_VERSION = '0.43.5'
 export function needsImportUpdate(item: {original_filename: string; source_schema?: Record<string, unknown> | null}): boolean {
   if (!/\.fm(?:$|\s|\+)/i.test(item.original_filename)) return false
   const state = importVersionState(item.source_schema?.app_version, IMPORT_DATA_VERSION)

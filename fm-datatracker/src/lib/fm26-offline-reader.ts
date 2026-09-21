@@ -1,3 +1,4 @@
+import { readLeagueReference } from './fm26-league-reader'
 import { excludeNonPlayerRecords } from './fm26-person-eligibility'
 import { readIntakes } from './fm26-intakes'
 import { ZSTDDecoder } from 'zstddec/stream'
@@ -97,15 +98,15 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
   // never invalidate the already-characterized players/tactics/membership result.
   onStatus('Interpretando histórico de competições E-TC-01…', 70)
   const competitionWarnings: string[] = []
+  const fixMan = await optionalArchiveMember(archive, 'rgman/fix_man.dat', competitionWarnings)
   try {
     const hasLeagueHistory = archive.memberByName.has('tc_league_history_dt.cmt')
-    const [leagueHistory, compHistory, fixMan] = hasLeagueHistory
+    const [leagueHistory, compHistory] = hasLeagueHistory
       ? await Promise.all([
           optionalArchiveMember(archive, 'tc_league_history_dt.cmt', competitionWarnings),
           optionalArchiveMember(archive, 'comp_history_dt.cmt', competitionWarnings),
-          optionalArchiveMember(archive, 'rgman/fix_man.dat', competitionWarnings),
         ])
-      : [null, null, null]
+      : [null, null]
     const competitionHistory = await readCompetitionHistory({
       leagueHistory,
       compHistory,
@@ -120,6 +121,15 @@ export async function readOfflineSaveBytes(saveBytes: Uint8Array, fileName = 'sa
     competitionHistory.diagnostics.errors.push(`E-TC-01 sidecar failure: ${error instanceof Error ? error.message : String(error)}`)
     competitionHistory.diagnostics.warnings.push(...competitionWarnings)
     result.competition_history = competitionHistory
+  }
+
+  onStatus('Interpretando ligas e populações de referência…', 76)
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(saveBytes))
+    const sourceSha256 = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+    result.league_reference = await readLeagueReference({ gameDb, fixMan, history: result.competition_history as Awaited<ReturnType<typeof readCompetitionHistory>>, checkpoint: saveSummary.status === 'confirmed' ? saveSummary.current_date : null, sourceSha256, fileName, humans: result.human_managers, members: [...archive.memberByName.keys()], getMember: name => archive.getMember(name) })
+  } catch (error) {
+    result.league_reference_warning = `Comparativos indisponíveis: ${error instanceof Error ? error.message : String(error)}`
   }
 
   onStatus('Identificando turmas de intake…', 80)

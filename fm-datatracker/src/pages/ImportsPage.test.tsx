@@ -10,7 +10,7 @@ import {ImportsPage} from './ImportsPage'
 afterEach(()=>{cleanup();vi.unstubAllGlobals();mocks.range.mockReset()})
 it('loads history beside new imports, paginates all rows and only offers necessary updates',async()=>{
  vi.stubGlobal('__APP_VERSION__','0.39.0')
- const row=(id:string,version:string)=>({id,original_filename:`${id}.fm`,snapshot_date:'2030-09-22',status:'completed',row_count:10,source_schema:{app_version:version}})
+ const row=(id:string,version:string)=>({id,original_filename:`${id}.fm`,snapshot_date:'2030-09-22',status:'completed',row_count:10,app_version:version})
  mocks.range.mockResolvedValueOnce({data:Array.from({length:500},(_,i)=>row(`current-${i}`,IMPORT_DATA_VERSION)),error:null})
  mocks.range.mockResolvedValueOnce({data:[row('old','0.35.0')],error:null})
  render(<ImportsPage/>)

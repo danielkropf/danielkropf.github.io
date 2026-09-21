@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildOfflineWorkerResult } from './fm26-offline-worker'
+import { referenceFixture } from './league-reference.fixture'
 import type { OfflineFmRead } from './fm26-offline-normalizer'
 
 describe('FM26 offline worker result contract', () => {
@@ -11,6 +12,7 @@ describe('FM26 offline worker result contract', () => {
       diagnostics: { warnings: ['synthetic'] },
     }
     const input = {
+      league_reference: referenceFixture(),
       raw: { private_reader_diagnostics: true },
       intakes: {version:'fm26-intakes-v1',checkpoint_date:'2028-06-30',classes:[],warnings:[]},
       players: [],
@@ -23,6 +25,7 @@ describe('FM26 offline worker result contract', () => {
 
     const result = buildOfflineWorkerResult(input)
 
+    expect(result.league_reference).toEqual(input.league_reference)
     expect(result.intakes).toEqual(input.intakes)
     expect(result.competition_history).toEqual(competitionHistory)
     expect(result).not.toHaveProperty('raw')
