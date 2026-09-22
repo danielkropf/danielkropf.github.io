@@ -1,6 +1,18 @@
 export const WORLD_CENSUS_OUTPUT_CONTRACT_VERSION = 'world-census-run-v1'
 export const WORLD_CENSUS_REPRESENTATION_VERSION = 'world-census-representation-v1'
 export const WORLD_CENSUS_READER_VERSION = 'wc-a-reader-v1'
+export const WORLD_CENSUS_PLANNED_CAPABILITIES = [
+  'person_record_boundary',
+  'player_core',
+  'biography',
+  'structural_team',
+  'organization_scope',
+  'contract_fact',
+  'active_relationship',
+  'club_affiliation_public_uid',
+  'free_agent_registration',
+  'competition_facts',
+] as const
 
 export const WORLD_CENSUS_POSITION_RATING_NAMES = [
   'GK', 'SW', 'DL', 'DC', 'DR', 'DM', 'ML', 'MC', 'MR', 'AML', 'AMC', 'AMR', 'ST', 'WBL', 'WBR',
@@ -79,7 +91,7 @@ export type WorldCensusBatch = {
   serialized_bytes: number
 }
 
-export type WorldCensusSink = (batch: WorldCensusBatch) => void
+export type WorldCensusSink = (batch: WorldCensusBatch) => void | Promise<void>
 
 export type WorldCensusSourceArtifact = {
   sha256: string | null
@@ -290,6 +302,7 @@ function unsupported<T>(reason: string, evidence: number[] = []): WorldField<T> 
 class BatchEmitter {
   private readonly pending = new Map<WorldCensusBatchDomain, { items: unknown[]; bytes: number }>()
   private batchIndex = 0
+  private drainChain: Promise<void> = Promise.resolve()
   readonly stats = { batches: 0, items: 0, bytes: 0, maxBytes: 0 }
 
   constructor(private readonly sink: WorldCensusSink | undefined, private readonly targetBytes: number) {}
@@ -316,7 +329,8 @@ class BatchEmitter {
     const state = this.pending.get(domain)
     if (!this.sink || !state || state.items.length === 0) return
     const batch: WorldCensusBatch = { domain, batch_index: this.batchIndex++, items: state.items, serialized_bytes: state.bytes }
-    this.sink(batch)
+    const sink = this.sink
+    this.drainChain = this.drainChain.then(async () => { await sink(batch) })
     this.stats.batches += 1
     this.stats.bytes += state.bytes
     this.stats.maxBytes = Math.max(this.stats.maxBytes, state.bytes)
@@ -325,6 +339,10 @@ class BatchEmitter {
 
   flush(): void {
     for (const domain of this.pending.keys()) this.flushDomain(domain)
+  }
+
+  async drain(): Promise<void> {
+    await this.drainChain
   }
 }
 
@@ -938,7 +956,7 @@ export function reconcilePersonRecordOrdering<T extends { eid: number; offset: n
   }
 }
 
-export function readWorldCensusMembers(input: WorldCensusReadInput): WorldCensusSummary {
+export async function readWorldCensusMembers(input: WorldCensusReadInput): Promise<WorldCensusSummary> {
   const timings: Record<string, number> = {}
   const warnings: string[] = []
   const counts: Record<string, number> = {}
@@ -1001,6 +1019,7 @@ export function readWorldCensusMembers(input: WorldCensusReadInput): WorldCensus
       const set = eidToTeams.get(eid)
       if (set) set.add(row.team_id); else eidToTeams.set(eid, new Set([row.team_id]))
     }
+    if (input.emit) await emitter.drain()
   }
   timings.structural_teams = now() - t
   counts.structural_team_rows = teamRows.length
@@ -1042,8 +1061,12 @@ export function readWorldCensusMembers(input: WorldCensusReadInput): WorldCensus
       const derivationRef = provenance.derivationRef(scope.scope_ref, 'organization_scope_framed', 'r-wc-03-v1', evidenceRefs)
       emitter.add('organization_scope_facts', { scope_ref: scope.scope_ref, partition_a_team_ids: scope.a, partition_b_team_ids: scope.b, team_ids: scope.teams, evidence_refs: evidenceRefs, derivation_ref: derivationRef })
       coverage.add('organization_scope', 'confirmed', 'scope_shape_confirmed_inside_characterized_frame')
+      if (input.emit) await emitter.drain()
     }
-    for (const edge of scopeIndex.containment) emitter.add('organization_scope_containment', { child_scope_ref: edge.child, parent_scope_ref: edge.parent, status: 'confirmed', reason_code: 'minimal_strict_subset_containment' })
+    for (const edge of scopeIndex.containment) {
+      emitter.add('organization_scope_containment', { child_scope_ref: edge.child, parent_scope_ref: edge.parent, status: 'confirmed', reason_code: 'minimal_strict_subset_containment' })
+      if (input.emit) await emitter.drain()
+    }
   } else {
     coverage.add('organization_scope', scopeIndex.status, scopeIndex.reason)
   }
@@ -1232,12 +1255,14 @@ export function readWorldCensusMembers(input: WorldCensusReadInput): WorldCensus
 
     coverage.add('club_affiliation_public_uid', 'unsupported', 'positive_universal_public_club_uid_authority_not_characterized')
     coverage.add('free_agent_registration', 'unsupported', 'positive_universal_free_agent_authority_not_characterized')
+    if (input.emit) await emitter.drain()
   }
   timings.person_facts = now() - t
   counts.biography_reason_counts = Object.values(biographyReasonCounts).reduce((sum, value) => sum + value, 0)
   counts.player_core_reason_counts = Object.values(abilityReasonCounts).reduce((sum, value) => sum + value, 0)
 
   emitter.flush()
+  if (input.emit) await emitter.drain()
   timings.total = now() - tTotal
 
   const manifest = coverage.finalize()

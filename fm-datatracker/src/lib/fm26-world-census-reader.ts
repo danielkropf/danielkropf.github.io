@@ -31,18 +31,24 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('')
 }
 
-/**
- * WC-A entry point. It deliberately does NOT feed the legacy import payload,
- * normalizer, worker response or database. Facts are emitted through a local sink
- * so the caller never needs a monolithic world object; WC-B will define the
- * Worker ACK/backpressure protocol around this reader in a later slice.
- */
-export async function readWorldCensusSaveBytes(
+
+export type PreparedWorldCensusSave = {
+  gameDb: Uint8Array
+  playerStats: Uint8Array
+  checkpoint: string | null
+  sourceArtifact: {
+    sha256: string
+    file_name: string
+    byte_length: number
+    internal_name: string | null
+  }
+}
+
+export async function prepareWorldCensusSaveBytes(
   saveBytes: Uint8Array,
   fileName = 'save.fm',
-  emit?: WorldCensusSink,
   onStatus: (status: string, progress?: number) => void = () => {},
-): Promise<WorldCensusSummary> {
+): Promise<PreparedWorldCensusSave> {
   onStatus('World Census: lendo contêiner…', 5)
   const ArchiveConstructor = FM26OfflineReaderV022.FMArchive as unknown as new (
     data: Uint8Array,
@@ -59,13 +65,34 @@ export async function readWorldCensusSaveBytes(
   ])
   const expectedHumanCount = humans.length >= 10 ? humans[8] | (humans[9] << 8) : 0
   const summary = parseFm26SaveSummaryDate(summaryBytes, expectedHumanCount)
-  onStatus('World Census: construindo índices e facts WC-A…', 35)
   const sourceHash = await sha256(saveBytes)
-  const result = readWorldCensusMembers({
+  return {
     gameDb,
     playerStats,
     checkpoint: summary.status === 'confirmed' ? summary.current_date : null,
     sourceArtifact: { sha256: sourceHash, file_name: fileName, byte_length: saveBytes.byteLength, internal_name: archive.saveName },
+  }
+}
+
+/**
+ * WC-A entry point. It deliberately does NOT feed the legacy import payload,
+ * normalizer, worker response or database. Facts are emitted through a local sink
+ * so the caller never needs a monolithic world object. WC-B wraps this
+ * reader with an incremental Worker protocol while keeping persistence out of scope.
+ */
+export async function readWorldCensusSaveBytes(
+  saveBytes: Uint8Array,
+  fileName = 'save.fm',
+  emit?: WorldCensusSink,
+  onStatus: (status: string, progress?: number) => void = () => {},
+): Promise<WorldCensusSummary> {
+  const prepared = await prepareWorldCensusSaveBytes(saveBytes, fileName, onStatus)
+  onStatus('World Census: construindo índices e facts WC-A…', 35)
+  const result = await readWorldCensusMembers({
+    gameDb: prepared.gameDb,
+    playerStats: prepared.playerStats,
+    checkpoint: prepared.checkpoint,
+    sourceArtifact: prepared.sourceArtifact,
     emit,
   })
   onStatus('World Census WC-A concluído.', 95)
