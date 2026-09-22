@@ -3,6 +3,7 @@ import {
   classifyIdentityEpoch,
   findAlternateBiographyCandidates,
   parseOrganizationScopeRecordAt,
+  reconcilePersonRecordOrdering,
   resolveWorldIdentityCandidates,
 } from './fm26-world-census'
 
@@ -58,4 +59,14 @@ describe('WC-A fail-closed primitives', () => {
       { uid: 2002081267, eid: 62463, birth_date: '2014-01-17', display_name: 'Marcos Vinicius', hidden_personality: [4, 5, 6] },
     )).toBe('new_epoch')
   })
+  it('reclassifies non-monotonic PersonRecord identities before coverage publication', () => {
+    const result = reconcilePersonRecordOrdering([
+      { eid: 10, offset: 100 },
+      { eid: 11, offset: 90 },
+      { eid: 12, offset: 200 },
+    ])
+    expect(result.conflicting_eids).toEqual([10, 11])
+    expect(result.records).toEqual([{ eid: 12, offset: 200 }])
+  })
+
 })

@@ -924,6 +924,20 @@ export function classifyIdentityEpoch(previous: BiographyIdentityForEpoch, curre
   return 'same_epoch'
 }
 
+export function reconcilePersonRecordOrdering<T extends { eid: number; offset: number }>(resolved: T[]): { records: T[]; conflicting_eids: number[] } {
+  const conflicts = new Set<number>()
+  for (let i = 1; i < resolved.length; i++) {
+    if (resolved[i - 1].offset >= resolved[i].offset) {
+      conflicts.add(resolved[i - 1].eid)
+      conflicts.add(resolved[i].eid)
+    }
+  }
+  return {
+    records: conflicts.size ? resolved.filter(value => !conflicts.has(value.eid)) : resolved,
+    conflicting_eids: [...conflicts].sort((a, b) => a - b),
+  }
+}
+
 export function readWorldCensusMembers(input: WorldCensusReadInput): WorldCensusSummary {
   const timings: Record<string, number> = {}
   const warnings: string[] = []
@@ -999,16 +1013,20 @@ export function readWorldCensusMembers(input: WorldCensusReadInput): WorldCensus
   for (const eid of statsCandidates.eids) {
     const result = resolveWorldIdentityCandidates({ eid, candidates: identityCandidates.get(eid) ?? [], gameDb: input.gameDb, structuralTeamIds: eidToTeams.get(eid) })
     identityStatus.set(eid, { status: result.status, reason: result.reason_code })
-    coverage.add('person_record_boundary', result.status, result.reason_code)
     if (result.status === 'confirmed' && result.value && result.method) resolved.push({ eid, ...result.value, method: result.method })
   }
   resolved.sort((a, b) => a.eid - b.eid)
-  const conflicts = new Set<number>()
-  for (let i = 1; i < resolved.length; i++) if (resolved[i - 1].offset >= resolved[i].offset) { conflicts.add(resolved[i - 1].eid); conflicts.add(resolved[i].eid) }
-  const monotonicResolved = conflicts.size ? resolved.filter(value => !conflicts.has(value.eid)) : resolved
+  const ordering = reconcilePersonRecordOrdering(resolved)
+  const monotonicResolved = ordering.records
+  const conflicts = new Set(ordering.conflicting_eids)
   if (conflicts.size) {
     warnings.push(`PersonRecord identity ordering conflict in ${conflicts.size} EIDs; conflicting records were excluded fail-closed.`)
     for (const eid of conflicts) identityStatus.set(eid, { status: 'ambiguous', reason: 'identity_order_non_monotonic' })
+  }
+  for (const eid of statsCandidates.eids) {
+    const finalStatus = identityStatus.get(eid)
+    if (!finalStatus) throw new Error(`World Census identity status missing for EID ${eid}`)
+    coverage.add('person_record_boundary', finalStatus.status, finalStatus.reason)
   }
   timings.identity_index = now() - t
   counts.identity_candidates_total = [...identityCandidates.values()].reduce((sum, values) => sum + values.length, 0)
