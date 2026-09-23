@@ -43,29 +43,30 @@ export type WorldPlayerCoreProjectionGateway = {
 
 function defaultGateway(): WorldPlayerCoreProjectionGateway {
   if (!supabase) throw new Error('world_projection_database_not_configured')
+  const client = supabase
   return {
     async loadRowsByUid(saveId, uid) {
-      const result = await supabase.from('world_player_core_projection').select(projectionSelect).eq('save_id', saveId).eq('uid', uid).eq('is_canonical', true).order('checkpoint_date').order('reader_run_id')
+      const result = await client.from('world_player_core_projection').select(projectionSelect).eq('save_id', saveId).eq('uid', uid).eq('is_canonical', true).order('checkpoint_date').order('reader_run_id')
       if (result.error) throw new Error(result.error.message)
       return (result.data ?? []) as unknown as WorldPlayerCoreProjectionRow[]
     },
     async loadRowsByRun(readerRunId) {
-      const result = await supabase.from('world_player_core_projection').select(projectionSelect).eq('reader_run_id', readerRunId).order('person_record_ref')
+      const result = await client.from('world_player_core_projection').select(projectionSelect).eq('reader_run_id', readerRunId).order('person_record_ref')
       if (result.error) throw new Error(result.error.message)
       return (result.data ?? []) as unknown as WorldPlayerCoreProjectionRow[]
     },
     async loadPackage(readerRunId) {
-      const result = await supabase.from('world_state_packages').select('id,base_anchor_package_id,domain_actions').eq('reader_run_id', readerRunId).eq('status', 'complete').maybeSingle()
+      const result = await client.from('world_state_packages').select('id,base_anchor_package_id,domain_actions').eq('reader_run_id', readerRunId).eq('status', 'complete').maybeSingle()
       if (result.error) throw new Error(result.error.message)
       return result.data as unknown as StatePackageRow | null
     },
     async loadSegments(packageId) {
-      const result = await supabase.from('world_state_segments').select('ordinal,storage_bucket,storage_path,segment_hash,codec,schema_version').eq('package_id', packageId).eq('domain_key', PLAYER_CORE_DOMAIN).order('ordinal')
+      const result = await client.from('world_state_segments').select('ordinal,storage_bucket,storage_path,segment_hash,codec,schema_version').eq('package_id', packageId).eq('domain_key', PLAYER_CORE_DOMAIN).order('ordinal')
       if (result.error) throw new Error(result.error.message)
       return (result.data ?? []) as unknown as StateSegmentRow[]
     },
     async download(bucket, path) {
-      const result = await supabase.storage.from(bucket).download(path)
+      const result = await client.storage.from(bucket).download(path)
       if (result.error || !result.data) throw new Error(result.error?.message ?? 'world_projection_segment_download_failed')
       return result.data
     },
