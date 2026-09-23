@@ -21,16 +21,20 @@ const messages: WorldCensusStreamMessage[] = [
   },
   {
     type: 'entity_batch', seq: 1, run_id: RUN, batch_index: 0, domain: 'person_records',
-    items: [{ person_record_ref: 1, eid: 10, uid: 20 }], item_count: 1, payload_hash: 'c'.repeat(64),
+    items: [{ person_record_ref: 1, person_record_key: 'person:10:2000000020@100', eid: 10, uid: 2_000_000_020, identity_offset: 100, boundary_start: 50, boundary_end: 100, resolution_method: 'unique_player_stats_identity' }], item_count: 1, payload_hash: 'c'.repeat(64),
   },
   {
-    type: 'coverage_final', seq: 2, run_id: RUN,
+    type: 'fact_batch', seq: 2, run_id: RUN, batch_index: 1, domain: 'biography_facts',
+    items: [{ person_record_ref: 1, status: 'confirmed', grammar: 'standard', reason_code: 'standard_biography_owned_by_person_record', birth_date: '2001-02-03', display_name: 'Test Player', hidden_personality: [10, 11, 12, 13, 14, 15, 16, 17] }], item_count: 1, payload_hash: 'f'.repeat(64),
+  },
+  {
+    type: 'coverage_final', seq: 3, run_id: RUN,
     manifest: { version: 'world-coverage-manifest-v1', capabilities: [] }, manifest_hash: COVERAGE_HASH,
   },
   {
-    type: 'run_end', seq: 3, run_id: RUN, coverage_hash: COVERAGE_HASH, logical_hash: 'd'.repeat(64),
-    domain_counts: { person_records: 1 }, domain_hashes: { person_records: 'e'.repeat(64) },
-    dictionary_count: 0, entity_count: 1, fact_count: 0, decoder_catalog: [], diagnostics: {},
+    type: 'run_end', seq: 4, run_id: RUN, coverage_hash: COVERAGE_HASH, logical_hash: 'd'.repeat(64),
+    domain_counts: { person_records: 1, biography_facts: 1 }, domain_hashes: { person_records: 'e'.repeat(64), biography_facts: '9'.repeat(64) },
+    dictionary_count: 0, entity_count: 1, fact_count: 1, decoder_catalog: [], diagnostics: {},
   },
 ]
 
@@ -40,7 +44,7 @@ type FakeState = {
   removes: Array<{ bucket: string; paths: string[] }>
 }
 
-function fakeClient(args: { finalizeFails?: boolean; failChanged?: boolean } = {}): { client: WorldCensusPersistenceClient; state: FakeState } {
+function fakeClient(args: { finalizeFails?: boolean; failChanged?: boolean; identityStageFails?: boolean } = {}): { client: WorldCensusPersistenceClient; state: FakeState } {
   const state: FakeState = { rpcCalls: [], uploads: [], removes: [] }
   const client: WorldCensusPersistenceClient = {
     auth: { getUser: async () => ({ data: { user: { id: OWNER } }, error: null }) },
@@ -50,6 +54,7 @@ function fakeClient(args: { finalizeFails?: boolean; failChanged?: boolean } = {
         source_artifact_id: 'source-1', source_reused: false, source_bucket: 'fm-world-sources', source_path: `${OWNER}/${SHA}.fm`,
         lineage_id: 'lineage-1', checkpoint_id: 'checkpoint-1', reader_run_id: 'reader-run-1', previous_canonical_reader_run_id: null,
       }, error: null }
+      if (name === 'world_census_stage_identity_rows' && args.identityStageFails) return { data: null, error: { message: 'identity_stage_failed' } }
       if (name === 'world_census_finalize') {
         if (args.finalizeFails) return { data: null, error: { message: 'network_after_or_before_finalize' } }
         return { data: {
@@ -95,7 +100,7 @@ function workerStarter() {
         checkpoint: '2031-12-15', output_contract_version: 'world-census-run-v1', representation_version: 'world-census-representation-v1', reader_version: 'wc-a-reader-v1',
         coverage_manifest: { version: 'world-coverage-manifest-v1', capabilities: [] }, logical_hash: 'd'.repeat(64), domain_counts: { person_records: 1 }, decoder_catalog: [], diagnostics: {},
       }
-      return { preview, transport: { messages: 4, protocol_bytes: 1, max_message_bytes: 1, max_unacked: 1, max_synchronous_post_message_ms: 0, ack_wait_ms_total: 0, ack_wait_ms_max: 0, wall_ms: 1 } }
+      return { preview, transport: { messages: 5, protocol_bytes: 1, max_message_bytes: 1, max_unacked: 1, max_synchronous_post_message_ms: 0, ack_wait_ms_total: 0, ack_wait_ms_max: 0, wall_ms: 1 } }
     })()
     return { request_id: 'fake', promise, cancel: vi.fn() }
   }
@@ -115,9 +120,21 @@ describe('World Census persistence', () => {
     expect(result.package_kind).toBe('full_anchor')
     expect(state.uploads.some(item => item.bucket === 'fm-world-sources' && item.path === `${OWNER}/${SHA}.fm`)).toBe(true)
     expect(state.uploads.some(item => item.bucket === 'fm-world-state' && item.path.includes('/person_records/'))).toBe(true)
+    expect(state.rpcCalls.filter(call => call.name === 'world_census_stage_identity_rows')).toHaveLength(2)
+    expect(state.rpcCalls.map(call => call.name).indexOf('world_census_stage_identity_rows')).toBeLessThan(state.rpcCalls.map(call => call.name).indexOf('world_census_finalize'))
     expect(state.rpcCalls.map(call => call.name)).toContain('world_census_stage_segments')
     expect(state.rpcCalls.map(call => call.name)).toContain('world_census_record_batch_receipts')
     expect(state.rpcCalls.map(call => call.name)).toContain('world_census_finalize')
+  })
+
+  it('fails before finalization when identity staging fails', async () => {
+    const { client, state } = fakeClient({ identityStageFails: true })
+    await expect(persistWorldCensusCheckpoint({
+      saveId: SAVE, file: file(), expectedCheckpoint: '2031-12-15',
+      dependencies: { client, workerStarter: workerStarter(), gzip },
+    })).rejects.toThrow(/world_census_stage_identity_rows/)
+    expect(state.rpcCalls.map(call => call.name)).not.toContain('world_census_finalize')
+    expect(state.rpcCalls.map(call => call.name)).toContain('world_census_fail')
   })
 
   it('marks a staging run failed and removes staged state objects when finalize fails', async () => {

@@ -135,6 +135,40 @@ type DomainBuffer = {
   nextOrdinal: number
 }
 
+function identityRowsForBatch(message: WorldCensusStreamBatch): Record<string, unknown>[] {
+  if (message.domain === 'person_records') {
+    return message.items.map(item => {
+      const value = item as Record<string, unknown>
+      return {
+        kind: 'person_record',
+        person_record_ref: value.person_record_ref,
+        person_record_key: value.person_record_key,
+        eid: value.eid,
+        uid: value.uid,
+        identity_offset: value.identity_offset,
+        boundary_start: value.boundary_start,
+        boundary_end: value.boundary_end,
+        resolution_method: value.resolution_method,
+      }
+    })
+  }
+  if (message.domain === 'biography_facts') {
+    return message.items.map(item => {
+      const value = item as Record<string, unknown>
+      return {
+        kind: 'biography_fact',
+        person_record_ref: value.person_record_ref,
+        status: value.status,
+        reason_code: value.reason_code,
+        birth_date: value.birth_date,
+        display_name: value.display_name,
+        hidden_personality: value.hidden_personality,
+      }
+    })
+  }
+  return []
+}
+
 function errorMessage(error: PersistenceError | unknown): string {
   if (error instanceof Error) return error.message
   if (error && typeof error === 'object') {
@@ -307,7 +341,15 @@ class WorldCensusPersistenceSession {
   }
 
   private async acceptBatch(message: WorldCensusStreamBatch): Promise<void> {
-    if (!this.beginResult) throw new Error('world_census_persistence_run_begin_required')
+    const begin = this.beginResult
+    if (!begin) throw new Error('world_census_persistence_run_begin_required')
+    const identityRows = identityRowsForBatch(message)
+    if (identityRows.length) {
+      requireData(await this.client.rpc('world_census_stage_identity_rows', {
+        p_reader_run_id: begin.reader_run_id,
+        p_rows: identityRows,
+      }), 'world_census_stage_identity_rows')
+    }
     let state = this.domainBuffers.get(message.domain)
     if (!state) {
       state = { items: [], estimatedBytes: 128, nextOrdinal: 0 }
