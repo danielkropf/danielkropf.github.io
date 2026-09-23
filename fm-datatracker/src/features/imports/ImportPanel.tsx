@@ -18,6 +18,7 @@ import { uploadDiagnosticSample } from '../../lib/diagnostic-upload'
 import { loadModelConfig, patchModelConfig } from '../../lib/model-config'
 import { buildImportedFmTactic, mergeImportedFmTactic, type FmTacticImportPlan } from '../../lib/fm26-tactic-import'
 import { supabase } from '../../lib/supabase'
+import { persistWorldCensusCheckpoint } from '../../lib/world-census-persistence'
 import { findImportByHash, stampImportVersion } from '../../lib/import-management'
 import type { ImportPreview, ImportType } from '../../types/domain'
 import { useSaves } from '../saves/SaveContext'
@@ -556,6 +557,21 @@ function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = n
       const result = data as { new_players?: number; updated_players?: number; duplicate?: boolean; import_id?: string; membership_sync?: { status?: string; synced_rows?: number; idempotent_rows?: number } } | null
       if (updateTarget && (result?.import_id !== updateTarget.id || !result.duplicate)) throw new Error('A releitura não corresponde à importação original; a referência não foi vinculada.')
       let versionNote = ''
+      if (fmFile && result?.import_id) {
+        try {
+          setTaskProgress(70)
+          setMessage('Persistindo World Snapshot…')
+          await persistWorldCensusCheckpoint({
+            saveId: selected.id,
+            file: fmFile,
+            expectedCheckpoint: snapshotDate,
+            onStatus: status => { if (mounted.current) setMessage(`World Snapshot: ${status}`) },
+          })
+          assertPrivateSession(generation)
+        } catch (error) {
+          versionNote += ` World Snapshot não persistido (${errorMessage(error)}). Reprocesse o mesmo .fm após verificar a infraestrutura WC-C.`
+        }
+      }
       let leagueSaved = false
       if (result?.import_id && fmFileHash && fmRead?.league_reference && ['fm-beta', 'validated'].includes(importMode)) {
         try {
@@ -565,7 +581,7 @@ function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = n
       }
       if (onCompleted && result?.import_id && !updateTarget) {
         try { await stampImportVersion(selected.id, result.import_id, __APP_VERSION__) }
-        catch { versionNote = ' Dados gravados, mas o registro da versão precisa ser atualizado.' }
+        catch { versionNote += ' Dados gravados, mas o registro da versão precisa ser atualizado.' }
       }
       const finish = (summary: string) => { assertPrivateSession(generation); onCompleted?.(`${summary} ${importRows.length} jogadores processados.${result?.duplicate ? '' : ` ${result?.new_players ?? 0} novos, ${result?.updated_players ?? 0} atualizados.`}${versionNote}`) }
       setTaskProgress(90)
@@ -590,7 +606,7 @@ function ScopedImportPanel({ onImported, updateTarget: requestedUpdateTarget = n
             reprocessed_at: new Date().toISOString(),
             reprocessed_from_version: previousVersion,
             reprocessed_reader: 'e-mc-01b-duplicate-enrichment',
-          }) } catch { versionNote = ' Dados atualizados, mas não foi possível registrar a versão desta releitura.' }
+          }) } catch { versionNote += ' Dados atualizados, mas não foi possível registrar a versão desta releitura.' }
           const sync = result.membership_sync
           const updatedMessage = `Importação atualizada com segurança para v${__APP_VERSION__}: mesmo arquivo, mesmo save e mesma data confirmados.${sync?.status === 'synced' ? ` ${sync.synced_rows ?? 0} vínculo(s) factual(is) sincronizado(s); ${sync.idempotent_rows ?? 0} já estavam atualizados.` : ''}${tacticSuffix}`
           writeImportFlash(selected.id, updatedMessage)

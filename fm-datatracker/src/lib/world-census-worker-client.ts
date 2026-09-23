@@ -1,5 +1,6 @@
 import {
   WorldCensusStreamConsumer,
+  type WorldCensusConsumerApplyResult,
   type WorldCensusStreamBatch,
   type WorldCensusStreamMessage,
   type WorldCensusStreamPreview,
@@ -26,6 +27,7 @@ export type WorldCensusWorkerRunOptions = {
   signal?: AbortSignal
   onStatus?: (status: string, progress?: number) => void
   onBatch?: (message: WorldCensusStreamBatch) => void | Promise<void>
+  onValidatedMessage?: (message: WorldCensusStreamMessage, validation: WorldCensusConsumerApplyResult) => void | Promise<void>
   workerFactory?: () => Worker
   requestId?: string
 }
@@ -90,7 +92,9 @@ export function startWorldCensusWorkerRun(
       return
     }
     if (response.type === 'protocol') {
-      void consumer.apply(response.message).then(result => {
+      void consumer.apply(response.message).then(async result => {
+        if (settled) return
+        await options.onValidatedMessage?.(response.message, result)
         if (settled) return
         worker.postMessage({ type: 'ack', request_id: requestId, seq: result.seq, message_hash: result.message_hash })
       }).catch(error => {

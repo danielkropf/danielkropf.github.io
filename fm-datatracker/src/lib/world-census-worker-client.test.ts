@@ -19,6 +19,7 @@ class BackpressureFakeWorker {
   onerror: ((event: ErrorEvent) => void) | null = null
   onmessageerror: (() => void) | null = null
   acks = 0
+  cancelRequests = 0
   outstanding = 0
   maxOutstanding = 0
   terminated = false
@@ -33,6 +34,7 @@ class BackpressureFakeWorker {
       return
     }
     if (request.type === 'cancel') {
+      this.cancelRequests += 1
       queueMicrotask(() => this.onmessage?.({ data: { type: 'cancelled', request_id: request.request_id, reason: request.reason } } as MessageEvent))
       return
     }
@@ -81,6 +83,41 @@ describe('World Census worker client', () => {
     expect(seen).toEqual(['person_records'])
     expect(fake.maxOutstanding).toBe(1)
     expect(fake.acks).toBeGreaterThanOrEqual(4)
+    expect(fake.terminated).toBe(true)
+  })
+
+  it('does not ACK a validated message until the persistence hook completes', async () => {
+    const fake = new BackpressureFakeWorker()
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let entered = false
+    const run = startWorldCensusWorkerRun(new ArrayBuffer(2), 'test.fm', {
+      requestId: 'persist-before-ack', workerFactory: () => fake as unknown as Worker,
+      onValidatedMessage: async message => {
+        if (message.seq === 0) {
+          entered = true
+          await gate
+        }
+      },
+    })
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 0))
+    expect(fake.acks).toBe(0)
+    release()
+    await run.promise
+    expect(fake.acks).toBeGreaterThanOrEqual(4)
+  })
+
+  it('cancels without ACK when the persistence hook rejects', async () => {
+    const fake = new BackpressureFakeWorker()
+    const run = startWorldCensusWorkerRun(new ArrayBuffer(2), 'test.fm', {
+      requestId: 'persist-fails', workerFactory: () => fake as unknown as Worker,
+      onValidatedMessage: async message => {
+        if (message.seq === 0) throw new Error('persistence_failed')
+      },
+    })
+    await expect(run.promise).rejects.toThrow('persistence_failed')
+    expect(fake.acks).toBe(0)
+    expect(fake.cancelRequests).toBe(1)
     expect(fake.terminated).toBe(true)
   })
 

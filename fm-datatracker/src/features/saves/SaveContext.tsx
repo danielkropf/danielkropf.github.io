@@ -5,6 +5,7 @@ import { invalidateSaveData, loadCurrentCheckpoint, SAVE_FACTS_INVALIDATED_EVENT
 import { discardModelConfigState } from '../../lib/model-config'
 import { loadSaveStructures } from '../../lib/longitudinal-service'
 import { sanitizeSquadTablePreferencesForSaveChange } from '../../lib/squad-table-preferences'
+import { collectWorldCensusSaveStorage, removeWorldCensusStorage } from '../../lib/world-census-persistence'
 import type { Save } from '../../types/domain'
 import { createSaveRefreshRequestGuard, resolveSaveRefresh } from './save-refresh'
 
@@ -144,9 +145,14 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     if (!supabase) return 'Banco não configurado'
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return 'Sessão inválida'
+    let worldStorage: Awaited<ReturnType<typeof collectWorldCensusSaveStorage>> | null = null
+    try { worldStorage = await collectWorldCensusSaveStorage(saveId) } catch { /* WC-C ainda pode não estar instalado */ }
     const { data, error: deleteError } = await supabase.from('saves').delete().eq('id', saveId).eq('owner_id', user.id).select('id').maybeSingle()
     if (deleteError) return deleteError.message
     if (!data) return 'Save não encontrado ou sem permissão para exclusão.'
+    if (worldStorage) {
+      try { await removeWorldCensusStorage(worldStorage) } catch { /* metadata já foi removida; eventual órfão permanece privado */ }
+    }
     invalidateSaveData(saveId)
     discardModelConfigState(saveId)
     if (selectedRef.current?.id === saveId) {
