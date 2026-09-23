@@ -169,6 +169,25 @@ function identityRowsForBatch(message: WorldCensusStreamBatch): Record<string, u
   return []
 }
 
+function playerCoreRowsForBatch(message: WorldCensusStreamBatch): Record<string, unknown>[] {
+  if (message.domain !== 'player_core_facts') return []
+  return message.items.map(item => {
+    const value = item as Record<string, unknown>
+    return {
+      person_record_ref: value.person_record_ref,
+      status: value.status,
+      reason_code: value.reason_code,
+      ca: value.ca,
+      pa: value.pa,
+      positions: value.positions,
+      attributes_1_20: value.attributes_1_20,
+      height_cm: value.height_cm,
+      evidence_refs: value.evidence_refs,
+      derivation_ref: value.derivation_ref,
+    }
+  })
+}
+
 function errorMessage(error: PersistenceError | unknown): string {
   if (error instanceof Error) return error.message
   if (error && typeof error === 'object') {
@@ -349,6 +368,13 @@ class WorldCensusPersistenceSession {
         p_reader_run_id: begin.reader_run_id,
         p_rows: identityRows,
       }), 'world_census_stage_identity_rows')
+    }
+    const playerCoreRows = playerCoreRowsForBatch(message)
+    if (playerCoreRows.length) {
+      requireData(await this.client.rpc('world_census_stage_player_core_rows', {
+        p_reader_run_id: begin.reader_run_id,
+        p_rows: playerCoreRows,
+      }), 'world_census_stage_player_core_rows')
     }
     let state = this.domainBuffers.get(message.domain)
     if (!state) {
