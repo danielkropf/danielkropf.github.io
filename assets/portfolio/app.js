@@ -46,4 +46,18 @@ viewerImage.addEventListener('touchend',event=>{
  if(Math.abs(distance)>65)showPhoto(current+(distance<0?1:-1));
  touchX=undefined;
 },{passive:true});
-document.querySelector('#year').textContent=new Date().getFullYear();
+
+
+// Size each tile from its original image dimensions, without padding or frames.
+function layoutPhotos(){
+ const gallery=document.querySelector('#gallery');
+ const columns=window.matchMedia('(max-width:750px)').matches?2:3;
+ const width=gallery.clientWidth/columns;
+ cards.forEach(card=>{
+  const image=card.querySelector('img');
+  const height=width*Number(image.getAttribute('height'))/Number(image.getAttribute('width'));
+  card.style.gridRowEnd='span '+Math.max(1,Math.ceil(height/2));
+ });
+}
+layoutPhotos();
+new ResizeObserver(layoutPhotos).observe(document.querySelector('#gallery'));
