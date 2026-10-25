@@ -335,3 +335,39 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
 @media(max-width:700px){.pj-mobile-theme{display:grid;place-items:center;min-width:40px;min-height:40px;padding:3px!important;border:1px solid var(--pj-line);background:var(--pj-plate);color:var(--pj-gold);font-size:22px}.pj-logo{height:40px!important;width:40px!important;min-width:40px!important}.pj-head-right{gap:5px!important}.pj-money{padding:5px!important}}
 
 @media(max-width:700px){.starter-screen{overflow:auto!important;max-height:100dvh!important}}
+
+/* Mobile viewport fit v1.3.2: map uses remaining height, not 42dvh plus footer. */
+@media(max-width:700px){
+  html[data-poke-theme] body{margin:0;overscroll-behavior:none}
+  #app{min-height:0!important}
+  .pj-mobile-nav{flex:0 0 auto;box-sizing:border-box}
+  .pj-journey-layout .pj-main{overflow:hidden!important;min-height:0;gap:6px!important}
+  .pj-journey-layout.pj-phase-city .pj-route,
+  .pj-journey-layout.pj-phase-ready .pj-route,
+  .pj-journey-layout.pj-phase-boss .pj-route{
+    flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow:hidden
+  }
+  .pj-journey-layout.pj-phase-city .pj-map-head,
+  .pj-journey-layout.pj-phase-ready .pj-map-head,
+  .pj-journey-layout.pj-phase-boss .pj-map-head{flex:0 0 auto}
+  .pj-journey-layout.pj-phase-city .pj-map-image,
+  .pj-journey-layout.pj-phase-ready .pj-map-image,
+  .pj-journey-layout.pj-phase-boss .pj-map-image{
+    flex:1 1 0;min-height:105px;height:auto!important;max-height:none!important
+  }
+  .pj-journey-layout .pj-map-footer{flex:0 0 auto}
+  .pj-journey-layout .pj-city-actions{flex:0 0 auto;padding:4px;gap:4px}
+  .pj-journey-layout .pj-city-actions button{min-width:0;flex:1;font-size:11px;min-height:36px}
+  .pj-journey-layout.pj-phase-battle .pj-route{flex:0 0 auto}
+  .pj-journey-layout.pj-phase-battle .pj-arena{
+    flex:1 1 0;min-height:0;overflow:hidden
+  }
+  .pj-journey-layout.pj-phase-battle .pj-stage.battle-stage{
+    flex:1 1 0;min-height:110px;height:auto!important;max-height:none!important
+  }
+  .pj-journey-layout.pj-phase-battle .pj-arena-head,
+  .pj-journey-layout.pj-phase-battle .pj-arena-foot,
+  .pj-journey-layout.pj-phase-battle .pj-battle-actions{flex:0 0 auto}
+  .pj-journey-layout.pj-phase-battle .pj-battle-actions{max-height:46%;overflow-y:auto;overscroll-behavior:contain}
+  .pj-journey-layout.pj-phase-capture .pj-main{overflow-y:auto!important}
+}
