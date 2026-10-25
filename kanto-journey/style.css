@@ -333,3 +333,5 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
 
 .pj-mobile-theme{display:none}
 @media(max-width:700px){.pj-mobile-theme{display:grid;place-items:center;min-width:40px;min-height:40px;padding:3px!important;border:1px solid var(--pj-line);background:var(--pj-plate);color:var(--pj-gold);font-size:22px}.pj-logo{height:40px!important;width:40px!important;min-width:40px!important}.pj-head-right{gap:5px!important}.pj-money{padding:5px!important}}
+
+@media(max-width:700px){.starter-screen{overflow:auto!important;max-height:100dvh!important}}
