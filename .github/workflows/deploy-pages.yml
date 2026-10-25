@@ -75,6 +75,10 @@ jobs:
           mkdir -p _site/fm-datatracker
           cp -R fm-datatracker/dist/. _site/fm-datatracker/
 
+      - name: Stage Kanto Journey sprites (hash-verified)
+        if: github.event_name != 'pull_request'
+        run: python3 .github/scripts/populate-kanto-sprites.py
+
       - name: Configure Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v6
