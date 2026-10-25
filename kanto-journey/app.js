@@ -73,7 +73,7 @@ function render(){
   return;
  }
  let views={journey:journeyView,team:teamView,map:mapView,dex:dexView,bag:bagView};
- rootEl.innerHTML=header()+`<div class="pj-layout">${sidebar()}<main class="pj-main">${views[tab]()}</main></div>`;
+ rootEl.innerHTML=header()+`<div class="pj-layout ${tab==='journey'?'pj-journey-layout pj-phase-'+game.s.phase:'pj-other-layout'}">${sidebar()}<main class="pj-main">${views[tab]()}</main></div><nav class="pj-mobile-nav" aria-label="Navegação principal">${PokeJourneyShell.navHtml(tab)}</nav>`;
  game.dirty=false;
 }
 // O motor avança a cada frame. Reconstruir #app a cada 180 ms removia os
