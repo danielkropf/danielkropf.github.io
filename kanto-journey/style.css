@@ -285,3 +285,48 @@ html[data-poke-theme] .starter-screen{color:var(--pj-text);background:var(--pj-b
 @media(prefers-reduced-motion:reduce){.pj-map-node,.pj-party-member,.pj-tab{transition:none!important}}
 
 .pj-empty-enemy{position:absolute;right:18%;bottom:30px;font-family:ui-monospace,monospace;font-size:80px;font-weight:900;color:#1a526b80;z-index:2}.pj-city-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:12px;border:1px solid var(--pj-line);background:var(--pj-panel)}.pj-city-actions button{min-width:140px}.pj-capture-panel .page-top{margin:12px 0}.pj-capture-panel .paper-panel{background:var(--pj-panel)}
+.pj-mobile-nav{display:none}
+@media(max-width:700px){
+html[data-poke-theme] body{height:100dvh;overflow:hidden}
+#app{height:100dvh;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.pj-header{height:54px!important;min-height:54px!important;flex:0 0 54px;flex-wrap:nowrap!important;padding:4px 9px!important}
+.pj-header .pj-tabs,.pj-profile,.pj-theme{display:none!important}
+.pj-head-right{flex:1;justify-content:flex-end;min-width:0}
+.pj-mobile-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;min-height:61px;padding:4px 5px calc(4px + env(safe-area-inset-bottom,0px));background:var(--pj-surface);border-top:2px solid var(--pj-line);z-index:5}
+.pj-mobile-nav .pj-tab{min-width:0!important;min-height:49px!important;padding:3px 0!important;white-space:normal;font-size:10px!important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-radius:4px!important}
+.pj-mobile-nav .pj-tab span{margin:0;font-size:19px;line-height:1.1}
+.pj-layout{display:block!important;flex:1 1 auto;min-height:0!important;overflow:hidden!important;margin:0!important;padding:7px 7px 4px!important}
+.pj-main{height:100%;min-height:0;min-width:0;display:flex;gap:8px!important;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:1px!important}
+.pj-left{display:none!important}
+.pj-map-head{padding:7px 9px!important;min-height:49px!important;flex-wrap:nowrap!important;gap:6px!important}
+.pj-route-name{gap:5px}.pj-route-name .pj-tree{font-size:20px}.pj-route-name b{font-size:15px!important;max-width:150px}.pj-route-name small{font-size:8px}
+.pj-map-right{width:auto!important;margin-left:auto!important;flex:0 0 auto}.pj-modes button{min-height:32px!important;padding:5px!important;font-size:10px!important}.pj-next-boss{display:none}
+.pj-map-image{height:clamp(175px,42dvh,350px)!important}.pj-map-footer{padding:9px!important}
+.pj-journey-layout.pj-phase-battle .pj-map-image,.pj-journey-layout.pj-phase-battle .pj-map-footer{display:none!important}
+.pj-journey-layout.pj-phase-battle .pj-map-head{min-height:39px!important;border-bottom:0}
+.pj-journey-layout.pj-phase-battle .pj-map-right,.pj-journey-layout.pj-phase-battle .pj-route-name small{display:none!important}
+.pj-journey-layout.pj-phase-city .pj-arena,.pj-journey-layout.pj-phase-ready .pj-arena,.pj-journey-layout.pj-phase-boss .pj-arena{display:none!important}
+.pj-journey-layout.pj-phase-capture .pj-route,.pj-journey-layout.pj-phase-capture .pj-arena{display:none!important}
+.pj-journey-layout.pj-phase-battle .pj-arena{display:flex;flex-direction:column}
+.pj-journey-layout.pj-phase-battle .pj-arena-head{height:35px!important;padding:5px 9px}
+.pj-journey-layout.pj-phase-battle .pj-stage.battle-stage{height:clamp(170px,33dvh,290px)!important;min-height:170px;overflow:hidden}
+.pj-journey-layout.pj-phase-battle .pj-stage .battle-card{width:43%!important;max-width:165px;top:6px!important;padding:5px!important}
+.pj-journey-layout.pj-phase-battle .pj-stage .battle-card.ally{left:5px!important}.pj-journey-layout.pj-phase-battle .pj-stage .battle-card.foe{right:5px!important;left:auto!important}
+.pj-journey-layout.pj-phase-battle .pj-stage .pj-trainer-wrap{bottom:7px!important;left:2%!important;width:18%!important}
+.pj-journey-layout.pj-phase-battle .pj-stage .pj-trainer{height:clamp(80px,16dvh,130px)!important;width:100%}
+.pj-journey-layout.pj-phase-battle .pj-stage .combat-sprite.ally{left:25%!important;bottom:10px!important;width:24%!important;height:clamp(65px,14dvh,108px)!important}
+.pj-journey-layout.pj-phase-battle .pj-stage .combat-sprite.foe{right:8%!important;bottom:15px!important;width:26%!important;height:clamp(65px,14dvh,108px)!important}
+.pj-journey-layout.pj-phase-battle .pj-arena-foot{padding:6px 9px!important}
+.pj-journey-layout.pj-phase-battle .pj-arena-foot .battle-dialog{display:flex;align-items:center;flex-direction:row;gap:5px}
+.pj-journey-layout.pj-phase-battle .pj-arena-foot .battle-dialog p{flex:1;min-width:0;font-size:11px;margin:0}
+.pj-journey-layout.pj-phase-battle .pj-arena-foot .battle-dialog button{width:auto!important;max-width:135px;font-size:10px;padding:5px!important;min-height:34px}
+.pj-journey-layout.pj-phase-battle .pj-battle-actions{padding:6px!important;gap:6px!important;display:flex;flex-direction:column}
+.pj-journey-layout.pj-phase-battle .journey-controls{display:flex;flex-wrap:nowrap;gap:4px!important;width:100%}
+.pj-journey-layout.pj-phase-battle .journey-controls button{min-height:38px!important;padding:6px!important;font-size:11px}
+.pj-journey-layout.pj-phase-battle .speed-group{display:flex;flex:1;min-width:0;gap:2px}
+.pj-journey-layout.pj-phase-battle .speed-group button{flex:1;min-width:0;padding:3px!important}
+.pj-journey-layout.pj-phase-battle .moves-row{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;overflow:visible!important;width:100%}
+.pj-journey-layout.pj-phase-battle .move-pill{min-height:45px;font-size:11px;padding:6px!important}
+.pj-journey-layout.pj-phase-battle .move-pill div{font-size:10px}
+}
+@media(max-width:370px){.pj-mobile-nav .pj-tab{font-size:9px!important}.pj-money{font-size:10px!important}.pj-map-image{height:clamp(165px,39dvh,260px)!important}}
