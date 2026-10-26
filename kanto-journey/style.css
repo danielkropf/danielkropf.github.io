@@ -371,3 +371,36 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
   .pj-journey-layout.pj-phase-battle .pj-battle-actions{max-height:46%;overflow-y:auto;overscroll-behavior:contain}
   .pj-journey-layout.pj-phase-capture .pj-main{overflow-y:auto!important}
 }
+
+/* Desktop Journey: fit both scenes inside the real viewport without F11. */
+@media(min-width:701px){
+ html[data-poke-theme] body:has(.pj-journey-layout){height:100dvh;overflow:hidden}
+ #app:has(.pj-journey-layout){height:100dvh;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+ #app:has(.pj-journey-layout) .pj-header{flex:0 0 70px;min-height:0}
+ .pj-journey-layout{flex:1 1 0;height:auto;min-height:0!important;overflow:hidden;align-items:stretch;padding-bottom:10px}
+ .pj-journey-layout .pj-left{min-height:0;overflow:hidden}
+ .pj-journey-layout .pj-main{min-height:0;overflow:hidden;gap:9px}
+ .pj-journey-layout .pj-route{display:flex;flex-direction:column;flex:1 1 46%;min-height:0;overflow:hidden}
+ .pj-journey-layout .pj-map-head,.pj-journey-layout .pj-map-footer{flex:0 0 auto}
+ .pj-journey-layout .pj-map-image{height:auto!important;min-height:100px;flex:1 1 0;overflow:hidden}
+ .pj-journey-layout .pj-arena{display:flex;flex-direction:column;flex:1 1 54%;min-height:0;overflow:hidden}
+ .pj-journey-layout .pj-arena-head,.pj-journey-layout .pj-arena-foot,.pj-journey-layout .pj-battle-actions{flex:0 0 auto}
+ .pj-journey-layout .pj-stage.battle-stage{height:auto!important;min-height:100px;flex:1 1 0;overflow:hidden}
+ .pj-journey-layout .pj-battle-actions{max-height:38%;overflow-y:auto}
+ .pj-journey-layout .pj-city-actions{flex:0 0 auto;padding:5px}
+ .pj-journey-layout .pj-city-actions button{min-height:32px;padding:5px 12px}
+ .pj-journey-layout.pj-phase-capture .pj-main{overflow-y:auto}
+}
+@media(min-width:701px) and (max-height:730px){
+ .pj-journey-layout .pj-map-head{min-height:48px;padding:5px 11px}
+ .pj-journey-layout .pj-map-footer{padding:7px 10px}
+ .pj-journey-layout .pj-arena-head{height:37px}
+ .pj-journey-layout .pj-arena-foot{padding:7px}
+ .pj-journey-layout .pj-stage .pj-trainer-wrap{transform:scale(.8);transform-origin:bottom left}
+}
+
+/* Fixed node types: meaningful silhouettes instead of fictional paths. */
+.pj-node-trainer{background:#8c4447;border-color:#e8a19b}
+.pj-node-gift{background:#9a7831;border-color:#ffe18d}
+.pj-node-boss{background:#a84b48;border-color:#ffe29a}
+.pj-map-node.current{outline:2px solid #f8e0a4;outline-offset:3px}
