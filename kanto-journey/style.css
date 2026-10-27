@@ -436,3 +436,13 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
 .pj-service-btn{min-height:36px;padding:7px 11px;background:var(--pj-plate);color:var(--pj-text);border:1px solid var(--pj-line);font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}
 .pj-service-btn:hover{border-color:var(--pj-gold);color:var(--pj-gold)}
 @media(max-width:700px){.pj-service-btn{font-size:10px;padding:5px;min-height:35px}}
+
+/* M1 v1.3.9: footer de cidade retirado; cena recebe toda a altura disponível. */
+@media(min-width:701px){
+ .pj-journey-layout .pj-main{gap:9px}
+ .pj-journey-layout .pj-route,.pj-journey-layout .pj-arena{flex:1 1 0!important}
+ .pj-journey-layout .pj-battle-actions{visibility:visible!important;display:flex;flex-direction:row;align-items:stretch;height:82px;min-height:82px;overflow:hidden;gap:8px;padding:6px 10px}
+ .pj-journey-layout .pj-battle-actions .journey-controls{display:flex;align-items:center;flex:0 0 auto}
+ .pj-journey-layout .pj-battle-actions .moves-row{flex:1 1 auto;min-width:0}
+ .pj-journey-layout .pj-empty-moves{visibility:hidden}
+}
