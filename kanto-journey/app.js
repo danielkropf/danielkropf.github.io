@@ -54,7 +54,7 @@ function journeyView(){
  if(s.phase==='capture'&&!s.captureNotice)game.resolveCapture();
  if(s.captureNotice){const n=s.captureNotice;content+=`<div class="pj-capture-overlay" role="dialog" aria-label="Captura"><div class="pj-capture-result"><b>${n.success?'Pokémon capturado!':'Pokémon escapou!'}</b>${sprite(n.id,'front','pj-captured-sprite')}<h2>${esc(cap(DEX[n.id].name))}</h2><p>Nv. ${n.level} · ${n.success?(n.duplicate?'Linha repetida: +1 Candy.':s.party.some(p=>p.id===n.id)?'Entrou na equipe!':'Enviado ao PC.'):'Probabilidade: 50%.'}</p>${btn('Continuar','captureDismiss','pj-main-action')}</div></div>`;}
 
- content+=`<div class="pj-city-actions pj-city-placeholder" aria-hidden="true"></div>`;
+
  return content;
 }
 function teamView(){return `${top('Seu time','Companheiros de jornada',`<span class="chip">${owned().length} Pokémon</span>`)}<div class="section-note">${['city','boss'].includes(game.s.phase)?'Na cidade você pode equipar golpes, aplicar Candies e trocar Pokémon com o PC.':'Durante a jornada, somente a ordem da equipe pode mudar. Durante a batalha, toque em Trocar.'}</div><div class="mobile-party-grid">${game.s.party.map(partyCard).join('')}</div><div class="subheading"><h3>PC de Pokémon</h3>${btn('Abrir PC','pc','small',!['city','boss'].includes(game.s.phase))}</div><div class="cards-grid">${game.s.pc.length?game.s.pc.map(p=>`<button class="pokemon-tile" data-action="profile:${p.uid}">${sprite(p.id)}<b>${esc(cap(DEX[p.id].name))}</b><p class="muted">Nv.${p.level} · PC</p>${types(p.id)}</button>`).join(''):'<p class="muted">O PC ainda está vazio.</p>'}</div>`}
@@ -184,7 +184,7 @@ async function exportSave(){
   let a=document.createElement('a'),url=URL.createObjectURL(new Blob([value],{type:'application/json'}));a.href=url;a.download='kanto-journey-save.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Backup exportado.');
  }catch{toast('Exportação cancelada ou indisponível. Seu progresso continua salvo.')}
 }
-function handle(action){let [cmd,a,b]=action.split(':');let s=game.s;switch(cmd){case 'captureDismiss':delete s.captureNotice;game.touch();break;case 'mode':break;
+function handle(action){let [cmd,a,b]=action.split(':');let s=game.s;switch(cmd){case 'captureDismiss':delete s.captureNotice;autoElapsed=0;if(s.auto&&!manualPaused&&s.phase==='ready'){game.next()}game.touch();break;case 'mode':break;
 case 'theme':PokeJourneyShell.setTheme(a);break;
 case 'path':if(s.phase==='ready'){const j=PokeJourneyShell.ensureJourney(game);if(PokeJourneyShell.options(game,j.pos).some(o=>o.index===+a)){j.routeChoices[j.pos]=+a;game.touch()}}break;
 case 'trainerCard':showModal('Seu treinador',`<p>Você conquistou ${s.badges.length} insígnias e registrou ${s.caught.length} Pokémon.</p><p>Campanha atual: Kanto · Protótipo até Misty.</p>${btn('Fechar','close','primary')}`,'trainer');return;
