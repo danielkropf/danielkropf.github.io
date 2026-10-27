@@ -429,3 +429,5 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
  .pj-journey-layout .pj-battle-actions{height:82px;min-height:82px;flex:0 0 82px;box-sizing:border-box;overflow:hidden}
  .pj-journey-layout .pj-battle-placeholder{visibility:hidden}
 }
+
+@media(min-width:701px){.pj-journey-layout .pj-arena-foot{height:65px;min-height:65px;flex:0 0 65px;box-sizing:border-box;overflow:hidden}}
