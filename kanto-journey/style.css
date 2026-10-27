@@ -411,3 +411,21 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
  .pj-journey-layout{width:100%;max-width:1920px;box-sizing:border-box;align-self:stretch;margin-left:auto;margin-right:auto;grid-template-columns:minmax(244px,282px) minmax(0,1fr)}
  .pj-journey-layout .pj-main{width:100%;min-width:0}
 }
+
+/* v1.3.6: fixed scene/action allocation, progress markers and capture result */
+.pj-map-node.completed{background:#294658;border-color:#7894a5;opacity:.74}
+.pj-map-node.completed span{opacity:.65}
+.pj-capture-overlay{position:fixed;inset:0;z-index:60;background:#06101bc9;display:grid;place-items:center;padding:20px}
+.pj-capture-result{width:min(380px,94vw);background:var(--pj-panel);color:var(--pj-text);border:3px solid var(--pj-gold);box-shadow:0 10px 0 #07101c;padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+.pj-capture-result b{font-size:22px;color:var(--pj-gold)}
+.pj-captured-sprite{width:130px;height:130px;object-fit:contain;image-rendering:pixelated}
+.pj-capture-result h2{font-size:20px}
+.pj-capture-result .pj-main-action{min-width:180px;min-height:42px}
+@media(min-width:701px){
+ .pj-journey-layout .pj-route{flex:1 1 0!important}
+ .pj-journey-layout .pj-arena{flex:1 1 0!important}
+ .pj-journey-layout .pj-city-actions{height:44px;min-height:44px;flex:0 0 44px;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+ .pj-journey-layout .pj-city-placeholder{visibility:hidden}
+ .pj-journey-layout .pj-battle-actions{height:82px;min-height:82px;flex:0 0 82px;box-sizing:border-box;overflow:hidden}
+ .pj-journey-layout .pj-battle-placeholder{visibility:hidden}
+}
