@@ -132,7 +132,7 @@ function refreshBattleUI(){
   const swap=card.querySelector('[data-action^="swap:"]');
   if(swap){swap.textContent=active?'Em campo':p.hp?'Trocar':'Sem forças';swap.disabled=active||!p.hp||b.swapLock||b.lock>b.clock}
  });
- $('.pj-party-member').forEach((card,i)=>{
+ $$('.pj-party-member').forEach((card,i)=>{
   const p=s.party[i];if(!p)return;
   const percent=Math.max(0,Math.min(100,p.hp/stats(p)[0]*100));
   const bar=card.querySelector('.pj-party-life i');if(bar)bar.style.width=percent+'%';
