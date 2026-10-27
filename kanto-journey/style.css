@@ -404,3 +404,10 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
 .pj-node-gift{background:#9a7831;border-color:#ffe18d}
 .pj-node-boss{background:#a84b48;border-color:#ffe29a}
 .pj-map-node.current{outline:2px solid #f8e0a4;outline-offset:3px}
+
+/* v1.3.5: a flex child with margin:auto shrank to min-content after re-render. */
+@media(min-width:701px){
+ #app:has(.pj-journey-layout){width:100%;align-items:stretch}
+ .pj-journey-layout{width:100%;max-width:1920px;box-sizing:border-box;align-self:stretch;margin-left:auto;margin-right:auto;grid-template-columns:minmax(244px,282px) minmax(0,1fr)}
+ .pj-journey-layout .pj-main{width:100%;min-width:0}
+}
