@@ -431,3 +431,8 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
 }
 
 @media(min-width:701px){.pj-journey-layout .pj-arena-foot{height:65px;min-height:65px;flex:0 0 65px;box-sizing:border-box;overflow:hidden}}
+
+/* Checkpoint services live in the header; reserved footer stays invisible for stable layout. */
+.pj-service-btn{min-height:36px;padding:7px 11px;background:var(--pj-plate);color:var(--pj-text);border:1px solid var(--pj-line);font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}
+.pj-service-btn:hover{border-color:var(--pj-gold);color:var(--pj-gold)}
+@media(max-width:700px){.pj-service-btn{font-size:10px;padding:5px;min-height:35px}}
