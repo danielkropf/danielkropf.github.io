@@ -446,3 +446,9 @@ html[data-poke-theme] body{height:100dvh;overflow:hidden}
  .pj-journey-layout .pj-battle-actions .moves-row{flex:1 1 auto;min-width:0}
  .pj-journey-layout .pj-empty-moves{visibility:hidden}
 }
+
+/* Build identity belongs to the running JS, not to an assumed deploy state. */
+.pj-header{position:relative}
+.pj-build-version{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:1;color:var(--pj-gold);font-size:12px;font-weight:800;letter-spacing:.09em;white-space:nowrap;padding:5px 9px;background:var(--pj-surface);border:1px solid var(--pj-line)}
+@media(min-width:701px) and (max-width:1200px){.pj-build-version{position:static;transform:none;margin:auto;font-size:11px;padding:4px 6px}}
+@media(max-width:700px){.pj-build-version{position:static;transform:none;margin:auto;font-size:10px;padding:3px 5px}}
