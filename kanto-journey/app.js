@@ -184,7 +184,7 @@ async function exportSave(){
   let a=document.createElement('a'),url=URL.createObjectURL(new Blob([value],{type:'application/json'}));a.href=url;a.download='kanto-journey-save.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Backup exportado.');
  }catch{toast('Exportação cancelada ou indisponível. Seu progresso continua salvo.')}
 }
-function handle(action){let [cmd,a,b]=action.split(':');let s=game.s;switch(cmd){case 'captureDismiss':delete s.captureNotice;autoElapsed=0;if(s.auto&&!manualPaused&&s.phase==='ready'){game.next()}game.touch();break;case 'mode':break;
+function handle(action){let [cmd,a,b]=action.split(':');let s=game.s;switch(cmd){case 'captureDismiss':{autoElapsed=0;const advance=s.auto&&!manualPaused&&s.phase==='ready';if(advance)game.next();delete s.captureNotice;game.touch();break;}case 'mode':break;
 case 'theme':PokeJourneyShell.setTheme(a);break;
 case 'path':if(s.phase==='ready'){const j=PokeJourneyShell.ensureJourney(game);if(PokeJourneyShell.options(game,j.pos).some(o=>o.index===+a)){j.routeChoices[j.pos]=+a;game.touch()}}break;
 case 'trainerCard':showModal('Seu treinador',`<p>Você conquistou ${s.badges.length} insígnias e registrou ${s.caught.length} Pokémon.</p><p>Campanha atual: Kanto · Protótipo até Misty.</p>${btn('Fechar','close','primary')}`,'trainer');return;
